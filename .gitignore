@@ -1,0 +1,56 @@
+# Build artifacts
+/target
+
+# Local machine-specific Cargo build acceleration (sccache/mold/cranelift,
+# absolute target dirs, or the [patch.crates-io] override for ../toon-lsp).
+# Must not be committed; breaks CI runners and other contributors' checkouts.
+/.cargo/config.toml
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Spec-kit tool-internal state (specs/ itself IS committed — see below)
+.specify/
+.speckit/
+
+# Serena MCP
+.serena/
+
+# MCP configuration
+.mcp.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local development
+*.local
+*.local.*
+.env
+.env.*
+
+# Tooling metadata (auto-generated)
+.arbor/
+.codegraph/
+.cursor/
+.kilo/
+.envrc
+.gstack/
+
+# Coverage reports
+*.profraw
+coverage/
+tarpaulin-report.html
+lcov.info
+
+# NOTE: specs/ (spec-kit spec/plan/tasks documents) is intentionally
+# committed, not ignored — traceability from spec to plan to tasks to code
+# is the point of running the spec-kit pipeline here.

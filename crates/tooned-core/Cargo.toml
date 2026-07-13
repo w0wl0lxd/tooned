@@ -1,0 +1,28 @@
+[package]
+name = "tooned-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Doctype detection and adaptive TOON-vs-JSON conversion, dependency-minimal for embedding in a hot hook path"
+categories.workspace = true
+
+[lib]
+name = "tooned_core"
+path = "src/lib.rs"
+
+[dependencies]
+toon-lsp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+toml = "1"
+csv = "1"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.4"
+
+[lints]
+workspace = true

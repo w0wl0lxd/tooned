@@ -1,0 +1,25 @@
+[package]
+name = "tooned-index"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The .tooned/ SQLite project index: scan, fingerprint, cache, invalidate"
+categories.workspace = true
+
+[lib]
+name = "tooned_index"
+path = "src/lib.rs"
+
+[dependencies]
+tooned-core = { path = "../tooned-core", version = "0.1.0" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+ignore = "0.4"
+blake3 = "1"
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
