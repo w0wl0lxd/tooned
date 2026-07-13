@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/tooned-core", "crates/tooned-index", "crates/tooned-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["w0wl0lxd"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/w0wl0lxd/tooned"
+categories = ["development-tools"]
+
+[workspace.dependencies]
+toon-lsp = { version = "0.6", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+thiserror = "2"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Pedantic enforced project-wide (CI: `clippy --all-features -- -D warnings`).
+# Allow-list below is deliberately minimal: high-noise or API-driven lints only.
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+default_trait_access = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+doc_markdown = "allow"
+uninlined_format_args = "allow"
+too_many_lines = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
