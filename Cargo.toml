@@ -22,11 +22,33 @@ clap = { version = "4", features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+unused_must_use = "deny"
 
 [workspace.lints.clippy]
 # Pedantic enforced project-wide (CI: `clippy --all-features -- -D warnings`).
 # Allow-list below is deliberately minimal: high-noise or API-driven lints only.
 pedantic = { level = "warn", priority = -1 }
+# Constitution Principle I (Fail-Safe Passthrough, NON-NEGOTIABLE): no unwrap/expect/
+# panic on the conversion hot path or hook binary entrypoint. These are opt-in
+# "restriction" lints (not part of pedantic), so they must be enabled explicitly here
+# to actually be enforced by `clippy --all-features -- -D warnings`, rather than relying
+# on manual review as the only guard. A rare, deliberate CLI-only exception should use a
+# scoped `#[allow(clippy::expect_used)]` with a comment, not a workspace-wide loosening.
+# This block mirrors the personal engineering standard already applied to the
+# vetanvil-backend and polymoney workspaces (their Decimal/HFT-specific lints are
+# deliberately NOT carried over — not relevant to a CLI/library conversion tool).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+get_unwrap = "deny"
+indexing_slicing = "deny"          # tooned parses untrusted external bytes by design; OOB indexing must be an explicit Result, not a panic
+clone_on_ref_ptr = "deny"
+redundant_clone = "deny"
+manual_assert = "deny"
+disallowed_methods = "deny"        # see clippy.toml: bans Option/Result::unwrap_or(_default) silent-default patterns
 must_use_candidate = "allow"
 default_trait_access = "allow"
 missing_errors_doc = "allow"
