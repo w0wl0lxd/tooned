@@ -524,9 +524,7 @@ pub fn run(args: &HookArgs) {
                 }
             }
             None => {
-                eprintln!(
-                    "tooned hook uninstall: specify exactly one of --claude-code or --codex"
-                );
+                eprintln!("tooned hook uninstall: specify exactly one of --claude-code or --codex");
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },
