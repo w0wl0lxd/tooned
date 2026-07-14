@@ -18,6 +18,23 @@ const IGNORE_ENTRY: &str = ".tooned/";
 /// the entry.
 pub fn ensure_ignored(project_root: &Path) -> Result<(), IndexError> {
     let gitignore_path = project_root.join(".gitignore");
+
+    // Refuse to follow a symlink at the `.gitignore` path: `project_root`
+    // can come from an unrestricted, client-supplied path (MCP
+    // `tooned_index_build`), so a pre-placed `.gitignore` symlink must not
+    // let `std::fs::write` below silently clobber an arbitrary file the
+    // process happens to have write access to. `symlink_metadata` (unlike
+    // `metadata`) never follows the link itself, so this check is safe even
+    // when the link target doesn't exist or isn't readable.
+    if let Ok(meta) = std::fs::symlink_metadata(&gitignore_path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(IndexError::Io(std::io::Error::other(format!(
+            "refusing to write through a symlinked .gitignore at {}",
+            gitignore_path.display()
+        ))));
+    }
+
     let existing = match std::fs::read_to_string(&gitignore_path) {
         Ok(contents) => contents,
         // Absent `.gitignore` is the normal, expected case (first index
@@ -62,5 +79,22 @@ mod tests {
         assert!(already_covers_tooned("target/\n.tooned/\nnode_modules/\n"));
         assert!(!already_covers_tooned("target/\n"));
         assert!(!already_covers_tooned(""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_write_through_a_symlinked_gitignore() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let real_target = dir.path().join("real-secret-file");
+        std::fs::write(&real_target, "do not touch\n").expect("write real target");
+
+        let gitignore_path = dir.path().join(".gitignore");
+        std::os::unix::fs::symlink(&real_target, &gitignore_path).expect("create symlink");
+
+        let result = ensure_ignored(dir.path());
+        assert!(result.is_err(), "must refuse a symlinked .gitignore, got {result:?}");
+
+        let unchanged = std::fs::read_to_string(&real_target).expect("read real target");
+        assert_eq!(unchanged, "do not touch\n", "the symlink target must be left untouched");
     }
 }

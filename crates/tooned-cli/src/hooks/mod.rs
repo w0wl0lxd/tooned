@@ -95,6 +95,25 @@ const EXIT_BINARY_NOT_ON_PATH: i32 = 4;
 pub(crate) const CLAUDE_CODE_MATCHER: &str = "Bash|Read|Grep|WebFetch|^mcp__";
 pub(crate) const CODEX_MATCHER: &str = "Bash";
 
+/// Upper bound on how many raw stdin bytes a `hook run` invocation will ever
+/// buffer, applied *before* any JSON parsing happens. This sits directly in
+/// an agent's tool-call path (Claude Code/Codex CLI serialize the wrapped
+/// tool's entire result -- which can be multi-GB for e.g. `cat` on a huge
+/// file, or a large `WebFetch`/`mcp__*` result -- straight onto this
+/// process's stdin), so an unbounded `read_to_end` here can OOM or badly
+/// stall the hook well before `ConversionOptions::default().max_input_bytes`
+/// (2 MiB) is ever consulted downstream.
+///
+/// Deliberately larger than that 2 MiB cap (not equal to it): the raw stdin
+/// payload also carries the JSON envelope (`hook_event_name`, `tool_name`,
+/// `tool_input`, etc.) plus `\"`/`\\`-escaping overhead for whatever
+/// `tool_output`/`tool_response` text it wraps, so a legitimately
+/// convertible-sized tool result can be noticeably larger on the wire than
+/// its decoded form. 8x the default cap plus a fixed envelope allowance
+/// comfortably covers that overhead while still bounding a multi-GB input to
+/// a fixed, small amount of memory.
+pub(crate) const MAX_HOOK_STDIN_BYTES: u64 = 8 * 2 * 1024 * 1024 + 64 * 1024;
+
 /// Errors that can occur while installing a hook. Never surfaces as a panic;
 /// `hooks::run` maps this to a clear stderr message and the exit code
 /// `contracts/cli.md` documents (4 for `BinaryNotOnPath`, 1 otherwise).

@@ -64,7 +64,19 @@ pub fn index_exists(project_root: &Path) -> bool {
 /// ensures the schema (all four tables + the `meta` bootstrap rows) is
 /// present. Safe to call repeatedly -- table creation and the `meta`
 /// bootstrap are both idempotent.
-pub fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
+///
+/// Crate-private: `Connection`/`open_index` are deliberately never
+/// re-exported from the crate root (`lib.rs`). The intended public surface
+/// of this crate is the high-level `scan_full`/`sync`/`status`/`show_file`/
+/// `stats` API; leaking a raw `rusqlite::Connection` (a third-party
+/// dependency type, pinned to its exact version) alongside that would tempt
+/// future callers to run ad hoc SQL against the internal schema instead of
+/// extending the intended API -- the "parallel implementation" pattern
+/// constitution Principle V forbids for `tooned-core`, and the same
+/// concern applies here. It would also make any future change to how the
+/// DB is opened/pooled (or a swap away from `rusqlite` entirely) a breaking
+/// public-API change for this crate rather than an internal detail.
+pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
     let db_path = index_db_path(project_root);
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -81,7 +93,7 @@ pub fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
 /// Creates every table (`meta`/`files`/`shapes`/`conversions`) if it
 /// doesn't already exist, and bootstraps `meta.schema_version` /
 /// `meta.created_at`. Idempotent: safe to call on every `open_index`.
-pub fn create_schema(conn: &Connection) -> Result<(), IndexError> {
+pub(crate) fn create_schema(conn: &Connection) -> Result<(), IndexError> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS meta (
@@ -169,4 +181,118 @@ pub(crate) fn file_mtime_unix(meta: &std::fs::Metadata) -> i64 {
 #[allow(clippy::cast_possible_wrap)]
 pub(crate) fn saturating_i64(n: u64) -> i64 {
     if n > i64::MAX as u64 { i64::MAX } else { n as i64 }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for SQLite schema creation (T049).
+    //! `meta`/`files`/`shapes`/`conversions` per data-model.md's "Project
+    //! Index" section. Kept as an in-crate unit test module (rather than an
+    //! external `tests/schema.rs` integration test) specifically because
+    //! `open_index`/`Connection` are crate-private (finding: this crate must
+    //! not leak `rusqlite::Connection` as part of its public API) -- only
+    //! code inside the crate can exercise them directly.
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn table_names(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+        let mut stmt =
+            conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")?;
+        stmt.query_map([], |row| row.get::<_, String>(0))?.collect()
+    }
+
+    #[test]
+    fn open_index_creates_all_four_tables() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+        let tables = table_names(&conn).expect("table_names");
+        for expected in ["meta", "files", "shapes", "conversions"] {
+            assert!(
+                tables.iter().any(|t| t == expected),
+                "missing table {expected}, have {tables:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn open_index_bootstraps_schema_version_in_meta() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+        let version: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |row| row.get(0))
+            .expect("schema_version row present");
+        assert!(!version.is_empty());
+    }
+
+    #[test]
+    fn open_index_bootstraps_created_at_in_meta() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+        let created_at: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'created_at'", [], |row| row.get(0))
+            .expect("created_at row present");
+        assert!(!created_at.is_empty());
+    }
+
+    #[test]
+    fn reopening_the_index_does_not_duplicate_or_reset_meta_bootstrap() {
+        let dir = tempdir().expect("tempdir");
+        {
+            let conn = open_index(dir.path()).expect("open index (first time)");
+            conn.execute("INSERT INTO meta (key, value) VALUES ('marker', 'present')", [])
+                .expect("insert marker row");
+        }
+        // Re-opening (as `scan`/`sync`/`status` all do) must not wipe
+        // existing `meta` rows, and `CREATE TABLE IF NOT EXISTS` +
+        // `INSERT OR IGNORE` bootstrap must be safely idempotent.
+        let conn = open_index(dir.path()).expect("open index (second time)");
+        let marker: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'marker'", [], |row| row.get(0))
+            .expect("marker row survives reopen");
+        assert_eq!(marker, "present");
+
+        let version_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM meta WHERE key = 'schema_version'", [], |row| {
+                row.get(0)
+            })
+            .expect("count schema_version rows");
+        assert_eq!(version_count, 1, "schema_version must not be duplicated on reopen");
+    }
+
+    #[test]
+    fn foreign_keys_cascade_from_files_to_shapes_and_conversions() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+
+        conn.execute(
+            "INSERT INTO files (path, size_bytes, mtime_unix, content_hash, doc_type, scanned_at)
+             VALUES ('a.json', 10, 100, 'deadbeef', 'json', 100)",
+            [],
+        )
+        .expect("insert file row");
+        conn.execute(
+            "INSERT INTO shapes (path, json_pointer, shape_class, uniformity_pct, sampled_count)
+             VALUES ('a.json', '', 'uniform', 1.0, 3)",
+            [],
+        )
+        .expect("insert shape row");
+        conn.execute(
+            "INSERT INTO conversions (path, json_pointer, json_bytes, toon_bytes, savings_pct, cached_toon_text, computed_at)
+             VALUES ('a.json', '', 100, 50, 50.0, NULL, 100)",
+            [],
+        )
+        .expect("insert conversion row");
+
+        conn.execute("DELETE FROM files WHERE path = 'a.json'", []).expect("delete file row");
+
+        let shape_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM shapes", [], |row| row.get(0))
+            .expect("count shapes");
+        let conversion_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM conversions", [], |row| row.get(0))
+            .expect("count conversions");
+        assert_eq!(shape_count, 0, "shapes row must cascade-delete with its file");
+        assert_eq!(conversion_count, 0, "conversions row must cascade-delete with its file");
+    }
 }
