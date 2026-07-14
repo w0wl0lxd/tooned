@@ -205,16 +205,37 @@ Stable Rust is the required toolchain and the hard CI/release gate; nightly
 runs as a non-blocking canary. `unwrap`/`expect`/`panic!`/`todo!` are denied
 workspace-wide — see [`Cargo.toml`](Cargo.toml) and [`clippy.toml`](clippy.toml).
 
+With [Nix](https://nixos.org) and [direnv](https://direnv.net) installed,
+`direnv allow` in the repo root gets you a shell with
+[`mise`](https://mise.jdx.dev) and `rustup` on `PATH`, `cargo-nextest`/
+`cargo-deny`/`cargo-audit` installed via mise, and `rustup` reading
+`rust-toolchain.toml` for the Rust version — one command, nothing installed
+outside the Nix store. `nix develop` works the same way without direnv.
+`rust-toolchain.toml` stays the single source of truth for the Rust version
+either way; `flake.nix` and `.mise.toml` both defer to it rather than pinning
+their own.
+
 Contribution guidelines, DCO sign-off, and commit conventions are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-v1 is being built through a spec-driven pipeline — the actual spec, plan,
-and task breakdown live in
+v1's feature set is implemented, not a scaffold: adaptive JSON/NDJSON/
+YAML/TOML/CSV/TSV conversion; the Claude Code and Codex CLI hooks
+(install/uninstall/status/doctor, idempotent and safe alongside another
+tool's hook entries); the standalone `convert`/`check`/`pipe`/`wrap` CLI;
+the `.tooned/` project index (`index`/`index sync`/`stats`); and an
+agent-agnostic MCP server (`tooned_convert`/`tooned_detect`/
+`tooned_decode`/`tooned_index_build`/`tooned_index_refresh`/
+`tooned_stats`) built on `rmcp`. The two safety invariants — round-trip
+fidelity and never-a-regression — are covered by `proptest` property tests
+across every supported doctype, alongside a no-panic property test over
+adversarial input and a latency guardrail for the hot conversion path.
+
+It is not yet published to crates.io or tagged as a release — see
 [`specs/001-adaptive-toon-conversion/`](specs/001-adaptive-toon-conversion/)
-and are the source of truth over this README if the two ever disagree.
-Nothing here is published to crates.io yet.
+for the spec/plan/task breakdown this was built from, which remains the
+source of truth over this README if the two ever disagree.
 
 XML input support is deliberately out of scope for v1 — tracked as
 [issue #1](https://github.com/w0wl0lxd/tooned/issues/1) for v2.
