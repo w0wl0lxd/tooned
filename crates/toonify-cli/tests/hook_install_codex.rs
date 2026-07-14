@@ -67,9 +67,18 @@ fn install_writes_plugin_bundle_with_bash_matcher_and_prints_trust_review_instru
         .and_then(|h| h.get("command"))
         .and_then(serde_json::Value::as_str)
         .expect("hooks[0].command string present");
+    // Suffix-only match (no "tooned" prefix): on Windows the resolved
+    // binary is an absolute path ending in `tooned.exe`, so a literal
+    // "tooned hook run --..." suffix never matches there. This mirrors
+    // the exact suffix (`hooks::CODEX_COMMAND_SUFFIX`) the installer
+    // itself uses for idempotency/uninstall detection.
     assert!(
-        command.ends_with("tooned hook run --codex"),
+        command.ends_with("hook run --codex"),
         "command must invoke `hook run --codex`, got {command:?}"
+    );
+    assert!(
+        command.to_ascii_lowercase().contains("tooned"),
+        "command must invoke the tooned binary, got {command:?}"
     );
 }
 
