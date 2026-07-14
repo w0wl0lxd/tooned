@@ -6,7 +6,7 @@ on:
       - "v[0-9]+.*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -80,6 +80,8 @@ jobs:
     name: Attach binaries to GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
