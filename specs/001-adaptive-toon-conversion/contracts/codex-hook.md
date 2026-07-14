@@ -22,19 +22,42 @@ live schema, not re-guessed here):
 }
 ```
 
-`hooks/hooks.json`:
+`hooks/hooks.json` (nested exactly like Claude Code's `hooks.json` shape — verified
+against learn.chatgpt.com/docs/hooks; a flat `"command"` field directly on the matcher
+entry, as an earlier draft of this sketch showed, is NOT the real schema and Codex CLI
+will fail to load an entry shaped that way):
 ```json
 {
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Bash",
-        "command": "/absolute/path/to/tooned hook run --codex"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/tooned hook run --codex"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+## I/O contract (verified against openai/codex `codex-rs/hooks/src/events/post_tool_use.rs`
+and `output_parser::parse_post_tool_use()` — NOT the same shape as Claude Code's hook)
+
+- **stdin**: the tool's raw result text is carried in a field named `tool_response` (NOT
+  `tool_output` — that is Claude Code's field name only).
+- **stdout**: Codex's output parser recognizes only `continue`/`decision`/`reason`/
+  `stopReason` and `hookSpecificOutput.{hookEventName, additionalContext,
+  updatedMCPToolOutput}` (`updatedMCPToolOutput` is explicitly documented as
+  unsupported). There is no `updatedToolOutput` field in Codex's schema — unlike Claude
+  Code, Codex has no mechanism to replace a regular tool's output in place. When tooned
+  has a smaller TOON encoding to offer, it is surfaced via
+  `hookSpecificOutput.additionalContext` (supplemental context alongside the original
+  output) rather than a replacement, since that is the only field Codex's parser actually
+  honors for this purpose.
 
 ## Trust review requirement
 
