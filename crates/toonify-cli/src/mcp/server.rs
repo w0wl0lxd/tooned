@@ -14,6 +14,14 @@
 // local span to fix. Module-scoped rather than a single-item `#[allow]`
 // since the lint attaches to the macro-generated impl block, not to the
 // `impl ToonedMcpServer` item the attribute is literally written on.
+// `unknown_lints` guards this across toolchains/clippy versions where
+// `unused_async_trait_impl` isn't a registered lint at all -- without it,
+// `-D warnings` turns "unknown lint" itself into a hard compile error on
+// any environment that doesn't happen to have this lint (observed: it
+// fired locally but was rejected as unknown by CI's identically-versioned
+// clippy, most likely due to a stale sccache/kache-cached diagnostic
+// locally rather than a genuine version difference).
+#![allow(unknown_lints)]
 #![allow(clippy::unused_async_trait_impl)]
 
 use std::path::PathBuf;
