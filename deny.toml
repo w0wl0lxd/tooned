@@ -1,0 +1,64 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Database of known vulnerabilities
+db-path = "~/.cargo/advisory-db"
+ignore = []
+
+[licenses]
+# List of allowed licenses
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "ISC",
+  "MPL-2.0",
+  "Unlicense",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+# Allow AGPL-3.0 for the project's own AGPL-licensed crates
+exceptions = [
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "toon-lsp" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-core" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-index" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-cli" },
+]
+
+[bans]
+# Lint level for multiple versions of same crate
+multiple-versions = "warn"
+# Lint level for wildcard dependencies
+wildcards = "deny"
+# Explicit bans, not merely advisory-db ignores, so a future transitive bump
+# can't silently reintroduce these.
+deny = [
+  { crate = "bincode", reason = "RUSTSEC-2025-0141; superseded by postcard where a binary format is needed" },
+  { crate = "yaml-rust", reason = "RUSTSEC-2024-0320 (unmaintained); use serde_yaml instead" },
+]
+# Allow specific duplicates that are common in the ecosystem
+skip = [
+  { crate = "bitflags@1", reason = "transitive dependency version splits are normal" },
+  { crate = "windows-sys", reason = "platform crate version splits" },
+]
+
+[sources]
+# Only allow crates from crates.io
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

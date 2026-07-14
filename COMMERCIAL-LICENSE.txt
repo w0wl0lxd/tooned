@@ -1,0 +1,149 @@
+TOONED COMMERCIAL LICENSE AGREEMENT
+Version 1.0
+
+This Commercial License Agreement ("Agreement") is a legal agreement between
+w0wl0lxd ("Licensor") and the individual or entity specified in the purchase
+receipt ("Licensee") for the software product "tooned" ("Software").
+
+By purchasing, downloading, or using the Software under this Commercial License,
+Licensee agrees to be bound by the terms of this Agreement. This Agreement
+supersedes the terms of the AGPL-3.0-only license for the Licensee.
+
+1. DEFINITIONS
+
+   1.1 "Software" means the source code, object code, and associated
+       documentation of the "tooned" Rust workspace (including its
+       tooned-core, tooned-index, and tooned-cli crates) provided by
+       Licensor.
+
+   1.2 "License Type" means the specific tier (Standard, Team, or Enterprise)
+       purchased by Licensee as indicated on the Order/Receipt.
+
+   1.3 "Licensee Product" means a proprietary application, tool, or service
+       developed by Licensee that statically links, embeds, or otherwise
+       incorporates the Software.
+
+   1.4 "Major Version" means the version of the Software denoted by the first
+       number in the version string (e.g., v1.x.x).
+
+   1.5 "Subscription Term" means the one-year period beginning on the date
+       of purchase or renewal of an Enterprise license.
+
+2. LICENSE GRANT
+
+   Subject to full payment of the applicable fees, Licensor grants Licensee a
+   non-exclusive, non-transferable, worldwide right to use, modify, and
+   incorporate the Software into Licensee Products, exempt from the copyleft
+   provisions of the AGPL-3.0 license.
+
+   2.1 For "Standard" Tier ($99, Perpetual):
+       - Licensed to a single developer
+       - Perpetual for the purchased Major Version (e.g., v1.0 through v1.99)
+       - Includes all minor updates and bug fixes within that Major Version
+
+   2.2 For "Team" Tier ($399, Perpetual):
+       - Licensed to up to 10 developers within the same organization
+       - Perpetual for the purchased Major Version
+       - Includes all minor updates and bug fixes within that Major Version
+
+   2.3 For "Enterprise" Tier ($999/year, Subscription):
+       - Licensed to unlimited developers within the same organization
+       - Valid only during the active Subscription Term
+       - Includes access to all versions released during the Subscription Term
+       - Includes priority email support
+
+3. PERMITTED USES
+
+   3.1 Embedding and Linking: Licensee may statically link, embed, or include
+       the Software in Licensee Products.
+
+   3.2 Modification: Licensee may modify the Software source code for internal
+       use or integration purposes.
+
+   3.3 Redistribution: Licensee may distribute the Software ONLY as a compiled,
+       integral part of the Licensee Product. Licensee is NOT required to
+       disclose modifications or source code of the Software or the Licensee
+       Product.
+
+4. RESTRICTIONS
+
+   4.1 No Standalone Resale: Licensee may not redistribute the Software as a
+       standalone library, crate, SDK, CLI, or competing development tool. The
+       Software must be embedded within a distinct value-added application.
+
+   4.2 No Sublicensing: Licensee may not sublicense, rent, or lease the
+       Software rights to third parties, except as embedded in the final
+       Licensee Product.
+
+   4.3 Developer Limits: The number of developers using the Software must not
+       exceed the limits specified by the License Type purchased.
+
+   4.4 Verification: Licensor reserves the right to request reasonable proof
+       of purchase (Order ID) to verify license compliance.
+
+5. WARRANTY DISCLAIMER
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. THE ENTIRE RISK AS TO
+   THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH LICENSEE.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE.
+
+   IN NO EVENT SHALL LICENSOR'S TOTAL LIABILITY EXCEED THE AMOUNT ACTUALLY
+   PAID BY LICENSEE FOR THE SOFTWARE DURING THE TWELVE (12) MONTHS PRIOR TO
+   THE EVENT GIVING RISE TO THE CLAIM.
+
+7. SUPPORT
+
+   7.1 Standard & Team Tiers: Purchase includes access to bug fixes and minor
+       updates for the purchased Major Version. Community support via GitHub
+       Discussions. No dedicated technical support is provided.
+
+   7.2 Enterprise Tier: Includes Priority Support via email (w0wl0lxd@tuta.com)
+       with reasonable response times for integration issues and critical bugs
+       during the active Subscription Term.
+
+8. TERM AND TERMINATION
+
+   8.1 This Agreement is effective until terminated.
+
+   8.2 Licensor may terminate this Agreement immediately if Licensee breaches
+       any term hereof (including non-payment for Enterprise subscriptions).
+
+   8.3 Upon termination of an Enterprise subscription:
+       (a) Licensee must cease using the Software for new development.
+       (b) Licensee Products already distributed to end-users containing the
+           Software may continue to function and be distributed, but no new
+           versions may be built using the Software.
+
+   8.4 Perpetual licenses (Standard and Team) do not expire, provided Licensee
+       remains in compliance with this Agreement.
+
+9. GENERAL PROVISIONS
+
+   9.1 Entire Agreement: This Agreement constitutes the entire understanding
+       between the parties regarding the subject matter hereof.
+
+   9.2 Severability: If any provision is found unenforceable, the remaining
+       provisions remain in full force and effect.
+
+   9.3 Assignment: Licensee may not assign this Agreement without prior written
+       consent from Licensor, except in connection with a merger or acquisition.
+
+   9.4 Governing Law: This Agreement shall be governed by the laws of the
+       jurisdiction in which Licensor resides, without regard to conflict of
+       laws principles.
+
+   9.5 Amendments: This Agreement may only be modified by a written document
+       signed by both parties.
+
+------------------------------------------------------------------------------
+Contact: w0wl0lxd@tuta.com
+GitHub: https://github.com/w0wl0lxd/tooned/discussions
+
+Copyright (c) 2026 w0wl0lxd. All rights reserved.

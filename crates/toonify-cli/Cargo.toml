@@ -1,0 +1,42 @@
+[package]
+name = "tooned-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "tooned CLI: convert/check/pipe/wrap, the .tooned/ index, agent hook installers, and the MCP server"
+categories.workspace = true
+readme = "../../README.md"
+keywords = ["toon", "cli", "mcp", "ai-agent", "llm"]
+
+[[bin]]
+name = "tooned"
+path = "src/main.rs"
+
+[dependencies]
+tooned-core = { path = "../tooned-core", version = "0.1.0" }
+tooned-index = { path = "../tooned-index", version = "0.1.0" }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rmcp = { version = "2", features = ["transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+criterion = "0.5"
+tempfile = "3"
+proptest = "1.4"
+
+[[bench]]
+name = "hot_path"
+harness = false
+
+[lints]
+workspace = true
