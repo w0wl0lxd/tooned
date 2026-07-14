@@ -33,6 +33,15 @@
             pkgs.mise
             pkgs.rustup
             pkgs.pkg-config
+            # Build cache: opt in via `.cargo/config.toml`'s `rustc-wrapper =
+            # "sccache"` (see .cargo/config.toml.example). Declared here so
+            # `nix develop` alone is enough -- no separate install step.
+            # Deliberately NOT wiring RUSTC_WRAPPER on by default: that's a
+            # per-contributor choice, and CI doesn't need it for a 3-crate
+            # workspace. (Personal machines may layer a faster wrapper, e.g.
+            # kache, in front of sccache via their own global env -- that's
+            # user-level config, out of scope for this repo.)
+            pkgs.sccache
           ];
 
           shellHook = ''
