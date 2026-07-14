@@ -13,6 +13,31 @@ use crate::IndexError;
 use crate::gitignore;
 use crate::schema::{self, file_mtime_unix, now_unix, saturating_i64};
 
+/// Hard cap on how many directory-walk entries a single `scan_full`/`sync`
+/// run will ever visit, checked as the walker yields each entry (before any
+/// per-file work happens). `path`/`project_root` is either human-typed (CLI
+/// `tooned index`) or, via the MCP `tooned_index_build`/`tooned_index_
+/// refresh`/`tooned_stats` tools, unrestricted and client-supplied with no
+/// other validation -- an agent acting on attacker-influenced content could
+/// point it at something far larger than a real project (a home directory,
+/// say). Well above any real project's file count (the perf test suite
+/// already exercises a full scan+sync cycle over 1,200 files end-to-end),
+/// but still small enough to bound a single walk's resource cost rather
+/// than leaving it fully unbounded.
+const MAX_SCAN_ENTRIES: usize = 50_000;
+
+/// Returns `Err(IndexError::ScanTooLarge)` once `visited` exceeds
+/// [`MAX_SCAN_ENTRIES`]. Callers check this on every entry the walker
+/// yields (not just ones that turn out to be regular files), so the cap
+/// bounds the raw enumeration cost too, not only the count of files
+/// actually persisted.
+pub(crate) fn enforce_walk_cap(visited: usize) -> Result<(), IndexError> {
+    if visited > MAX_SCAN_ENTRIES {
+        return Err(IndexError::ScanTooLarge(MAX_SCAN_ENTRIES));
+    }
+    Ok(())
+}
+
 /// Result of a full [`scan_full`] run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ScanSummary {
@@ -48,7 +73,11 @@ pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
     // too).
     let tx = conn.transaction()?;
 
+    let mut visited: usize = 0;
     for entry in build_walker(project_root) {
+        visited += 1;
+        enforce_walk_cap(visited)?;
+
         let Ok(entry) = entry else { continue };
         let Some(file_type) = entry.file_type() else { continue };
         if !file_type.is_file() {

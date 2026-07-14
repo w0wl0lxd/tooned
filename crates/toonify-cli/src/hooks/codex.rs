@@ -16,21 +16,33 @@ use super::InstallError;
 /// (constitution Technology Constraints).
 const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// Runs the `PostToolUse` hook against stdin with an internal watchdog:
-/// the actual conversion work runs on a worker thread, and this function
-/// returns (printing nothing further) as soon as either the worker finishes
-/// or `WATCHDOG_TIMEOUT` elapses, whichever comes first. The caller
-/// (`hooks::run`) always exits 0 for `hook run` immediately afterwards, so a
-/// worker thread that is still running at that point is simply abandoned
-/// (terminated by the process exit) rather than blocking the hook.
+/// Runs the `PostToolUse` hook against stdin with an internal watchdog: the
+/// stdin read AND the actual conversion work both run on a worker thread,
+/// and this function returns (printing nothing further) as soon as either
+/// the worker finishes or `WATCHDOG_TIMEOUT` elapses, whichever comes first.
+/// The caller (`hooks::run`) always exits 0 for `hook run` immediately
+/// afterwards, so a worker thread that is still running at that point is
+/// simply abandoned (terminated by the process exit) rather than blocking
+/// the hook.
+///
+/// The stdin read deliberately happens *inside* the watchdog-guarded worker
+/// (not on the main thread before it's spawned): a slow or backpressured
+/// producer on the other end of this hook's stdin could otherwise block
+/// `read_to_end` indefinitely before `WATCHDOG_TIMEOUT` ever has a chance to
+/// fire, defeating the one guarantee this module exists to provide (Codex
+/// CLI does not itself guarantee fail-open on a hung hook process). The read
+/// is also bounded (`super::MAX_HOOK_STDIN_BYTES`) so a very large tool
+/// result is never fully materialized in memory either.
 pub fn run_hook() {
-    let mut buf = Vec::new();
-    if std::io::stdin().read_to_end(&mut buf).is_err() {
-        return;
-    }
-
     let (tx, rx) = std::sync::mpsc::channel();
     let _worker = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read_result = std::io::stdin().take(super::MAX_HOOK_STDIN_BYTES).read_to_end(&mut buf);
+        if read_result.is_err() {
+            let _ = tx.send(None);
+            return;
+        }
+
         // Test-only stall injection so the watchdog bound itself can be
         // exercised end-to-end without depending on tooned-core (which is
         // deliberately fast, and therefore hard to stall legitimately) --
