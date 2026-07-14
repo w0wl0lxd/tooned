@@ -212,16 +212,11 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
 }
 
 /// Returns the first column name that appears more than once in `headers`,
-/// or `None` if every header is unique. `O(n^2)` in the column count, which
-/// is fine -- real-world delimited files have at most a few hundred
-/// columns, never enough for this to matter.
+/// or `None` if every header is unique. `O(n)` in the column count via a
+/// `HashSet` scan.
 fn first_duplicate_header(headers: &csv::StringRecord) -> Option<&str> {
-    for (i, candidate) in headers.iter().enumerate() {
-        if headers.iter().take(i).any(|seen| seen == candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    let mut seen = std::collections::HashSet::with_capacity(headers.len());
+    headers.into_iter().find(|candidate| !seen.insert(*candidate))
 }
 
 #[cfg(test)]
