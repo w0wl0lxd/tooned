@@ -14,8 +14,14 @@ use super::{InstallError, Scope};
 /// Claude Code's own platform-level fail-open guarantee plus tooned's own
 /// independent no-panic guarantee (constitution Principle I).
 pub fn run_hook() {
+    // Bounded read: this sits directly in an agent's tool-call path, and the
+    // wrapped tool's output can be arbitrarily large (see
+    // `super::MAX_HOOK_STDIN_BYTES`'s doc comment) -- an unbounded
+    // `read_to_end` here would fully materialize a multi-GB payload before
+    // `ConversionOptions::max_input_bytes` is ever consulted downstream.
     let mut buf = Vec::new();
-    if std::io::stdin().read_to_end(&mut buf).is_err() {
+    let read_result = std::io::stdin().take(super::MAX_HOOK_STDIN_BYTES).read_to_end(&mut buf);
+    if read_result.is_err() {
         return;
     }
 

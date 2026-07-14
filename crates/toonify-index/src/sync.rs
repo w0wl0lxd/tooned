@@ -9,8 +9,8 @@ use tooned_core::ConversionOptions;
 
 use crate::IndexError;
 use crate::scan::{
-    build_walker, hash_file_streaming, is_tooned_internal, persist_oversized_file,
-    persist_scanned_file,
+    build_walker, enforce_walk_cap, hash_file_streaming, is_tooned_internal,
+    persist_oversized_file, persist_scanned_file,
 };
 use crate::schema::{self, file_mtime_unix, now_unix};
 
@@ -49,7 +49,11 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
     // sync, not one implicit auto-commit transaction per touched row.
     let tx = conn.transaction()?;
 
+    let mut visited: usize = 0;
     for entry in build_walker(project_root) {
+        visited += 1;
+        enforce_walk_cap(visited)?;
+
         let Ok(entry) = entry else { continue };
         let Some(file_type) = entry.file_type() else { continue };
         if !file_type.is_file() {
