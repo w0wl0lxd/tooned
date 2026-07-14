@@ -50,7 +50,7 @@ fn tooned_convert_converts_uniform_array_and_reports_savings() {
     let text = field(structured, "text").as_str().expect("text field");
     assert!(text.len() < content.len());
     let report = field(structured, "report");
-    assert_eq!(field(report, "doc_type"), &json!("Json"));
+    assert_eq!(field(report, "doc_type"), &json!("json"));
     let toon_bytes = field(report, "toon_bytes").as_u64().expect("toon_bytes");
     let json_bytes = field(report, "json_bytes").as_u64().expect("json_bytes");
     assert!(toon_bytes < json_bytes);
@@ -67,6 +67,11 @@ fn tooned_convert_passes_through_non_structured_content_unchanged() {
     assert_eq!(field(structured, "converted"), &json!(false));
     assert_eq!(field(structured, "text"), &json!(content));
     assert_eq!(structured.get("report"), Some(&Value::Null));
+    // Regression: a passthrough result must surface *why* it declined to
+    // convert (finding: this used to be silently discarded, forcing a
+    // second `tooned_detect` call to find out).
+    let reason = field(structured, "reason");
+    assert_eq!(field(reason, "kind"), &json!("not_structured_data"));
 }
 
 #[test]
@@ -77,9 +82,9 @@ fn tooned_detect_reports_shape_without_performing_conversion() {
     let response = client.call_tool("tooned_detect", &json!({ "content": content }));
     let result = field(&response, "result");
     let structured = field(result, "structuredContent");
-    assert_eq!(field(structured, "doc_type"), &json!("Json"));
-    let shape = field(structured, "shape").as_str().expect("shape");
-    assert!(shape.contains("UniformArrayOfObjects"));
+    assert_eq!(field(structured, "doc_type"), &json!("json"));
+    let shape = field(structured, "shape");
+    assert_eq!(field(shape, "kind"), &json!("uniform_array_of_objects"));
     assert_eq!(field(structured, "would_convert"), &json!(true));
     // tooned_detect never performs the conversion -- no TOON text anywhere
     // in the structured output (contract: "no conversion performed").

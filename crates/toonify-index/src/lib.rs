@@ -12,11 +12,8 @@ mod sync;
 
 use std::path::{Path, PathBuf};
 
-pub use rusqlite::Connection;
 pub use scan::{ScanSummary, scan_full};
-pub use schema::{
-    ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists, open_index,
-};
+pub use schema::{ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists};
 pub use sync::{SyncSummary, sync};
 
 #[derive(Debug, thiserror::Error)]
@@ -29,6 +26,12 @@ pub enum IndexError {
     NoIndex(PathBuf),
     #[error("file not indexed: {0}")]
     FileNotIndexed(String),
+    #[error(
+        "directory walk exceeds the safety limit of {0} entries; refusing to continue scanning \
+         (this guards against pointing the scanner at an unexpectedly large directory tree, e.g. \
+         a home directory rather than a project root)"
+    )]
+    ScanTooLarge(usize),
 }
 
 /// `tooned index status` report: whether an index exists, how many files

@@ -112,3 +112,29 @@ fn check_missing_file_still_exits_0_per_contract() {
         .success()
         .stdout(predicate::str::contains("convertible: no"));
 }
+
+#[test]
+fn check_format_hint_overrides_ambiguous_content_sniffing() {
+    // A single-line, single-row delimited file has no second line for
+    // `sniff_delimited` to confirm a consistent comma count against, so
+    // content-sniffing alone reports it as an unrecognized doc type -- this
+    // is exactly the CLI-side gap the finding calls out (MCP's
+    // `format_hint` could already force this; the CLI had no equivalent
+    // flag at all).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = write_fixture(&dir, "ambiguous.txt", "1,2,3");
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["check", path.to_str().expect("utf8 path")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("doc type: unknown"));
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["check", path.to_str().expect("utf8 path"), "--format-hint", "csv"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("doc type: Csv"));
+}

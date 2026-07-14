@@ -22,7 +22,10 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{Json, ServiceExt, schemars, tool, tool_router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tooned_core::{Conversion, ConversionOptions, ConversionReport, DocType, InspectReport};
+use tooned_core::{
+    Conversion, ConversionOptions, ConversionReport, DocType, InspectReport, PassthroughReason,
+    ShapeClass,
+};
 
 /// Maps an MCP `format_hint` string onto `tooned_core::DocType`. Any
 /// unrecognized hint is treated as "no hint" (falls back to content
@@ -41,6 +44,73 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
     }
 }
 
+/// Resolves and validates a client-supplied `path` for the three
+/// filesystem-touching MCP tools below (`tooned_index_build`,
+/// `tooned_index_refresh`, `tooned_stats`), which otherwise take `path`
+/// with no validation, allow-list, or sandboxing at all -- driving a
+/// recursive directory walk (content-hashing every reachable file, per
+/// `tooned_index::scan::MAX_SCAN_ENTRIES`'s own bound on the walk's raw
+/// size) plus writes (`.tooned/index.db`, a `.gitignore` append) rooted
+/// wherever it points. Unlike the CLI (typed by a human), an MCP tool call
+/// is typically issued autonomously by the agent -- including in response
+/// to content the agent doesn't fully control (a classic prompt-injection
+/// vector) -- so `path` must not be trusted unconditionally.
+///
+/// A full project-root allow-list isn't viable here without a new
+/// configuration surface (the whole point of these tools is to accept an
+/// arbitrary project directory, which routinely differs from wherever the
+/// server process happens to have been started), so this instead refuses
+/// the single highest-blast-radius case explicitly named in the threat
+/// scenario this guards against: `path` resolving (after canonicalization,
+/// so a symlink or `..` can't disguise it) to the filesystem root or to the
+/// resolved user's exact home directory -- the two roots under which a
+/// full recursive content-hashing walk plus a `.gitignore`/index-db write
+/// would be most damaging. Legitimate project subdirectories (including
+/// ones nested under the home directory, which is the overwhelmingly common
+/// case) are unaffected.
+fn resolve_index_path(raw_path: &str) -> Result<PathBuf, String> {
+    let candidate = PathBuf::from(raw_path);
+    if !candidate.is_dir() {
+        return Err(format!("path not found or not a directory: {raw_path}"));
+    }
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|err| format!("could not resolve path {raw_path:?}: {err}"))?;
+
+    let mut denied_roots: Vec<PathBuf> = Vec::new();
+    // The filesystem root itself (`/`, or a drive root on Windows).
+    if let Some(root) = canonical.ancestors().last() {
+        denied_roots.push(root.to_path_buf());
+    }
+    if let Some(home) = home_dir()
+        && let Ok(canonical_home) = home.canonicalize()
+    {
+        denied_roots.push(canonical_home);
+    }
+
+    if denied_roots.iter().any(|denied| denied == &canonical) {
+        return Err(format!(
+            "refusing to index {raw_path:?}: it resolves to {}, which is the filesystem root or \
+             the user's home directory -- point this tool at a specific project directory \
+             instead",
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical)
+}
+
+fn home_dir() -> Option<PathBuf> {
+    for var in ["HOME", "USERPROFILE"] {
+        if let Some(v) = std::env::var_os(var)
+            && !v.is_empty()
+        {
+            return Some(PathBuf::from(v));
+        }
+    }
+    None
+}
+
 fn build_options(format_hint: Option<&str>, margin_pct: Option<f64>) -> ConversionOptions {
     let margin_pct = match margin_pct {
         Some(m) => m,
@@ -50,6 +120,88 @@ fn build_options(format_hint: Option<&str>, margin_pct: Option<f64>) -> Conversi
         format_hint: parse_doc_type_hint(format_hint),
         margin_pct,
         ..ConversionOptions::default()
+    }
+}
+
+/// Structured mirror of `tooned_core::DocType`, so MCP JSON consumers get
+/// a stable, typed value instead of Rust's `#[derive(Debug)]` formatting
+/// (finding: a `format!("{dt:?}")` string is opaque and silently changes
+/// shape on any future rename/refactor of the underlying enum, with no
+/// version guard).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DocTypeDto {
+    Json,
+    NdJson,
+    Yaml,
+    Toml,
+    Csv,
+    Tsv,
+}
+
+impl From<DocType> for DocTypeDto {
+    fn from(doc_type: DocType) -> Self {
+        match doc_type {
+            DocType::Json => Self::Json,
+            DocType::NdJson => Self::NdJson,
+            DocType::Yaml => Self::Yaml,
+            DocType::Toml => Self::Toml,
+            DocType::Csv => Self::Csv,
+            DocType::Tsv => Self::Tsv,
+        }
+    }
+}
+
+/// Structured mirror of `tooned_core::ShapeClass` (see [`DocTypeDto`]'s
+/// doc comment for why this replaces a Debug-formatted string) --
+/// preserves `uniformity_pct`/`sampled` as real numeric fields rather than
+/// embedding them in an opaque string.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ShapeClassDto {
+    UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
+    Irregular,
+    Scalar,
+}
+
+impl From<ShapeClass> for ShapeClassDto {
+    fn from(shape: ShapeClass) -> Self {
+        match shape {
+            ShapeClass::UniformArrayOfObjects { uniformity_pct, sampled } => {
+                Self::UniformArrayOfObjects { uniformity_pct, sampled }
+            }
+            ShapeClass::Irregular => Self::Irregular,
+            ShapeClass::Scalar => Self::Scalar,
+        }
+    }
+}
+
+/// Structured mirror of `tooned_core::PassthroughReason` (see
+/// [`DocTypeDto`]'s doc comment for why this replaces a Debug-formatted
+/// string) -- preserves `NotSmallerEnough`'s `json_bytes`/`toon_bytes` as
+/// real numeric fields a client can branch/report on directly, rather than
+/// only being recoverable by parsing Rust's Debug text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PassthroughReasonDto {
+    NotStructuredData,
+    ParseFailed,
+    InputTooLarge,
+    NotSmallerEnough { json_bytes: usize, toon_bytes: usize },
+    RoundTripMismatch,
+}
+
+impl From<PassthroughReason> for PassthroughReasonDto {
+    fn from(reason: PassthroughReason) -> Self {
+        match reason {
+            PassthroughReason::NotStructuredData => Self::NotStructuredData,
+            PassthroughReason::ParseFailed => Self::ParseFailed,
+            PassthroughReason::InputTooLarge => Self::InputTooLarge,
+            PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes } => {
+                Self::NotSmallerEnough { json_bytes, toon_bytes }
+            }
+            PassthroughReason::RoundTripMismatch => Self::RoundTripMismatch,
+        }
     }
 }
 
@@ -67,8 +219,8 @@ pub struct ConvertRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ConversionReportDto {
-    pub doc_type: String,
-    pub shape: String,
+    pub doc_type: DocTypeDto,
+    pub shape: ShapeClassDto,
     pub json_bytes: usize,
     pub toon_bytes: usize,
     pub savings_pct: f64,
@@ -77,8 +229,8 @@ pub struct ConversionReportDto {
 impl From<ConversionReport> for ConversionReportDto {
     fn from(report: ConversionReport) -> Self {
         Self {
-            doc_type: format!("{:?}", report.doc_type),
-            shape: format!("{:?}", report.shape),
+            doc_type: report.doc_type.into(),
+            shape: report.shape.into(),
             json_bytes: report.json_bytes,
             toon_bytes: report.toon_bytes,
             savings_pct: report.savings_pct,
@@ -91,6 +243,11 @@ pub struct ConvertResult {
     pub converted: bool,
     pub text: String,
     pub report: Option<ConversionReportDto>,
+    /// Populated whenever `converted` is `false`, so a caller can learn why
+    /// this call declined to convert (`NotStructuredData`/`ParseFailed`/
+    /// `InputTooLarge`/`NotSmallerEnough`/`RoundTripMismatch`) without a
+    /// second `tooned_detect` round-trip on the same content.
+    pub reason: Option<PassthroughReasonDto>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -102,27 +259,27 @@ pub struct DetectRequest {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct DetectResult {
-    pub doc_type: Option<String>,
-    pub shape: String,
+    pub doc_type: Option<DocTypeDto>,
+    pub shape: ShapeClassDto,
     pub input_bytes: usize,
     pub json_bytes: Option<usize>,
     pub toon_bytes: Option<usize>,
     pub savings_pct: Option<f64>,
     pub would_convert: bool,
-    pub reason: Option<String>,
+    pub reason: Option<PassthroughReasonDto>,
 }
 
 impl From<InspectReport> for DetectResult {
     fn from(report: InspectReport) -> Self {
         Self {
-            doc_type: report.doc_type.map(|dt| format!("{dt:?}")),
-            shape: format!("{:?}", report.shape),
+            doc_type: report.doc_type.map(DocTypeDto::from),
+            shape: report.shape.into(),
             input_bytes: report.input_bytes,
             json_bytes: report.json_bytes,
             toon_bytes: report.toon_bytes,
             savings_pct: report.savings_pct,
             would_convert: report.would_convert,
-            reason: report.reason.map(|r| format!("{r:?}")),
+            reason: report.reason.map(PassthroughReasonDto::from),
         }
     }
 }
@@ -198,16 +355,34 @@ impl ToonedMcpServer {
     ) -> Json<ConvertResult> {
         let opts = build_options(req.format_hint.as_deref(), req.margin_pct);
         match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
-            Ok(Conversion::Toon { text, report }) => {
-                Json(ConvertResult { converted: true, text, report: Some(report.into()) })
-            }
+            Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
+                converted: true,
+                text,
+                report: Some(report.into()),
+                reason: None,
+            }),
+            // `attempt()`/`maybe_tooned` already computed exactly why this
+            // declined to convert -- surfaced here rather than discarded, so
+            // a client doesn't need a second `tooned_detect` call just to
+            // find out.
+            Ok(Conversion::Passthrough { reason, .. }) => Json(ConvertResult {
+                converted: false,
+                text: req.content,
+                report: None,
+                reason: Some(reason.into()),
+            }),
             // Infallible in practice (maybe_tooned never Errs for
             // payload-driven input); a genuine caller-misuse Err still
             // falls back to the fail-safe passthrough shape rather than a
-            // protocol-level crash (constitution Principle I).
-            Ok(Conversion::Passthrough { .. }) | Err(_) => {
-                Json(ConvertResult { converted: false, text: req.content, report: None })
-            }
+            // protocol-level crash (constitution Principle I). No specific
+            // `PassthroughReason` applies here (this isn't one), so `reason`
+            // is `None`.
+            Err(_) => Json(ConvertResult {
+                converted: false,
+                text: req.content,
+                report: None,
+                reason: None,
+            }),
         }
     }
 
@@ -239,10 +414,7 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<IndexPathRequest>,
     ) -> Result<Json<IndexBuildResult>, String> {
-        let root = PathBuf::from(&req.path);
-        if !root.is_dir() {
-            return Err(format!("path not found or not a directory: {}", req.path));
-        }
+        let root = resolve_index_path(&req.path)?;
         // `gitignore_updated` mirrors data-model.md's rule: the append only
         // ever happens on the index's first creation for a project, so
         // "no index existed yet before this call" is the accurate signal.
@@ -260,7 +432,7 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<IndexPathRequest>,
     ) -> Result<Json<IndexRefreshResult>, String> {
-        let root = PathBuf::from(&req.path);
+        let root = resolve_index_path(&req.path)?;
         let summary = tooned_index::sync(&root).map_err(|err| err.to_string())?;
         Ok(Json(IndexRefreshResult {
             files_rescanned: summary.added + summary.updated,
@@ -274,7 +446,7 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<StatsRequest>,
     ) -> Result<Json<StatsResult>, String> {
-        let root = PathBuf::from(&req.path);
+        let root = resolve_index_path(&req.path)?;
         let rows = tooned_index::stats(&root, req.top_n).map_err(|err| err.to_string())?;
         Ok(Json(StatsResult {
             results: rows

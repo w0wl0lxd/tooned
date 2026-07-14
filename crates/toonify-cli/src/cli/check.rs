@@ -8,9 +8,10 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use tooned_core::{ConversionOptions, inspect};
+use tooned_core::{ConversionOptions, InspectReport, PassthroughReason, ShapeClass, inspect};
 
-use crate::cli::io::read_input;
+use crate::cli::FormatHint;
+use crate::cli::io::{BoundedRead, open_input, read_bounded};
 
 #[derive(Debug, Args)]
 pub struct CheckArgs {
@@ -20,6 +21,10 @@ pub struct CheckArgs {
     /// Additionally report BPE-token-based savings (opt-in, FR-023).
     #[arg(long)]
     pub precise: bool,
+
+    /// Force the parser's doc type instead of relying on content-sniffing.
+    #[arg(long = "format-hint", value_enum)]
+    pub format_hint: Option<FormatHint>,
 }
 
 // `Result` is kept (rather than `()`) to match every other subcommand's
@@ -30,8 +35,14 @@ pub struct CheckArgs {
 // reported on stdout/stderr and `run` still returns `Ok(())`.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
-    let bytes = match read_input(&args.input) {
-        Ok(bytes) => bytes,
+    let opts = ConversionOptions {
+        precise_tokens: args.precise,
+        format_hint: args.format_hint.map(Into::into),
+        ..ConversionOptions::default()
+    };
+
+    let mut reader = match open_input(&args.input) {
+        Ok(reader) => reader,
         Err(err) => {
             eprintln!("tooned: failed to read {}: {err}", args.input.display());
             println!("error: failed to read {}: {err}", args.input.display());
@@ -40,8 +51,37 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
         }
     };
 
-    let opts = ConversionOptions { precise_tokens: args.precise, ..ConversionOptions::default() };
-    let report = inspect(&bytes, &opts);
+    // Bounded read: `check` never writes converted bytes anywhere, so an
+    // oversized input's excess is simply discarded (`io::sink()`) rather
+    // than ever being buffered in full -- `inspect`'s own `max_input_bytes`
+    // gate makes "larger than cap" and "guaranteed InputTooLarge" equivalent
+    // regardless of content (finding: unbounded `read_input` previously ran
+    // before that size cap was ever consulted).
+    let mut sink = std::io::sink();
+    let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            eprintln!("tooned: failed to read {}: {err}", args.input.display());
+            println!("error: failed to read {}: {err}", args.input.display());
+            println!("convertible: no");
+            return Ok(());
+        }
+    };
+
+    let report = match outcome {
+        BoundedRead::Fits(bytes) => inspect(&bytes, &opts),
+        BoundedRead::Streamed { total_bytes } => InspectReport {
+            doc_type: None,
+            shape: ShapeClass::Scalar,
+            input_bytes: total_bytes as usize,
+            json_bytes: None,
+            toon_bytes: None,
+            savings_pct: None,
+            precise_savings_pct: None,
+            would_convert: false,
+            reason: Some(PassthroughReason::InputTooLarge),
+        },
+    };
 
     let doc_type = match report.doc_type {
         Some(dt) => format!("{dt:?}"),

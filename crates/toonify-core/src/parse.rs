@@ -180,6 +180,21 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
 
     let headers = reader.headers().map_err(|e| ParseError::Csv(e.to_string()))?.clone();
 
+    // A duplicate column header (e.g. `a,a,b` from a SQL join/export tool)
+    // would otherwise silently collapse via `map.insert` below -- the
+    // second field overwrites the first under the same key, permanently
+    // losing an entire column with no diagnostic. Detected upfront and
+    // surfaced as a parse error (which `convert.rs`/`attempt()` maps to a
+    // fail-safe passthrough, constitution Principle I) rather than emitting
+    // a silently-corrupted `Value`, mirroring how JSON's duplicate-key case
+    // is already handled correctly (see `tests/duplicate_keys.rs`).
+    if let Some(dup) = first_duplicate_header(&headers) {
+        return Err(ParseError::Csv(format!(
+            "duplicate column header {dup:?}: refusing to parse, since later columns of the \
+             same name would silently overwrite earlier ones and lose data"
+        )));
+    }
+
     let mut rows = Vec::new();
     for record in reader.records() {
         let record = record.map_err(|e| ParseError::Csv(e.to_string()))?;
@@ -194,6 +209,19 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
         rows.push(Value::Object(map));
     }
     Ok(Value::Array(rows))
+}
+
+/// Returns the first column name that appears more than once in `headers`,
+/// or `None` if every header is unique. `O(n^2)` in the column count, which
+/// is fine -- real-world delimited files have at most a few hundred
+/// columns, never enough for this to matter.
+fn first_duplicate_header(headers: &csv::StringRecord) -> Option<&str> {
+    for (i, candidate) in headers.iter().enumerate() {
+        if headers.iter().take(i).any(|seen| seen == candidate) {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -257,6 +285,30 @@ mod tests {
         let value =
             parse(b"a,b,c\n1,2,3\n4,5\n6,7,8,9\n", DocType::Csv).expect("ragged CSV parses");
         assert!(matches!(value, Value::Array(_)));
+    }
+
+    #[test]
+    fn duplicate_csv_header_is_an_error_not_silent_data_loss() {
+        // Regression test: `a,a,b` (e.g. from a SQL join or export tool)
+        // must never silently collapse to `{"a": <second value>, "b": ...}`
+        // via `map.insert` overwriting the first `a` column -- that would
+        // permanently and undetectably lose data (constitution Principle
+        // I). It must surface as a parse error instead, so the caller falls
+        // back to passthrough.
+        let result = parse(b"a,a,b\n1,2,3\n4,5,6\n", DocType::Csv);
+        assert!(
+            matches!(result, Err(ParseError::Csv(_))),
+            "duplicate CSV header must error, not silently drop a column: {result:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_tsv_header_is_an_error_not_silent_data_loss() {
+        let result = parse(b"a\ta\tb\n1\t2\t3\n4\t5\t6\n", DocType::Tsv);
+        assert!(
+            matches!(result, Err(ParseError::Csv(_))),
+            "duplicate TSV header must error, not silently drop a column: {result:?}"
+        );
     }
 
     #[test]
