@@ -67,8 +67,18 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
             continue;
         }
 
-        let Ok(meta) = std::fs::metadata(path) else { continue };
+        let meta = match std::fs::metadata(path) {
+            Ok(meta) => meta,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                // Transient metadata failure (e.g. permission denied) must not
+                // be interpreted as "file deleted" during the prune pass.
+                seen.insert(rel_str.to_string());
+                continue;
+            }
+        };
         let mtime = file_mtime_unix(&meta);
+        let size = crate::schema::saturating_i64(meta.len());
         seen.insert(rel_str.to_string());
 
         // Mirrors `scan_full`'s size check: never `std::fs::read` a whole
@@ -79,12 +89,12 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
         let oversized = meta.len() > ConversionOptions::default().max_input_bytes as u64;
 
         match existing.get(rel_str) {
-            Some((old_mtime, _)) if *old_mtime == mtime => {
-                // Stat-first: mtime unchanged since the last scan, skip
-                // re-hashing (and any DB write at all) entirely.
+            Some((old_mtime, old_size, _)) if *old_mtime == mtime && *old_size == size => {
+                // Stat-first: mtime and size both unchanged since the last
+                // scan, skip re-hashing (and any DB write at all) entirely.
                 summary.unchanged += 1;
             }
-            Some((_, old_hash)) => {
+            Some((_, _, old_hash)) => {
                 if oversized {
                     let Ok(new_hash) = hash_file_streaming(path) else { continue };
                     if &new_hash == old_hash {
@@ -134,13 +144,14 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
     Ok(summary)
 }
 
-fn load_existing(conn: &Connection) -> Result<HashMap<String, (i64, String)>, IndexError> {
-    let mut stmt = conn.prepare("SELECT path, mtime_unix, content_hash FROM files")?;
+fn load_existing(conn: &Connection) -> Result<HashMap<String, (i64, i64, String)>, IndexError> {
+    let mut stmt = conn.prepare("SELECT path, mtime_unix, size_bytes, content_hash FROM files")?;
     let rows = stmt.query_map([], |row| {
         let path: String = row.get(0)?;
         let mtime: i64 = row.get(1)?;
-        let hash: String = row.get(2)?;
-        Ok((path, (mtime, hash)))
+        let size: i64 = row.get(2)?;
+        let hash: String = row.get(3)?;
+        Ok((path, (mtime, size, hash)))
     })?;
 
     let mut map = HashMap::new();

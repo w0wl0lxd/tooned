@@ -90,15 +90,20 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     println!("doc type: {doc_type}");
     println!("shape: {:?}", report.shape);
     println!("input bytes: {}", report.input_bytes);
-    if let (Some(json_bytes), Some(toon_bytes), Some(savings_pct)) =
-        (report.json_bytes, report.toon_bytes, report.savings_pct)
-    {
+    if let Some(json_bytes) = report.json_bytes {
         println!("json bytes: {json_bytes}");
-        println!("toon bytes: {toon_bytes}");
-        println!("savings: {savings_pct:.1}%");
     } else {
         println!("json bytes: n/a");
+    }
+    if let Some(toon_bytes) = report.toon_bytes {
+        println!("toon bytes: {toon_bytes}");
+    } else {
         println!("toon bytes: n/a");
+    }
+    if let Some(savings_pct) = report.savings_pct {
+        println!("savings: {savings_pct:.1}%");
+    } else {
+        println!("savings: n/a");
     }
     println!("convertible: {}", if report.would_convert { "yes" } else { "no" });
     if let Some(reason) = &report.reason {

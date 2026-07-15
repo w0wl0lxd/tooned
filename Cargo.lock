@@ -2057,6 +2057,8 @@ dependencies = [
 [[package]]
 name = "toon-lsp"
 version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9d1ac341decd4b6f1fcccf7b8990da7043d66521d8b95e54bd4bc6cc17903ac"
 dependencies = [
  "anyhow",
  "bitflags 2.13.0",
@@ -2118,6 +2120,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ignore",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
