@@ -3,7 +3,7 @@
 //! "Project Index" section.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -82,6 +82,10 @@ pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> 
         std::fs::create_dir_all(parent)?;
     }
     let conn = Connection::open(db_path)?;
+    // Wait up to 5 seconds when the database is locked by a concurrent
+    // process (e.g. another `tooned index` or `sync` run) instead of failing
+    // immediately with `SQLITE_BUSY`.
+    conn.busy_timeout(Duration::from_secs(5))?;
     // Required for `ON DELETE CASCADE` (shapes/conversions -> files) to
     // actually take effect -- SQLite has foreign key enforcement off by
     // default per-connection.
