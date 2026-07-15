@@ -229,6 +229,17 @@ mode, performance verification, and final release-readiness gates.
 - [X] T081 Update `README.md`'s "Status: pre-alpha, scaffold only" note to reflect the implemented v1 feature set
 - [X] T082 Full workspace release gate: `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`, `cargo nextest run --all-features`, `cargo deny check` all green on stable
 
+## Phase 8: Convergence
+
+- [X] T083 Harden `tooned convert --out` against truncating an in-place file before it is read; read the source fully before opening the same output file (FR-005, partial)
+- [X] T084 Harden `tooned_core::read_bounded` capacity/take-limit overflow when `max_input_bytes` is near `usize::MAX` (FR-006, partial)
+- [X] T085 Make `tooned-index` `.gitignore` append race-resistant with `O_NOFOLLOW` on Unix and improve error messaging (FR-020, partial)
+- [X] T086 Include `size_bytes` alongside `mtime` in `tooned-index::sync` short-circuit and keep files in `seen` on transient `metadata` failures so they are not pruned (FR-021, partial)
+- [X] T087 Add a 5-second SQLite busy timeout in `tooned_index::open_index` to avoid `SQLITE_BUSY` races (FR-007, partial)
+- [X] T088 Move MCP filesystem-touching index tools off the async executor with `tokio::task::spawn_blocking` and guard `tooned_convert`/`tooned_detect`/`tooned_decode` against panics (FR-015, partial)
+- [X] T089 Print `tooned check` size fields independently so `json_bytes`, `toon_bytes`, and `savings_pct` are reported when available even if not all present (FR-010, partial)
+- [X] T090 Re-run the release gate: `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`, `cargo nextest run --all-features`, `cargo deny check` (SC-001, SC-003, partial)
+
 ---
 
 ## Dependencies & Execution Order

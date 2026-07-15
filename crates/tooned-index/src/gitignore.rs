@@ -57,7 +57,50 @@ pub fn ensure_ignored(project_root: &Path) -> Result<(), IndexError> {
     updated.push_str(IGNORE_ENTRY);
     updated.push('\n');
 
-    std::fs::write(&gitignore_path, updated)?;
+    write_gitignore(&gitignore_path, &updated)?;
+    Ok(())
+}
+
+/// Race-resistant write of `.gitignore`: on Unix the file is opened with
+/// `O_NOFOLLOW` so a symlink swapped in after the `symlink_metadata` probe
+/// above cannot be followed; on other platforms the `symlink_metadata` probe
+/// is the best available guard and `std::fs::write` is used.
+fn write_gitignore(path: &Path, contents: &str) -> Result<(), IndexError> {
+    #[cfg(unix)]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+        {
+            Ok(f) => f,
+            Err(err) => {
+                if let Ok(meta) = std::fs::symlink_metadata(path)
+                    && meta.file_type().is_symlink()
+                {
+                    return Err(IndexError::Io(std::io::Error::other(format!(
+                        "refusing to write through a symlinked .gitignore at {}",
+                        path.display()
+                    ))));
+                }
+                return Err(IndexError::Io(err));
+            }
+        };
+        file.write_all(contents.as_bytes())?;
+        file.flush()?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)?;
+    }
+
     Ok(())
 }
 
