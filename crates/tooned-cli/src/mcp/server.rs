@@ -30,6 +30,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{Json, ServiceExt, schemars, tool, tool_router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::task;
 use tooned_core::{
     Conversion, ConversionOptions, ConversionReport, DocType, InspectReport, PassthroughReason,
     ShapeClass,
@@ -360,38 +361,41 @@ impl ToonedMcpServer {
     async fn tooned_convert(
         &self,
         Parameters(req): Parameters<ConvertRequest>,
-    ) -> Json<ConvertResult> {
-        let opts = build_options(req.format_hint.as_deref(), req.margin_pct);
-        match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
-            Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
-                converted: true,
-                text,
-                report: Some(report.into()),
-                reason: None,
-            }),
-            // `attempt()`/`maybe_tooned` already computed exactly why this
-            // declined to convert -- surfaced here rather than discarded, so
-            // a client doesn't need a second `tooned_detect` call just to
-            // find out.
-            Ok(Conversion::Passthrough { reason, .. }) => Json(ConvertResult {
-                converted: false,
-                text: req.content,
-                report: None,
-                reason: Some(reason.into()),
-            }),
-            // Infallible in practice (maybe_tooned never Errs for
-            // payload-driven input); a genuine caller-misuse Err still
-            // falls back to the fail-safe passthrough shape rather than a
-            // protocol-level crash (constitution Principle I). No specific
-            // `PassthroughReason` applies here (this isn't one), so `reason`
-            // is `None`.
-            Err(_) => Json(ConvertResult {
-                converted: false,
-                text: req.content,
-                report: None,
-                reason: None,
-            }),
-        }
+    ) -> Result<Json<ConvertResult>, String> {
+        // The core conversion is CPU-bound and delegates to a third-party
+        // codec; running it off the async executor and on a blocking thread
+        // both prevents the Tokio runtime from being monopolised and ensures
+        // any panic in the codec path is caught as a `JoinError` instead of
+        // killing the entire MCP server process.
+        task::spawn_blocking(move || {
+            let opts = build_options(req.format_hint.as_deref(), req.margin_pct);
+            match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
+                Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
+                    converted: true,
+                    text,
+                    report: Some(report.into()),
+                    reason: None,
+                }),
+                // `attempt()`/`maybe_tooned` already computed exactly why this
+                // declined to convert -- surfaced here rather than discarded.
+                Ok(Conversion::Passthrough { reason, .. }) => Json(ConvertResult {
+                    converted: false,
+                    text: req.content,
+                    report: None,
+                    reason: Some(reason.into()),
+                }),
+                // Infallible in practice; a genuine caller-misuse Err still
+                // falls back to the fail-safe passthrough shape.
+                Err(_) => Json(ConvertResult {
+                    converted: false,
+                    text: req.content,
+                    report: None,
+                    reason: None,
+                }),
+            }
+        })
+        .await
+        .map_err(|err| err.to_string())
     }
 
     #[tool(description = "Dry-run doc-type/shape/estimated-savings detection with no conversion \
@@ -400,10 +404,14 @@ impl ToonedMcpServer {
     async fn tooned_detect(
         &self,
         Parameters(req): Parameters<DetectRequest>,
-    ) -> Json<DetectResult> {
-        let opts = build_options(req.format_hint.as_deref(), None);
-        let report = tooned_core::inspect(req.content.as_bytes(), &opts);
-        Json(report.into())
+    ) -> Result<Json<DetectResult>, String> {
+        task::spawn_blocking(move || {
+            let opts = build_options(req.format_hint.as_deref(), None);
+            let report = tooned_core::inspect(req.content.as_bytes(), &opts);
+            Json(report.into())
+        })
+        .await
+        .map_err(|err| err.to_string())
     }
 
     #[tool(description = "Decode a TOON document back into a structured JSON value.")]
@@ -411,9 +419,10 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<DecodeRequest>,
     ) -> Result<Json<DecodeResult>, String> {
-        tooned_core::decode_toon(&req.toon)
-            .map(|value| Json(DecodeResult { value }))
-            .map_err(|err| err.to_string())
+        let value = task::spawn_blocking(move || tooned_core::decode_toon(&req.toon))
+            .await
+            .map_err(|err| err.to_string())?;
+        value.map(|v| Json(DecodeResult { value: v })).map_err(|err| err.to_string())
     }
 
     #[tool(description = "Full scan + classify a project directory into its .tooned/ index, \
@@ -422,16 +431,21 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<IndexPathRequest>,
     ) -> Result<Json<IndexBuildResult>, String> {
-        let root = resolve_index_path(&req.path)?;
-        // `gitignore_updated` mirrors data-model.md's rule: the append only
-        // ever happens on the index's first creation for a project, so
-        // "no index existed yet before this call" is the accurate signal.
-        let existed_before = tooned_index::index_exists(&root);
-        let summary = tooned_index::scan_full(&root).map_err(|err| err.to_string())?;
-        Ok(Json(IndexBuildResult {
-            files_scanned: summary.files_scanned,
-            gitignore_updated: !existed_before,
-        }))
+        let result = task::spawn_blocking(move || {
+            let root = resolve_index_path(&req.path)?;
+            // `gitignore_updated` mirrors data-model.md's rule: the append only
+            // ever happens on the index's first creation for a project, so
+            // "no index existed yet before this call" is the accurate signal.
+            let existed_before = tooned_index::index_exists(&root);
+            let summary = tooned_index::scan_full(&root).map_err(|err| err.to_string())?;
+            Ok::<IndexBuildResult, String>(IndexBuildResult {
+                files_scanned: summary.files_scanned,
+                gitignore_updated: !existed_before,
+            })
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+        result.map(Json)
     }
 
     #[tool(description = "Incremental refresh of an existing .tooned/ index: re-scans changed \
@@ -440,12 +454,17 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<IndexPathRequest>,
     ) -> Result<Json<IndexRefreshResult>, String> {
-        let root = resolve_index_path(&req.path)?;
-        let summary = tooned_index::sync(&root).map_err(|err| err.to_string())?;
-        Ok(Json(IndexRefreshResult {
-            files_rescanned: summary.added + summary.updated,
-            files_pruned: summary.removed,
-        }))
+        let result = task::spawn_blocking(move || {
+            let root = resolve_index_path(&req.path)?;
+            let summary = tooned_index::sync(&root).map_err(|err| err.to_string())?;
+            Ok::<IndexRefreshResult, String>(IndexRefreshResult {
+                files_rescanned: summary.added + summary.updated,
+                files_pruned: summary.removed,
+            })
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+        result.map(Json)
     }
 
     #[tool(description = "Ranked savings-opportunity report from an existing .tooned/ index, \
@@ -454,14 +473,19 @@ impl ToonedMcpServer {
         &self,
         Parameters(req): Parameters<StatsRequest>,
     ) -> Result<Json<StatsResult>, String> {
-        let root = resolve_index_path(&req.path)?;
-        let rows = tooned_index::stats(&root, req.top_n).map_err(|err| err.to_string())?;
-        Ok(Json(StatsResult {
-            results: rows
-                .into_iter()
-                .map(|row| StatsEntry { path: row.path, savings_pct: row.savings_pct })
-                .collect(),
-        }))
+        let result = task::spawn_blocking(move || {
+            let root = resolve_index_path(&req.path)?;
+            let rows = tooned_index::stats(&root, req.top_n).map_err(|err| err.to_string())?;
+            Ok::<StatsResult, String>(StatsResult {
+                results: rows
+                    .into_iter()
+                    .map(|row| StatsEntry { path: row.path, savings_pct: row.savings_pct })
+                    .collect(),
+            })
+        })
+        .await
+        .map_err(|err| err.to_string())?;
+        result.map(Json)
     }
 }
 

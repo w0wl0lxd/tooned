@@ -81,8 +81,12 @@ pub fn read_bounded(
     cap: usize,
     out: &mut dyn io::Write,
 ) -> io::Result<BoundedRead> {
-    let mut buf = Vec::with_capacity(cap.saturating_add(1));
-    (&mut *reader).take(cap as u64 + 1).read_to_end(&mut buf)?;
+    // Cap the initial allocation so `cap` near `usize::MAX` doesn't try to
+    // reserve an impossible buffer; `read_to_end` will grow up to `take_limit`
+    // bytes as needed.
+    let mut buf = Vec::with_capacity(cap.min(64 * 1024).saturating_add(1));
+    let take_limit = (cap as u64).saturating_add(1);
+    (&mut *reader).take(take_limit).read_to_end(&mut buf)?;
     if buf.len() <= cap {
         return Ok(BoundedRead::Fits(buf));
     }

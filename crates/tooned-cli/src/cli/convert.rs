@@ -5,7 +5,7 @@
 //! destination, never back onto `input`.
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 use tooned_core::{Conversion, ConversionOptions, decode_toon, maybe_tooned};
@@ -92,6 +92,69 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Returns `true` when the requested output destination is the same file as
+/// the input, including via symlinks or different relative paths that resolve
+/// to the same inode. Stdin/stdout (`-`) is never considered the same file.
+fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
+    let Some(out) = out else { return false };
+    if input == Path::new("-") || out == Path::new("-") {
+        return false;
+    }
+    if input == out {
+        return true;
+    }
+    match (std::fs::canonicalize(input), std::fs::canonicalize(out)) {
+        (Ok(cin), Ok(cout)) => cin == cout,
+        _ => false,
+    }
+}
+
+/// Adaptive conversion when `--out` points at the same file as `input`.
+/// Reads the source fully before opening the destination, so `File::create`
+/// cannot truncate the input before it is consumed (FR-005). If the file is
+/// already larger than `max_input_bytes`, the conversion would pass through
+/// unchanged, so no write is performed.
+#[allow(clippy::unnecessary_wraps)]
+fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Result<()> {
+    if let Ok(meta) = std::fs::metadata(input)
+        && meta.len() > opts.max_input_bytes as u64
+    {
+        return Ok(());
+    }
+
+    let mut reader = match open_input(input) {
+        Ok(reader) => reader,
+        Err(err) => {
+            eprintln!("tooned: failed to read {}: {err}", input.display());
+            std::process::exit(2);
+        }
+    };
+
+    // `read_bounded` writes to a sink; if the file is oversized, it streams
+    // the remainder without materialising it in memory.
+    let mut sink = std::io::sink();
+    let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            eprintln!("tooned: failed to read {}: {err}", input.display());
+            std::process::exit(2);
+        }
+    };
+
+    let bytes = match outcome {
+        BoundedRead::Fits(bytes) => bytes,
+        BoundedRead::Streamed { .. } => return Ok(()),
+    };
+
+    let output = adaptive_bytes(&bytes, opts);
+    if let Err(err) = std::fs::write(input, output) {
+        eprintln!("tooned: failed to write output: {err}");
+        std::process::exit(2);
+    }
+
+    Ok(())
+}
+
 /// Shared bounded-read path for both the default adaptive direction and
 /// `--to toon`: both go through `maybe_tooned`, whose `InputTooLarge` gate
 /// makes "larger than `opts.max_input_bytes`" and "guaranteed unchanged
@@ -102,6 +165,10 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 // same trade-off); every failure path below exits the process directly.
 #[allow(clippy::unnecessary_wraps)]
 fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow::Result<()> {
+    if output_is_same_as_input(&args.input, args.out.as_deref()) {
+        return run_adaptive_in_place(&args.input, opts);
+    }
+
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,
         Err(err) => {
