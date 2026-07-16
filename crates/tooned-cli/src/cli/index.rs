@@ -31,6 +31,18 @@ pub enum IndexSubcommand {
     Status { path: Option<PathBuf> },
     /// Reports the indexed record for one file.
     Show { file: PathBuf },
+    /// Checkpoint the SQLite WAL and truncate the `-wal` file.
+    Compact { path: Option<PathBuf> },
+    /// Poll `index sync` at a regular interval.
+    ///
+    /// This is a polling implementation; a future release will switch to a
+    /// `notify`-based filesystem watcher.
+    Watch {
+        path: Option<PathBuf>,
+        /// Seconds between sync polls.
+        #[arg(long, default_value = "5")]
+        interval: u64,
+    },
 }
 
 fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
@@ -46,6 +58,12 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
         Some(IndexSubcommand::Sync { path }) => run_sync(&resolve_project_root(path.as_ref())),
         Some(IndexSubcommand::Status { path }) => run_status(&resolve_project_root(path.as_ref())),
         Some(IndexSubcommand::Show { file }) => run_show(file),
+        Some(IndexSubcommand::Compact { path }) => {
+            run_compact(&resolve_project_root(path.as_ref()))
+        }
+        Some(IndexSubcommand::Watch { path, interval }) => {
+            Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), *interval)?)
+        }
     }
 }
 
@@ -156,6 +174,23 @@ fn run_show(file: &Path) -> anyhow::Result<()> {
         Err(tooned_index::IndexError::FileNotIndexed(path)) => {
             eprintln!("tooned index show: file not indexed: {path}");
             std::process::exit(2);
+        }
+        Err(other) => Err(other.into()),
+    }
+}
+
+fn run_compact(root: &Path) -> anyhow::Result<()> {
+    match tooned_index::compact(root) {
+        Ok(()) => {
+            println!("Compacted {}", tooned_index::index_db_path(root).display());
+            Ok(())
+        }
+        Err(tooned_index::IndexError::NoIndex(path)) => {
+            eprintln!(
+                "tooned index compact: no existing index at {}; run `tooned index` first",
+                tooned_index::index_db_path(&path).display()
+            );
+            std::process::exit(1);
         }
         Err(other) => Err(other.into()),
     }

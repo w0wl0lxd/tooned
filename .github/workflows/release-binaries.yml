@@ -76,9 +76,45 @@ jobs:
             ${{ env.BIN_NAME }}-${{ matrix.target }}.zip
           if-no-files-found: ignore
 
+  docs:
+    name: Generate shell completions and man page
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build native tooned
+        run: cargo build --release -p tooned-cli
+
+      - name: Generate shell completions and man page
+        run: |
+          mkdir -p extras/completions extras/man
+          for shell in bash zsh fish powershell elvish; do
+            ./target/release/tooned completions "$shell" > "extras/completions/tooned.${shell}"
+          done
+          ./target/release/tooned man > extras/man/tooned.1
+
+      - name: Package extras
+        run: tar czf tooned-extras.tar.gz -C extras .
+
+      - name: Upload extras artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tooned-extras
+          path: tooned-extras.tar.gz
+          if-no-files-found: error
+
   release:
     name: Attach binaries to GitHub Release
-    needs: build
+    needs: docs
     runs-on: ubuntu-latest
     permissions:
       contents: write

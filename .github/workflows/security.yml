@@ -9,11 +9,13 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "deny.toml"
+      - "supply-chain/**"
   pull_request:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
       - "deny.toml"
+      - "supply-chain/**"
   workflow_dispatch:
 
 concurrency:
@@ -30,10 +32,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run cargo audit
-        uses: rustsec/audit-check@858dc40f52ca2b8570b7a997c1c4e35c6fc9a432
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
 
   deny:
     name: Dependency Policy
@@ -43,3 +51,20 @@ jobs:
 
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
+
+  vet:
+    name: Supply-Chain Vetting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-vet
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-vet
+
+      - name: Run cargo vet
+        run: cargo vet --locked

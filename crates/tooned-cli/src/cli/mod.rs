@@ -5,6 +5,7 @@
 
 pub mod check;
 pub mod convert;
+pub mod diff;
 pub mod index;
 mod io;
 pub mod pipe;

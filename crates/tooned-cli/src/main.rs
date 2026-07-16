@@ -12,7 +12,8 @@ mod cli;
 mod hooks;
 mod mcp;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(
@@ -39,10 +40,18 @@ enum Command {
     Index(cli::index::IndexArgs),
     /// Ranked savings-opportunity report from the index.
     Stats(cli::stats::StatsArgs),
+    /// Compare the original JSON with the TOON round-trip.
+    Diff(cli::diff::DiffArgs),
     /// Agent hook install/uninstall/status/doctor (Claude Code, Codex).
     Hook(hooks::HookArgs),
     /// Model Context Protocol server.
     Mcp(mcp::McpArgs),
+    /// Generate shell completion scripts (release/packaging helper).
+    #[command(hide = true)]
+    Completions { shell: Shell },
+    /// Generate the man page (release/packaging helper).
+    #[command(hide = true)]
+    Man,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -54,10 +63,21 @@ fn main() -> anyhow::Result<()> {
         Command::Wrap(args) => cli::wrap::run(args),
         Command::Index(args) => cli::index::run(args),
         Command::Stats(args) => cli::stats::run(args),
+        Command::Diff(args) => cli::diff::run(args),
         Command::Hook(args) => {
             hooks::run(args);
             Ok(())
         }
         Command::Mcp(args) => mcp::run(args),
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            clap_complete::generate(*shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
+        Command::Man => {
+            clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?;
+            Ok(())
+        }
     }
 }
