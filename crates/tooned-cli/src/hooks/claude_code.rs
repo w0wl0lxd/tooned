@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Claude Code hook integration: `tooned hook run --claude-code`,
 //! `hook install --claude-code`.
 //! See `specs/001-adaptive-toon-conversion/contracts/claude-code-hook.md`.

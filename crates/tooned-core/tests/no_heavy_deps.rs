@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T078c: dependency-boundary guard (constitution Principle III,
 //! dependency-minimal core). Asserts `cargo tree -p tooned-core` contains
 //! none of `rusqlite`/`ignore`/`walkdir` for the crate's default (non-dev)
