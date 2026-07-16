@@ -141,3 +141,40 @@ fn convert_does_not_truncate_source_when_out_is_a_hardlink() {
         "output should be TOON, not the original JSON"
     );
 }
+
+#[test]
+fn convert_to_tron_writes_tron_content_to_stdout() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json = uniform_array_json(20);
+    let path = write_fixture(&dir, "input.json", &json);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "tron"])
+        .assert()
+        .success()
+        // TRON encodes the schema once as a class definition and each record
+        // as a compact `A(...)` instantiation.
+        .stdout(predicate::str::contains("class A:"))
+        .stdout(predicate::str::contains("A(0,\"row-0\",true,0.5)"));
+}
+
+#[test]
+fn convert_to_json_decodes_a_tron_file_back_to_compact_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let tron =
+        "class A: id, name, active, score\n\n[A(0,\"row-0\",true,0.5),A(1,\"row-1\",false,1.5)]";
+    let path = write_fixture(&dir, "input.tron", tron);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "json"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(r#""id":0"#)
+                .and(predicate::str::contains(r#""name":"row-0"#))
+                .and(predicate::str::contains(r#""active":true"#))
+                .and(predicate::str::contains(r#""score":0.5"#)),
+        );
+}
