@@ -14,7 +14,8 @@ use tooned_core::{Conversion, ConversionOptions, decode_toon, maybe_tooned};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
-    BoundedRead, open_input, open_output, read_bounded, read_input, write_atomic, write_output,
+    BoundedRead, atomic_rename, open_input, open_output, open_output_temp, read_bounded,
+    read_input, write_atomic, write_output,
 };
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -210,6 +211,10 @@ fn nlink(path: &Path) -> Option<u64> {
 /// passthrough" equivalent -- so the input is never fully buffered in
 /// memory when it's oversized (finding: unbounded `read_to_end`/`fs::read`
 /// previously ran before that size cap was ever consulted).
+//
+// For a file destination the output is staged through a same-directory temp
+// file and promoted with a single `rename`, so a crash can never leave the
+// destination partially written. stdout (`-` or `None`) writes directly.
 // `Result` is kept for uniformity with `run` (see its own comment on the
 // same trade-off); every failure path below exits the process directly.
 #[allow(clippy::unnecessary_wraps)]
@@ -225,11 +230,14 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
             std::process::exit(2);
         }
     };
-    let mut out = match open_output(args.out.as_deref()) {
-        Ok(out) => out,
-        Err(err) => {
-            eprintln!("tooned: failed to write output: {err}");
-            std::process::exit(2);
+
+    let out_path = args.out.as_deref();
+    let (tmp_path, mut out): (Option<PathBuf>, Box<dyn std::io::Write>) = match out_path {
+        None => (None, open_output(out_path)?),
+        Some(p) if p == Path::new("-") => (None, open_output(out_path)?),
+        Some(p) => {
+            let (tmp, file) = open_output_temp(p)?;
+            (Some(tmp), file)
         }
     };
 
@@ -237,18 +245,32 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
         Ok(outcome) => outcome,
         Err(err) => {
             eprintln!("tooned: failed to read {}: {err}", args.input.display());
+            if let Some(tmp) = &tmp_path {
+                let _ = std::fs::remove_file(tmp);
+            }
             std::process::exit(2);
         }
     };
 
-    let bytes = match outcome {
-        BoundedRead::Fits(bytes) => bytes,
-        // Already streamed verbatim to `out` by `read_bounded`.
-        BoundedRead::Streamed { .. } => return Ok(()),
-    };
+    match outcome {
+        BoundedRead::Fits(bytes) => {
+            let output = adaptive_bytes(&bytes, opts);
+            if let Err(err) = out.write_all(&output) {
+                eprintln!("tooned: failed to write output: {err}");
+                if let Some(tmp) = &tmp_path {
+                    let _ = std::fs::remove_file(tmp);
+                }
+                std::process::exit(2);
+            }
+        }
+        // `read_bounded` already streamed the original bytes to `out`; for
+        // stdout there is nothing more to do, for a file we just rename.
+        BoundedRead::Streamed { .. } => {}
+    }
 
-    let output = adaptive_bytes(&bytes, opts);
-    if let Err(err) = out.write_all(&output) {
+    if let (Some(tmp), Some(target)) = (tmp_path, out_path)
+        && let Err(err) = atomic_rename(&tmp, target)
+    {
         eprintln!("tooned: failed to write output: {err}");
         std::process::exit(2);
     }
