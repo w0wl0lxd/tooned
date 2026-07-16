@@ -1,0 +1,18 @@
+[package]
+name = "tooned-parse"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+
+[lib]
+name = "tooned_parse"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
