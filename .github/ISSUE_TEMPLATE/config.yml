@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/w0wl0lxd/tooned/security/advisories/new
+    about: Please report security issues privately — see SECURITY.md.
+  - name: Questions and discussion
+    url: https://github.com/w0wl0lxd/tooned/discussions
+    about: General questions, licensing questions, and ideas that aren't yet a concrete bug/feature.
