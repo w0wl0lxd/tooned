@@ -53,7 +53,10 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // Decoding has no `max_input_bytes` gate of its own (unlike the
         // adaptive paths below) -- the whole file must be read regardless of
         // size to decode it correctly, so this direction keeps the simple
-        // unbounded `read_input`/`write_output` path.
+        // unbounded `read_input`/`write_output` path. When the output
+        // destination is the same file as the input, use the same atomic
+        // in-place write path as the adaptive conversion to avoid leaving a
+        // partially-written source on a crash.
         Some(Direction::Json) => {
             let bytes = match read_input(&args.input) {
                 Ok(bytes) => bytes,
@@ -63,7 +66,12 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 }
             };
             let output = decode_to_json_or_exit(&bytes);
-            if let Err(err) = write_output(args.out.as_deref(), &output) {
+            let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
+                write_in_place(&args.input, &output)
+            } else {
+                write_output(args.out.as_deref(), &output)
+            };
+            if let Err(err) = write_result {
                 eprintln!("tooned: failed to write output: {err}");
                 std::process::exit(2);
             }
