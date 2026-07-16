@@ -23,7 +23,8 @@ pub use tooned_types::{
 };
 
 // Re-export public functions from tooned-convert
-pub use tooned_convert::{inspect, maybe_tooned};
+pub use tooned_convert::onto::decode as decode_onto;
+pub use tooned_convert::{encode_onto, inspect, maybe_onto, maybe_tooned};
 
 // Re-export decode_toon from tooned-toon
 pub use tooned_toon::decode_toon;
