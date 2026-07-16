@@ -13,14 +13,10 @@ allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
-  "BSD-3-Clause",
   "BSL-1.0",
-  "ISC",
   "MPL-2.0",
   "Unlicense",
-  "Zlib",
   "Unicode-3.0",
-  "Unicode-DFS-2016",
 ]
 # Confidence threshold for license detection
 confidence-threshold = 0.8
@@ -55,6 +51,7 @@ deny = [
 skip = [
   { crate = "bitflags@1", reason = "transitive dependency version splits are normal" },
   { crate = "windows-sys", reason = "platform crate version splits" },
+  { crate = "hashbrown", reason = "transitive split: indexmap 2.x uses 0.17, dashmap/hashlink use 0.14" },
 ]
 
 [sources]
