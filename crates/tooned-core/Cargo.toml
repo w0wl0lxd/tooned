@@ -15,24 +15,20 @@ name = "tooned_core"
 path = "src/lib.rs"
 
 [dependencies]
-toon-lsp = { workspace = true }
+tooned-types = { path = "../tooned-types", version = "0.1.0" }
+tooned-convert = { path = "../tooned-convert", version = "0.1.0" }
+tooned-toon = { path = "../tooned-toon", version = "0.1.0" }
+tooned-json = { path = "../tooned-json", version = "0.1.0" }
+tooned-xml = { path = "../tooned-xml", version = "0.1.0" }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
-toml = "1"
-csv = "1"
-sonic-rs = "0.5"
-thiserror = { workspace = true }
-# Opt-in precise BPE-token-based savings estimate (`ConversionOptions.precise_tokens`,
-# T076). Bundles its BPE rank tables as compile-time assets (`include_str!`) --
-# no network fetch, no `reqwest`/telemetry surface (constitution: zero
-# external calls in v1). `async-openai`/`dhat-heap` features are NOT enabled:
-# default features only, keeping this dependency-minimal.
-tiktoken-rs = "0.12"
-quick-xml = { version = "0.41.0", default-features = false }
 
 [dev-dependencies]
 proptest = "1.4"
 criterion = "0.5"
+sonic-rs = "0.5"
+serde_yaml = "0.9"
+toml = "1"
+csv = "1"
 
 [package.metadata.cargo-machete]
 ignored = ["criterion"]
