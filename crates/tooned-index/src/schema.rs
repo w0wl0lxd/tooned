@@ -78,12 +78,21 @@ pub fn index_exists(project_root: &Path) -> bool {
 /// concern applies here. It would also make any future change to how the
 /// DB is opened/pooled (or a swap away from `rusqlite` entirely) a breaking
 /// public-API change for this crate rather than an internal detail.
+/// Probes `sqlite_master` for a table named `name`. Cheap and safe to call
+/// on a brand-new or existing database.
+fn table_exists(conn: &Connection, name: &str) -> Result<bool, IndexError> {
+    let mut stmt =
+        conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
+    let mut rows = stmt.query([name])?;
+    Ok(rows.next()?.is_some())
+}
+
 pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
     let db_path = index_db_path(project_root);
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let conn = Connection::open(db_path)?;
+    let mut conn = Connection::open(db_path)?;
     // Wait up to 5 seconds when the database is locked by a concurrent
     // process (e.g. another `tooned index` or `sync` run) instead of failing
     // immediately with `SQLITE_BUSY`.
@@ -96,14 +105,29 @@ pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> 
     // synchronous=NORMAL is safe with WAL and avoids fsync on every commit.
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
-    create_schema(&conn)?;
+
+    // On a brand-new index, create the entire schema in one atomic
+    // transaction and stop -- no migration is needed for a fresh database.
+    if !table_exists(&conn, "meta")? {
+        let tx = conn.transaction()?;
+        create_schema(&tx)?;
+        tx.commit()?;
+        return Ok(conn);
+    }
+
     let version = schema_version(&conn)?;
     match version.as_deref() {
-        Some(SCHEMA_VERSION) => {}
-        Some("1") | None => migrate(&conn, "1")?,
-        Some(other) => return Err(IndexError::UnsupportedSchemaVersion(other.to_string())),
+        Some(SCHEMA_VERSION) => Ok(conn),
+        // A missing `schema_version` row is treated the same as the original
+        // v1 schema: we run the full migration chain atomically.
+        Some("1") | None => {
+            let tx = conn.transaction()?;
+            migrate(&tx, "1")?;
+            tx.commit()?;
+            Ok(conn)
+        }
+        Some(other) => Err(IndexError::UnsupportedSchemaVersion(other.to_string())),
     }
-    Ok(conn)
 }
 
 /// SQL to create secondary indexes added in schema version 2.
