@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tooned-core`: XML input support (detect + parse + adaptive TOON conversion). The XML
+  sniffer is conservative (rejects HTML/DOCTYPE html and common HTML tags), the `quick-xml`
+  parser uses streaming events with a depth guard, namespace stripping, and mixed-content
+  handling, and `proptest` property tests now cover XML round-trip fidelity, never-a-regression,
+  no-panic on adversarial/invalid UTF-8/HTML-like/truncated input, and cross-format parity with
+  JSON. The `tooned` CLI and MCP server both accept `--format-hint xml` / `format_hint: "xml"`.
 - `tooned-core`: dependency-minimal detect + adaptive-convert pipeline (`maybe_tooned`,
   `inspect`, `decode_toon`), embeddable in a hot `PostToolUse` hook path. Detects and
   converts JSON, NDJSON/JSONL, YAML, TOML, CSV, and TSV. Conversion always compares TOON
@@ -77,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **tooned-core:** XML entity reference resolution in text content: character references
+  (`&#65;`, `&#x41;`) and predefined entities (`&lt;`, `&amp;`, `&gt;`, `&apos;`, `&quot;`)
+  are now resolved to their Unicode equivalents; unknown custom entities remain literal
+  `&name;`. ([work-log](docs/agents/work-log/2026-07-16-002-xml-conversion.md), bfdd12a)
+- **tooned-core:** preservation of `xml:*` attributes (e.g., `xml:lang`, `xml:space`) in
+  parsed XML output; custom entity references are preserved as literal text rather than
+  being stripped. ([work-log](docs/agents/work-log/2026-07-16-002-xml-conversion.md), dd63632,
+  d014002)
 - **tooned-cli / tooned-index:** closed 001 Phase 8 convergence gaps: in-place
   `convert --out` reads the source fully and writes via a same-directory
   temp-file-then-rename so a crash cannot leave a partially-written source;
@@ -91,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and TOML parsing; the parsers have their own recursion limits and the
   pre-check produced false positives on brackets inside YAML single-quoted
   strings/comments and TOML basic strings. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
+- **tooned-cli / tooned-core:** format-hint coverage tests for all CLI/MCP
+  `parse_doc_type_hint` mappings (json, ndjson, yaml, toml, csv, tsv, xml). (d014002)
 
 ### Known limitations
 

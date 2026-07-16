@@ -54,10 +54,30 @@ users[4]{id,name,role,active}:
 ```
 
 145 bytes for the same data — 41% smaller, and it decodes back to the exact
-same JSON. That's the whole trade tooned is watching for, on every tool
-call, automatically. A one-off scalar value or a deeply nested, irregular
-object usually doesn't compress this way, and JSON — often — stays smaller.
-tooned measures both and keeps whichever one actually wins.
+same JSON. The same logic applies to XML record lists:
+
+```xml
+<users>
+  <user id="1" name="Alice Chen" role="admin" active="true"/>
+  <user id="2" name="Bob Diaz" role="editor" active="true"/>
+  <user id="3" name="Carla Nunez" role="viewer" active="false"/>
+  <user id="4" name="Dev Patel" role="editor" active="true"/>
+</users>
+```
+
+```toon
+users[4]{@id,@name,@role,@active}:
+  1,"Alice Chen",admin,true
+  2,"Bob Diaz",editor,true
+  3,"Carla Nunez",viewer,false
+  4,"Dev Patel",editor,true
+```
+
+XML attributes map to `@`-prefixed keys in the JSONified intermediate, then
+to the same TOON header format. That's the whole trade tooned is watching for,
+on every tool call, automatically. A one-off scalar value or a deeply nested,
+irregular object usually doesn't compress this way, and JSON — often — stays
+smaller. tooned measures both and keeps whichever one actually wins.
 
 ## Install
 
@@ -134,7 +154,7 @@ tools below over stdio.
 
 For every payload tooned sees, it:
 
-1. Sniffs the format — JSON, NDJSON/JSONL, YAML, TOML, or CSV/TSV — from an
+1. Sniffs the format — JSON, NDJSON/JSONL, YAML, TOML, CSV/TSV, or XML — from an
    explicit hint if one exists, otherwise from the content itself.
 2. Parses it into a structured value.
 3. Encodes that value as TOON and as compact (non-pretty) JSON, and compares
@@ -220,8 +240,8 @@ Contribution guidelines, DCO sign-off, and commit conventions are in
 
 ## Status
 
-v1's feature set is implemented, not a scaffold: adaptive JSON/NDJSON/
-YAML/TOML/CSV/TSV conversion; the Claude Code and Codex CLI hooks
+v2 adds XML input support to the existing v1 surface: adaptive JSON/NDJSON/
+YAML/TOML/CSV/TSV/XML conversion; the Claude Code and Codex CLI hooks
 (install/uninstall/status/doctor, idempotent and safe alongside another
 tool's hook entries); the standalone `convert`/`check`/`pipe`/`wrap` CLI;
 the `.tooned/` project index (`index`/`index sync`/`stats`); and an
@@ -234,11 +254,9 @@ adversarial input and a latency guardrail for the hot conversion path.
 
 It is not yet published to crates.io or tagged as a release — see
 [`specs/001-adaptive-toon-conversion/`](specs/001-adaptive-toon-conversion/)
+and [`specs/002-xml-conversion/`](specs/002-xml-conversion/)
 for the spec/plan/task breakdown this was built from, which remains the
 source of truth over this README if the two ever disagree.
-
-XML input support is deliberately out of scope for v1 — tracked as
-[issue #1](https://github.com/w0wl0lxd/tooned/issues/1) for v2.
 
 ## License
 

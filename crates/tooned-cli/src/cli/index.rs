@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned index [path]`, `index sync`, `index status`, `index show <file>`
 //!
 //! Full scan + classify + cache into `.tooned/index.db` (default: cwd), and
@@ -49,7 +51,7 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
 
 fn run_scan(root: &Path) -> anyhow::Result<()> {
     if !root.is_dir() {
-        eprintln!("path not found: {}", root.display());
+        eprintln!("tooned index: path not found: {}", root.display());
         std::process::exit(2);
     }
 
@@ -78,7 +80,7 @@ fn run_sync(root: &Path) -> anyhow::Result<()> {
         }
         Err(tooned_index::IndexError::NoIndex(path)) => {
             eprintln!(
-                "no existing index at {}; run `tooned index` first",
+                "tooned index sync: no existing index at {}; run `tooned index` first",
                 tooned_index::index_db_path(&path).display()
             );
             std::process::exit(1);
@@ -120,7 +122,7 @@ fn run_show(file: &Path) -> anyhow::Result<()> {
         Err(_) => file,
     };
     let Some(rel_str) = rel.to_str() else {
-        eprintln!("file path is not valid UTF-8: {}", file.display());
+        eprintln!("tooned index show: file path is not valid UTF-8: {}", file.display());
         std::process::exit(2);
     };
 
@@ -145,11 +147,14 @@ fn run_show(file: &Path) -> anyhow::Result<()> {
             Ok(())
         }
         Err(tooned_index::IndexError::NoIndex(path)) => {
-            eprintln!("no index found at {}; run `tooned index` first", path.display());
+            eprintln!(
+                "tooned index show: no index found at {}; run `tooned index` first",
+                path.display()
+            );
             std::process::exit(2);
         }
         Err(tooned_index::IndexError::FileNotIndexed(path)) => {
-            eprintln!("file not indexed: {path}");
+            eprintln!("tooned index show: file not indexed: {path}");
             std::process::exit(2);
         }
         Err(other) => Err(other.into()),

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! MCP stdio server implementation (`rmcp`, `transport-io` feature).
 //!
 //! Every tool delegates to the exact same `tooned_core`/`tooned_index`
@@ -49,6 +51,7 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
         "toml" => Some(DocType::Toml),
         "csv" => Some(DocType::Csv),
         "tsv" => Some(DocType::Tsv),
+        "xml" => Some(DocType::Xml),
         _ => None,
     }
 }
@@ -146,6 +149,7 @@ pub enum DocTypeDto {
     Toml,
     Csv,
     Tsv,
+    Xml,
 }
 
 impl From<DocType> for DocTypeDto {
@@ -157,6 +161,7 @@ impl From<DocType> for DocTypeDto {
             DocType::Toml => Self::Toml,
             DocType::Csv => Self::Csv,
             DocType::Tsv => Self::Tsv,
+            DocType::Xml => Self::Xml,
         }
     }
 }
@@ -502,4 +507,37 @@ async fn serve_async() -> anyhow::Result<()> {
 pub fn serve() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(serve_async())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_doc_type_hint_round_trips_all_format_hints() {
+        let cases = [
+            ("json", Some(DocType::Json)),
+            ("JSON", Some(DocType::Json)),
+            ("ndjson", Some(DocType::NdJson)),
+            ("jsonl", Some(DocType::NdJson)),
+            ("yaml", Some(DocType::Yaml)),
+            ("yml", Some(DocType::Yaml)),
+            ("toml", Some(DocType::Toml)),
+            ("csv", Some(DocType::Csv)),
+            ("tsv", Some(DocType::Tsv)),
+            ("xml", Some(DocType::Xml)),
+            ("XML", Some(DocType::Xml)),
+            ("unknown", None),
+            ("", None),
+        ];
+
+        for (hint, expected) in cases {
+            assert_eq!(
+                parse_doc_type_hint(Some(hint)),
+                expected,
+                "parse_doc_type_hint({hint:?}) should return {expected:?}"
+            );
+        }
+        assert_eq!(parse_doc_type_hint(None), None, "no hint is treated as None");
+    }
 }

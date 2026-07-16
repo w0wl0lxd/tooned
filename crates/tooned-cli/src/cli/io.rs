@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Shared stdin/stdout/file I/O helpers for the `convert`/`check`/`pipe`
 //! subcommands. `-` conventionally means stdin/stdout throughout the CLI
 //! contract (`contracts/cli.md`).
