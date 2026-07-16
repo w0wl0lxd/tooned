@@ -313,5 +313,6 @@ fn doc_type_to_str(doc_type: DocType) -> &'static str {
         DocType::Toml => "toml",
         DocType::Csv => "csv",
         DocType::Tsv => "tsv",
+        DocType::Xml => "xml",
     }
 }

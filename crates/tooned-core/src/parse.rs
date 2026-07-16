@@ -96,6 +96,8 @@ pub enum ParseError {
     Toml(String),
     #[error("invalid CSV/TSV: {0}")]
     Csv(String),
+    #[error("invalid XML: {0}")]
+    Xml(String),
     #[error("input is not valid UTF-8")]
     Utf8,
     #[error("input nesting exceeds the safe structural-depth limit")]
@@ -110,6 +112,7 @@ pub fn parse(input: &[u8], doc_type: DocType) -> Result<Value, ParseError> {
         DocType::Toml => parse_toml(input),
         DocType::Csv => parse_delimited(input, b','),
         DocType::Tsv => parse_delimited(input, b'\t'),
+        DocType::Xml => crate::xml::parse(input),
     }
 }
 
