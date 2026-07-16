@@ -15,23 +15,23 @@ name = "tooned"
 path = "src/main.rs"
 
 [dependencies]
-tooned-core = { path = "../tooned-core", version = "0.1.0" }
-tooned-index = { path = "../tooned-index", version = "0.1.0" }
+anyhow = { workspace = true }
 clap = { workspace = true }
+rmcp = { version = "2", features = ["transport-io"] }
+same-file = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
-rmcp = { version = "2", features = ["transport-io"] }
-same-file = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+tooned-core = { workspace = true }                                            #unified
+tooned-index = { workspace = true }                                           #unified
 
 [dev-dependencies]
 assert_cmd = "2"
+criterion = { workspace = true } #unified
 predicates = "3"
-criterion = "0.8"
-tempfile = "3"
-proptest = "1.4"
+proptest = { workspace = true }  #unified
+tempfile = { workspace = true }  #unified
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"
