@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 # external calls in v1). `async-openai`/`dhat-heap` features are NOT enabled:
 # default features only, keeping this dependency-minimal.
 tiktoken-rs = "0.12"
+quick-xml = { version = "0.41.0", default-features = false }
 
 [dev-dependencies]
 proptest = "1.4"

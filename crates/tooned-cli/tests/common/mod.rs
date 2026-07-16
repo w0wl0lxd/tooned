@@ -4,3 +4,4 @@
 #![allow(dead_code)]
 
 pub mod mcp_client;
+pub mod xml;

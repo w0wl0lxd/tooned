@@ -15,6 +15,8 @@
 //! compiling this module.
 #![allow(dead_code)]
 
+pub mod xml;
+
 use proptest::prelude::*;
 use serde_json::{Map, Value};
 
