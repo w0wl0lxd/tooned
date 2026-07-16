@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `maybe_tooned` and `inspect`: the adaptive TOON-vs-compact-JSON
-//! conversion decision (`contracts/tooned-core-api.md`, data-model.md).
+//! Conversion orchestration and shape classification.
 //!
 //! Both public functions are thin wrappers over a single shared pipeline
 //! (`attempt`) -- constitution Principle V ("no parallel implementation"):
@@ -10,10 +9,16 @@
 //! `inspect` computes the same decision (so it can report accurate sizes and
 //! a convertible y/n verdict) but never returns the TOON text itself.
 
-use crate::detect::detect;
-use crate::parse;
-use crate::shape::{self, ShapeClass};
-use crate::{ConversionOptions, DocType, PassthroughReason, ToonedError};
+use serde_json::Value;
+use tooned_detect::detect;
+use tooned_parse::ParseError;
+use tooned_toon::encode_toon;
+use tooned_types::{
+    Conversion, ConversionOptions, ConversionReport, DocType, InspectReport, PassthroughReason,
+    ShapeClass, ToonedError,
+};
+
+mod shape;
 
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
@@ -78,6 +83,19 @@ impl Attempt {
     }
 }
 
+/// Internal dispatcher that calls the appropriate format parser.
+fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value, ParseError> {
+    match doc_type {
+        DocType::Json => tooned_json::parse_json(input),
+        DocType::NdJson => tooned_json::parse_ndjson(input),
+        DocType::Yaml => tooned_yaml::parse_yaml(input),
+        DocType::Toml => tooned_toml::parse_toml(input),
+        DocType::Csv => tooned_csv::parse_csv(input),
+        DocType::Tsv => tooned_csv::parse_tsv(input),
+        DocType::Xml => tooned_xml::parse(input),
+    }
+}
+
 /// Runs the full pipeline once. Never panics: every fallible step folds
 /// into a `PassthroughReason` rather than propagating a panic or an `Err`
 /// (constitution Principle I; `maybe_tooned`/`inspect` never `Err` for
@@ -87,7 +105,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         return Attempt::not_structured();
     };
 
-    let Ok(value) = parse::parse(input, doc_type) else {
+    let Ok(value) = parse_by_doc_type(input, doc_type) else {
         return Attempt::parse_failed(doc_type);
     };
 
@@ -131,7 +149,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (counter.0, None)
     };
 
-    let Ok(encoded) = toon_lsp::toon::encode(&value) else {
+    let Ok(encoded) = encode_toon(&value) else {
         return Attempt {
             doc_type: Some(doc_type),
             shape,
@@ -154,7 +172,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         };
     }
 
-    let round_trip_ok = match toon_lsp::toon::decode(&encoded) {
+    let round_trip_ok = match tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes) {
         Ok(decoded) => decoded == value,
         Err(_) => false,
     };
@@ -312,43 +330,6 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
         would_convert: reason.is_none(),
         reason,
     }
-}
-
-/// Dry-run diagnostic report backing `tooned check`/`tooned_detect`
-/// (contract: never carries TOON text).
-#[derive(Debug, Clone, PartialEq)]
-pub struct InspectReport {
-    pub doc_type: Option<DocType>,
-    pub shape: ShapeClass,
-    pub input_bytes: usize,
-    pub json_bytes: Option<usize>,
-    pub toon_bytes: Option<usize>,
-    pub savings_pct: Option<f64>,
-    /// Opt-in BPE-token-based savings estimate (T076, FR-023). `None`
-    /// unless `ConversionOptions.precise_tokens` was `true` AND a
-    /// conversion was actually computed (i.e. the same conditions under
-    /// which `toon_bytes`/`savings_pct` are `Some`).
-    pub precise_savings_pct: Option<f64>,
-    pub would_convert: bool,
-    pub reason: Option<PassthroughReason>,
-}
-
-/// Result of an adaptive conversion decision (data-model.md).
-#[derive(Debug, Clone, PartialEq)]
-pub enum Conversion {
-    Toon { text: String, report: ConversionReport },
-    Passthrough { bytes: Vec<u8>, reason: PassthroughReason },
-}
-
-/// Diagnostic detail attached to a successful `Conversion::Toon`
-/// (data-model.md).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConversionReport {
-    pub doc_type: DocType,
-    pub shape: ShapeClass,
-    pub json_bytes: usize,
-    pub toon_bytes: usize,
-    pub savings_pct: f64,
 }
 
 #[cfg(test)]
