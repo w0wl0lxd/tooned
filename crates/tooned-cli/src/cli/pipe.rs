@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned pipe [--margin <pct>] [--max-bytes <n>]`
 //!
 //! stdin -> `maybe_tooned` -> stdout. Composable primitive; passthrough on

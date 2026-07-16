@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned index [path]`, `index sync`, `index status`, `index show <file>`
 //!
 //! Full scan + classify + cache into `.tooned/index.db` (default: cwd), and

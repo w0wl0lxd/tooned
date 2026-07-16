@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration test: incremental sync skips re-hashing an unchanged file,
 //! re-classifies a changed one, and prunes rows for deleted files (T051).
 

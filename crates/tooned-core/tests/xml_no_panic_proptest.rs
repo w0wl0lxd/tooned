@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T082: XML no-panic property tests.
 //!
 //! `maybe_tooned` and `inspect` must not panic for arbitrary XML content,

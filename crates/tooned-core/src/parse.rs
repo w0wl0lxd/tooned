@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Parses raw bytes of a detected `DocType` into a canonical
 //! `serde_json::Value`.
 //!

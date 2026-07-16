@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T078: `proptest` coverage for CSV/TSV and YAML/TOML detection+conversion
 //! parity, beyond the JSON-only Foundational-phase property tests
 //! (`roundtrip_proptest.rs`/`never_regression_proptest.rs`/

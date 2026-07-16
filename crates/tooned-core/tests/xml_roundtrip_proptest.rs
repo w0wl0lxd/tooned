@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T080-T081: XML round-trip fidelity property tests.
 //!
 //! For every generated XML record-list payload where `maybe_tooned` returns

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract tests for `tooned pipe` with XML input.
 //! See `specs/002-xml-conversion/contracts/cli.md`.
 
