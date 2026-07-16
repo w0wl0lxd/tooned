@@ -2,9 +2,15 @@
 //!
 //! Scaffold only: subcommands (`convert`, `check`, `pipe`, `wrap`, `index`,
 //! `stats`, `hook`, `mcp`) are implemented following the spec-kit pipeline
-//! (`specs/`), not directly in this initial commit.
+//! (`specs/`), not directly in this initial commit. See
+//! `specs/001-adaptive-toon-conversion/contracts/cli.md` for the exact
+//! command surface every variant below mirrors.
 
-use clap::Parser;
+mod cli;
+mod hooks;
+mod mcp;
+
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
@@ -12,8 +18,44 @@ use clap::Parser;
     version,
     about = "Transparent TOON re-encoding for AI coding agent tool-call context"
 )]
-struct Cli;
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
 
-fn main() {
-    let _cli = Cli::parse();
+#[derive(Subcommand)]
+enum Command {
+    /// One-shot conversion; stdout by default.
+    Convert(cli::convert::ConvertArgs),
+    /// Dry-run: prints doc type, shape class, byte-size comparison, convertible y/n.
+    Check(cli::check::CheckArgs),
+    /// stdin -> maybe_tooned -> stdout.
+    Pipe(cli::pipe::PipeArgs),
+    /// Runs a wrapped command and adaptively converts its captured stdout.
+    Wrap(cli::wrap::WrapArgs),
+    /// Full scan / sync / status / show against the `.tooned/` project index.
+    Index(cli::index::IndexArgs),
+    /// Ranked savings-opportunity report from the index.
+    Stats(cli::stats::StatsArgs),
+    /// Agent hook install/uninstall/status/doctor (Claude Code, Codex).
+    Hook(hooks::HookArgs),
+    /// Model Context Protocol server.
+    Mcp(mcp::McpArgs),
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    match &cli.command {
+        Command::Convert(args) => cli::convert::run(args),
+        Command::Check(args) => cli::check::run(args),
+        Command::Pipe(args) => cli::pipe::run(args),
+        Command::Wrap(args) => cli::wrap::run(args),
+        Command::Index(args) => cli::index::run(args),
+        Command::Stats(args) => cli::stats::run(args),
+        Command::Hook(args) => {
+            hooks::run(args);
+            Ok(())
+        }
+        Command::Mcp(args) => mcp::run(args),
+    }
 }
