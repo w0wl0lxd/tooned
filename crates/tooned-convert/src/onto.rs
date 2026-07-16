@@ -230,8 +230,12 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
         });
     };
 
-    let value = crate::parse_by_doc_type(input, doc_type)
-        .map_err(|_| ToonedError::DecodeFailed("ONTO parse failed".into()))?;
+    let Ok(value) = crate::parse_by_doc_type(input, doc_type) else {
+        return Ok(Conversion::Passthrough {
+            bytes: input.to_vec(),
+            reason: PassthroughReason::ParseFailed,
+        });
+    };
 
     let shape = shape::classify(&value);
 

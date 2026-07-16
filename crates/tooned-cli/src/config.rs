@@ -65,7 +65,9 @@ impl Config {
             let mut p = PathBuf::from(xdg);
             p.push("tooned");
             p.push("config.toml");
-            return Some(p);
+            if p.is_file() {
+                return Some(p);
+            }
         }
 
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {

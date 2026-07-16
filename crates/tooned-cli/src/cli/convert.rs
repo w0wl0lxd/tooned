@@ -10,7 +10,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use tooned_core::{Conversion, ConversionOptions, decode_toon, maybe_tooned};
+use tooned_core::{Conversion, ConversionOptions, decode_onto, decode_toon, maybe_tooned};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
@@ -333,26 +333,41 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
     Ok(())
 }
 
-/// `--to json` forces treating `bytes` as raw TOON text, regardless of what
-/// content-sniffing would otherwise guess. Unlike the adaptive JSON->TOON
-/// path, an invalid-TOON decode here is a genuine contract-level failure
-/// (not payload-driven ambiguity in the adaptive sense), so it exits 3
+/// `--to json` forces decoding the input as either raw TOON or, when the text
+/// starts with the ONTO `!schema ` header, as ONTO. Unlike the adaptive
+/// JSON->TOON path, an invalid decode here is a genuine contract-level
+/// failure (not payload-driven ambiguity in the adaptive sense), so it exits 3
 /// rather than silently passing through (`contracts/cli.md`).
 fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
+    const ONTO_SCHEMA_PREFIX: &str = "!schema ";
+
     let Ok(text) = std::str::from_utf8(bytes) else {
-        eprintln!("tooned convert: input is not valid UTF-8 TOON text");
+        eprintln!("tooned convert: input is not valid UTF-8 text");
         std::process::exit(3);
     };
-    match decode_toon(text) {
-        Ok(value) => match serde_json::to_vec(&value) {
-            Ok(json) => json,
+
+    let value = if text.starts_with(ONTO_SCHEMA_PREFIX) {
+        match decode_onto(text) {
+            Ok(value) => value,
             Err(err) => {
-                eprintln!("tooned convert: decoded TOON has no JSON representation: {err}");
+                eprintln!("tooned convert: failed to decode ONTO: {err}");
                 std::process::exit(3);
             }
-        },
+        }
+    } else {
+        match decode_toon(text) {
+            Ok(value) => value,
+            Err(err) => {
+                eprintln!("tooned convert: failed to decode TOON: {err}");
+                std::process::exit(3);
+            }
+        }
+    };
+
+    match serde_json::to_vec(&value) {
+        Ok(json) => json,
         Err(err) => {
-            eprintln!("tooned convert: failed to decode TOON: {err}");
+            eprintln!("tooned convert: decoded text has no JSON representation: {err}");
             std::process::exit(3);
         }
     }
