@@ -1,0 +1,14 @@
+# Copy this to .cargo/config.toml (gitignored) for fast local iteration
+# against a sibling ../toon-lsp checkout instead of the published crates.io
+# version. Never commit the real .cargo/config.toml — CI and other
+# contributors must resolve toon-lsp from crates.io, not a local path.
+[patch.crates-io]
+toon-lsp = { path = "../toon-lsp" }
+
+# Optional build cache: install sccache (https://github.com/mozilla/sccache;
+# `nix develop` already provides it) and uncomment to speed up repeated
+# `cargo build`/`cargo check` across the workspace's 3 crates. Left commented
+# so a plain `git clone && cargo build` needs nothing extra — this is an
+# opt-in local speedup, not a project requirement, and CI does not use it.
+# [build]
+# rustc-wrapper = "sccache"
