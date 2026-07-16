@@ -54,7 +54,10 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     // Resolve symlinks so we update the real file, not replace a symlink
     // entry, matching `std::fs::write` semantics. If canonicalization fails
     // (should not happen for an existing input), fall back to the raw path.
-    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = match std::fs::canonicalize(path) {
+        Ok(canonical) => canonical,
+        Err(_) => path.to_path_buf(),
+    };
 
     let parent =
         target.parent().ok_or_else(|| io::Error::other("target path has no parent directory"))?;
