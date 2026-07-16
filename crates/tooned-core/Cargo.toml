@@ -15,20 +15,20 @@ name = "tooned_core"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-types = { path = "../tooned-types", version = "0.1.0" }
-tooned-convert = { path = "../tooned-convert", version = "0.1.0" }
-tooned-toon = { path = "../tooned-toon", version = "0.1.0" }
-tooned-json = { path = "../tooned-json", version = "0.1.0" }
-tooned-xml = { path = "../tooned-xml", version = "0.1.0" }
 serde_json = { workspace = true }
+tooned-convert = { workspace = true } #unified
+tooned-json = { workspace = true }    #unified
+tooned-toon = { workspace = true }    #unified
+tooned-types = { workspace = true }   #unified
+tooned-xml = { workspace = true }     #unified
 
 [dev-dependencies]
-proptest = "1.4"
-criterion = "0.8"
+criterion = { workspace = true }  #unified
+csv = { workspace = true }        #unified
+proptest = { workspace = true }   #unified
+serde_yaml = { workspace = true } #unified
 sonic-rs = "0.5"
-serde_yaml = "0.9"
-toml = "1"
-csv = "1"
+toml = { workspace = true }       #unified
 
 [package.metadata.cargo-machete]
 ignored = ["criterion"]
