@@ -51,7 +51,7 @@ deny = [
 skip = [
   { crate = "bitflags@1", reason = "transitive dependency version splits are normal" },
   { crate = "windows-sys", reason = "platform crate version splits" },
-  { crate = "hashbrown", reason = "transitive split: indexmap 2.x uses 0.17, dashmap/hashlink use 0.14" },
+  { crate = "hashbrown", reason = "indexmap 2.x uses 0.17 while dashmap/hashlink use 0.14" },
 ]
 
 [sources]
