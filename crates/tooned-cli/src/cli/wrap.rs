@@ -72,8 +72,11 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         std::process::exit(code);
     };
     let cap = opts.max_input_bytes;
-    let mut buf = Vec::with_capacity(cap.saturating_add(1));
-    let read_result = (&mut stdout_pipe).take(cap as u64 + 1).read_to_end(&mut buf);
+    // Cap the initial allocation and avoid `cap as u64 + 1` overflow when
+    // `cap` is near `usize::MAX` (mirrors the `read_bounded` hardening in
+    // `io.rs`).
+    let mut buf = Vec::with_capacity(cap.min(64 * 1024).saturating_add(1));
+    let read_result = (&mut stdout_pipe).take((cap as u64).saturating_add(1)).read_to_end(&mut buf);
 
     if let Err(err) = read_result {
         // A genuine I/O error reading the pipe -- fall back to passing
