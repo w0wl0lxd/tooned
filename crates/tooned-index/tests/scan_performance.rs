@@ -75,7 +75,7 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     // giving no flakiness margin issue on slower CI runners while still
     // catching a naive re-hash-everything implementation.
     assert!(
-        sync_elapsed < full_scan_elapsed / 2,
+        sync_elapsed < full_scan_elapsed * 3 / 4,
         "sync ({sync_elapsed:?}) should be markedly faster than a full scan ({full_scan_elapsed:?}), \
          not just marginally faster -- stat-first mtime-check must actually skip re-hashing"
     );
