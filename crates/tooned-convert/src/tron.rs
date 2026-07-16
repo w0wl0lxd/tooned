@@ -321,8 +321,7 @@ fn expand_tron(
 
         if c.is_ascii_uppercase() {
             let name_start_byte = pos;
-            while idx < chars.len()
-                && (chars[idx].1.is_ascii_alphanumeric() || chars[idx].1 == '_')
+            while idx < chars.len() && (chars[idx].1.is_ascii_alphanumeric() || chars[idx].1 == '_')
             {
                 idx += 1;
             }
