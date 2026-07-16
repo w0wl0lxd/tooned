@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration test: first index creation appends `.tooned/` to the
 //! project's `.gitignore` (creating it if absent); running index again does
 //! not duplicate the entry (T052).

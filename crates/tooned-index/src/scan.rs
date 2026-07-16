@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Full directory scan (T056): walk via the `ignore` crate (respects
 //! `.gitignore`), blake3 content fingerprinting, doctype detection + shape
 //! classification via `tooned_core::inspect`, persisted into
@@ -313,5 +315,6 @@ fn doc_type_to_str(doc_type: DocType) -> &'static str {
         DocType::Toml => "toml",
         DocType::Csv => "csv",
         DocType::Tsv => "tsv",
+        DocType::Xml => "xml",
     }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Criterion benchmark for the conversion hot path (T077).
 //!
 //! Benchmarks `tooned_core::maybe_tooned` against a ~100 KiB uniform
@@ -38,6 +40,19 @@ fn uniform_array_json_100kib() -> Vec<u8> {
     s.into_bytes()
 }
 
+/// A record-list XML payload sized to land at roughly 100 KiB. Mirrors the
+/// JSON fixture: repeated `<record>` elements with a consistent set of
+/// attributes, the shape the XML parser produces a uniform array from.
+fn uniform_array_xml_100kib() -> Vec<u8> {
+    // 1650 rows lands at ~100.6 KiB for this attribute set.
+    let mut s = String::from("<?xml version=\"1.0\"?>\n<data>");
+    for i in 0..1650 {
+        let _ = write!(s, r#"<record id="{i}" name="row-{i}" active="true" score="{i}" />"#);
+    }
+    s.push_str("</data>");
+    s.into_bytes()
+}
+
 fn bench_maybe_tooned_uniform_array_100kib(c: &mut Criterion) {
     let payload = uniform_array_json_100kib();
     let opts = ConversionOptions::default();
@@ -47,5 +62,18 @@ fn bench_maybe_tooned_uniform_array_100kib(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_maybe_tooned_uniform_array_100kib);
+fn bench_maybe_tooned_uniform_xml_100kib(c: &mut Criterion) {
+    let payload = uniform_array_xml_100kib();
+    let opts = ConversionOptions::default();
+
+    c.bench_function("maybe_tooned_uniform_xml_100kib", |b| {
+        b.iter(|| maybe_tooned(black_box(&payload), black_box(&opts)));
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_maybe_tooned_uniform_array_100kib,
+    bench_maybe_tooned_uniform_xml_100kib
+);
 criterion_main!(benches);
