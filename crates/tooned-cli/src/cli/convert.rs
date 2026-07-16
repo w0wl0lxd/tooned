@@ -62,7 +62,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let bytes = match read_input(&args.input) {
                 Ok(bytes) => bytes,
                 Err(err) => {
-                    eprintln!("tooned: failed to read {}: {err}", args.input.display());
+                    eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
                     std::process::exit(2);
                 }
             };
@@ -73,7 +73,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 write_output(args.out.as_deref(), &output)
             };
             if let Err(err) = write_result {
-                eprintln!("tooned: failed to write output: {err}");
+                eprintln!("tooned convert: failed to write output: {err}");
                 std::process::exit(2);
             }
         }
@@ -140,7 +140,7 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
     let mut reader = match open_input(input) {
         Ok(reader) => reader,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", input.display());
+            eprintln!("tooned convert: failed to read {}: {err}", input.display());
             std::process::exit(2);
         }
     };
@@ -151,7 +151,7 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
     let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
         Ok(outcome) => outcome,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", input.display());
+            eprintln!("tooned convert: failed to read {}: {err}", input.display());
             std::process::exit(2);
         }
     };
@@ -163,7 +163,7 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
 
     let output = adaptive_bytes(&bytes, opts);
     if let Err(err) = write_in_place(input, &output) {
-        eprintln!("tooned: failed to write output: {err}");
+        eprintln!("tooned convert: failed to write output: {err}");
         std::process::exit(2);
     }
 
@@ -177,7 +177,10 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
 /// those fall back to an in-place `fs::write` (the source was already fully
 /// read before this point, so truncation mid-process is not a concern).
 fn write_in_place(input: &Path, output: &[u8]) -> std::io::Result<()> {
-    let target = std::fs::canonicalize(input).unwrap_or_else(|_| input.to_path_buf());
+    let target = match std::fs::canonicalize(input) {
+        Ok(canonical) => canonical,
+        Err(_) => input.to_path_buf(),
+    };
     if nlink(&target).is_some_and(|n| n > 1) {
         std::fs::write(&target, output)
     } else {
@@ -229,7 +232,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", args.input.display());
+            eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
             std::process::exit(2);
         }
     };
@@ -247,7 +250,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
     let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, out.as_mut()) {
         Ok(outcome) => outcome,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", args.input.display());
+            eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
             if let Some(tmp) = &tmp_path {
                 let _ = std::fs::remove_file(tmp);
             }
@@ -259,7 +262,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
         BoundedRead::Fits(bytes) => {
             let output = adaptive_bytes(&bytes, opts);
             if let Err(err) = out.write_all(&output) {
-                eprintln!("tooned: failed to write output: {err}");
+                eprintln!("tooned convert: failed to write output: {err}");
                 if let Some(tmp) = &tmp_path {
                     let _ = std::fs::remove_file(tmp);
                 }
@@ -274,7 +277,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
     if let (Some(tmp), Some(target)) = (tmp_path, out_path)
         && let Err(err) = atomic_rename(&tmp, target)
     {
-        eprintln!("tooned: failed to write output: {err}");
+        eprintln!("tooned convert: failed to write output: {err}");
         std::process::exit(2);
     }
 
@@ -288,19 +291,19 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
 /// rather than silently passing through (`contracts/cli.md`).
 fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
     let Ok(text) = std::str::from_utf8(bytes) else {
-        eprintln!("tooned: input is not valid UTF-8 TOON text");
+        eprintln!("tooned convert: input is not valid UTF-8 TOON text");
         std::process::exit(3);
     };
     match decode_toon(text) {
         Ok(value) => match serde_json::to_vec(&value) {
             Ok(json) => json,
             Err(err) => {
-                eprintln!("tooned: decoded TOON has no JSON representation: {err}");
+                eprintln!("tooned convert: decoded TOON has no JSON representation: {err}");
                 std::process::exit(3);
             }
         },
         Err(err) => {
-            eprintln!("tooned: failed to decode TOON: {err}");
+            eprintln!("tooned convert: failed to decode TOON: {err}");
             std::process::exit(3);
         }
     }

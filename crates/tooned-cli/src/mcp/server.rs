@@ -505,7 +505,7 @@ async fn serve_async() -> anyhow::Result<()> {
 /// serve` exits non-zero only in that case) -- tool-call-level failures
 /// never propagate out of an individual tool handler as a process error.
 pub fn serve() -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(serve_async())
 }
 
