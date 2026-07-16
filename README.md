@@ -54,10 +54,30 @@ users[4]{id,name,role,active}:
 ```
 
 145 bytes for the same data — 41% smaller, and it decodes back to the exact
-same JSON. That's the whole trade tooned is watching for, on every tool
-call, automatically. A one-off scalar value or a deeply nested, irregular
-object usually doesn't compress this way, and JSON — often — stays smaller.
-tooned measures both and keeps whichever one actually wins.
+same JSON. The same logic applies to XML record lists:
+
+```xml
+<users>
+  <user id="1" name="Alice Chen" role="admin" active="true"/>
+  <user id="2" name="Bob Diaz" role="editor" active="true"/>
+  <user id="3" name="Carla Nunez" role="viewer" active="false"/>
+  <user id="4" name="Dev Patel" role="editor" active="true"/>
+</users>
+```
+
+```toon
+users[4]{@id,@name,@role,@active}:
+  1,"Alice Chen",admin,true
+  2,"Bob Diaz",editor,true
+  3,"Carla Nunez",viewer,false
+  4,"Dev Patel",editor,true
+```
+
+XML attributes map to `@`-prefixed keys in the JSONified intermediate, then
+to the same TOON header format. That's the whole trade tooned is watching for,
+on every tool call, automatically. A one-off scalar value or a deeply nested,
+irregular object usually doesn't compress this way, and JSON — often — stays
+smaller. tooned measures both and keeps whichever one actually wins.
 
 ## Install
 
