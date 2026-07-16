@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned` standalone CLI subcommands: `convert`, `check`, `pipe`, `wrap`,
 //! `index`, `stats`. See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 
@@ -24,6 +26,7 @@ pub enum FormatHint {
     Toml,
     Csv,
     Tsv,
+    Xml,
 }
 
 impl From<FormatHint> for tooned_core::DocType {
@@ -35,6 +38,7 @@ impl From<FormatHint> for tooned_core::DocType {
             FormatHint::Toml => tooned_core::DocType::Toml,
             FormatHint::Csv => tooned_core::DocType::Csv,
             FormatHint::Tsv => tooned_core::DocType::Tsv,
+            FormatHint::Xml => tooned_core::DocType::Xml,
         }
     }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned hook doctor`: read-only report across both agents' configs,
 //! listing every detected hook entry -- tooned's own and any foreign one
 //! (e.g. rtk's) -- by `command`/`matcher`. Never writes to either config
