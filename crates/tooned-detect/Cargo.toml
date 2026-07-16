@@ -1,0 +1,19 @@
+[package]
+name = "tooned-detect"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+
+[lib]
+name = "tooned_detect"
+path = "src/lib.rs"
+
+[dependencies]
+tooned-types = { path = "../tooned-types", version = "0.1.0" }
+tooned-xml = { path = "../tooned-xml", version = "0.1.0" }
+
+[lints]
+workspace = true
