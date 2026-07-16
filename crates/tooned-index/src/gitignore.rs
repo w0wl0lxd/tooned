@@ -115,7 +115,15 @@ fn write_gitignore(path: &Path, contents: &str) -> Result<(), IndexError> {
 
     #[cfg(not(unix))]
     {
-        std::fs::write(&tmp_path, contents)?;
+        use std::fs::OpenOptions;
+        use std::io::Write as _;
+
+        // create_new prevents a pre-existing temp file (or symlink) from being
+        // clobbered; Windows does not expose O_NOFOLLOW, but this is sufficient to
+        // stop a symlink-to-arbitrary-file attack on the temp name.
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp_path)?;
+        file.write_all(contents.as_bytes())?;
+        file.flush()?;
     }
 
     match std::fs::rename(&tmp_path, path) {

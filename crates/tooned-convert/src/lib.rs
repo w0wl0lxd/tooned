@@ -20,6 +20,9 @@ use tooned_types::{
 
 mod shape;
 
+pub mod onto;
+pub use onto::{decode as decode_onto, encode as encode_onto, maybe_onto};
+
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
 struct AttemptToon {
@@ -31,7 +34,7 @@ struct AttemptToon {
 /// them -- used to get `serde_json::to_writer`'s serialized byte length
 /// without materializing an owned `String` (see `attempt`'s hot-path
 /// comment).
-struct ByteCountingWriter(usize);
+pub(crate) struct ByteCountingWriter(usize);
 
 impl std::io::Write for ByteCountingWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -84,7 +87,7 @@ impl Attempt {
 }
 
 /// Internal dispatcher that calls the appropriate format parser.
-fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value, ParseError> {
+pub(crate) fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value, ParseError> {
     match doc_type {
         DocType::Json => tooned_json::parse_json(input),
         DocType::NdJson => tooned_json::parse_ndjson(input),
@@ -222,13 +225,13 @@ fn precise_token_savings_pct(json_text: &str, toon_text: &str) -> f64 {
 /// an infinite margin) -- clamping to 0 is the conservative, still-safe
 /// interpretation ("no margin required" rather than "reject everything" or
 /// "accept everything").
-fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
+pub(crate) fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
     let margin_pct = if margin_pct.is_finite() { margin_pct.max(0.0) } else { 0.0 };
     let threshold = (json_bytes as f64) * (1.0 - margin_pct / 100.0);
     (toon_bytes as f64) < threshold
 }
 
-fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
+pub(crate) fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
     if json_bytes == 0 {
         return 0.0;
     }
