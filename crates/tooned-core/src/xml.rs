@@ -355,11 +355,11 @@ fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, Par
     loop {
         let event = reader.read_event().map_err(|e| ParseError::Xml(e.to_string()))?;
         match event {
-            Event::Decl(_)
-            | Event::Comment(_)
-            | Event::PI(_)
-            | Event::DocType(_)
-            | Event::GeneralRef(_) => {}
+            Event::Decl(_) | Event::Comment(_) | Event::PI(_) | Event::DocType(_) => {}
+            Event::GeneralRef(e) => {
+                let name = std::str::from_utf8(e.as_ref()).map_err(|_| ParseError::Utf8)?;
+                push_text(&mut stack, format!("&{name};"))?;
+            }
             Event::Start(e) => {
                 let name = local_name(&e, opts)?;
                 let attrs = collect_attrs(&e, opts, version)?;
@@ -426,7 +426,7 @@ fn collect_attrs(
 /// Returns true for namespace-declaration attributes (`xmlns` or `xmlns:*`).
 fn is_namespace_attr(attr: &quick_xml::events::attributes::Attribute<'_>) -> bool {
     let raw = attr.key.as_ref();
-    raw == b"xmlns" || raw.starts_with(b"xmlns:") || raw == b"xml" || raw.starts_with(b"xml:")
+    raw == b"xmlns" || raw.starts_with(b"xmlns:")
 }
 
 fn insert_child_or_root(
@@ -774,5 +774,24 @@ mod tests {
     fn truncated_xml_is_an_error() {
         let xml = b"<?xml version=\"1.0\"?><root>";
         assert!(parse(xml).is_err());
+    }
+
+    #[test]
+    fn preserves_custom_entity_references_as_literal_text() {
+        let xml = b"<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY foo \"hello\">]><root>before&foo;after</root>";
+        let value = parse(xml).expect("valid XML with entity refs must parse");
+        assert_eq!(value, json!({"root": "before&foo;after"}));
+    }
+
+    #[test]
+    fn preserves_xml_prefixed_attributes() {
+        let xml = b"<root xml:lang=\"en\">hello</root>";
+        let value = parse(xml).expect("valid XML must parse");
+        assert_eq!(value, json!({"root": {"@lang": "en", "$text": "hello"}}));
+    }
+
+    #[test]
+    fn rejects_html_doctype_without_trailing_tag_characters() {
+        assert_eq!(sniff(b"<!DOCTYPE html>"), None);
     }
 }
