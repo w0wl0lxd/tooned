@@ -1,31 +1,50 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `ToonedError` and the `decode_toon` entrypoint
-//! (`contracts/tooned-core-api.md`).
+//! TOON encode/decode wrapper.
 
 use serde_json::Value;
+use tooned_types::{ConversionOptions, ToonedError};
 
-use crate::ConversionOptions;
-use crate::parse::exceeds_max_structural_depth;
+/// Conservative nesting-depth guard applied before TOON bytes reach the
+/// decoder. Mirrors the JSON guard in `tooned-parse`.
+const MAX_STRUCTURAL_DEPTH: usize = 100;
 
-/// Reserved for genuine caller misuse or explicit decode failures -- never
-/// returned by `maybe_tooned`/`inspect` for payload-driven failure
-/// (malformed/oversized/ambiguous input), which always resolves to
-/// `Conversion::Passthrough` instead (constitution Principle I,
-/// `contracts/tooned-core-api.md` preconditions).
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ToonedError {
-    /// Input exceeded a caller-declared size limit. Not actually returned by
-    /// `maybe_tooned`/`inspect` (those downgrade to
-    /// `Passthrough { reason: InputTooLarge }` instead, per FR-006); kept as
-    /// a variant for callers that want to pre-validate a size limit
-    /// themselves before calling in.
-    #[error("input exceeds max_input_bytes limit")]
-    InputTooLarge,
-    /// `decode_toon` failed because `text` is not valid TOON.
-    #[error("failed to decode TOON input: {0}")]
-    DecodeFailed(String),
+/// Flat, iterative (non-recursive) walk that rejects input nested deeper
+/// than the safe structural-depth limit worth of `{`/`[`/`}`/`]`, ignoring bracket
+/// characters inside double-quoted strings (with `\"` escape handling).
+fn exceeds_max_structural_depth(input: &[u8]) -> bool {
+    let mut depth: usize = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for &b in input {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                if depth > MAX_STRUCTURAL_DEPTH {
+                    return true;
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Encodes a `serde_json::Value` into TOON format.
+pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
+    toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
 /// Decodes a TOON document back into a structured [`serde_json::Value`].

@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
+use tooned_types::ShapeClass;
 
 /// Sampling cap for shape classification (data-model.md, plan.md).
 pub const SHAPE_SAMPLE_CAP: usize = 64;
@@ -17,13 +18,6 @@ pub const SHAPE_SAMPLE_CAP: usize = 64;
 /// Uniformity fraction required to classify a sampled array as
 /// `UniformArrayOfObjects` (data-model.md).
 const UNIFORMITY_THRESHOLD: f64 = 0.9;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ShapeClass {
-    UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
-    Irregular,
-    Scalar,
-}
 
 /// Classifies the top-level shape of `value`. A non-array root is always
 /// `Scalar`; an array is sampled (up to `SHAPE_SAMPLE_CAP` elements) and
