@@ -36,6 +36,51 @@ pub fn write_output(out: Option<&Path>, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
+/// Writes `bytes` to `path` atomically: the data is first written in full
+/// to a uniquely-named temp file in the same directory, then promoted into
+/// place with a single `rename`. A same-directory rename is atomic on all
+/// platforms `tooned` targets, so readers (or a concurrent writer) never
+/// observe a partially-written file, unlike a direct in-place `fs::write`.
+///
+/// If `path` is a symlink, it is resolved to its target (matching the
+/// semantics of the direct-write path it replaces) and the symlink itself is
+/// left in place.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    // Resolve symlinks so we update the real file, not replace a symlink
+    // entry, matching `std::fs::write` semantics. If canonicalization fails
+    // (should not happen for an existing input), fall back to the raw path.
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+
+    let parent =
+        target.parent().ok_or_else(|| io::Error::other("target path has no parent directory"))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| io::Error::other("target path has no file name"))?
+        .to_string_lossy();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let tmp_name = format!(".{file_name}.tmp.{}.{nanos}", std::process::id());
+    let tmp_path = parent.join(tmp_name);
+
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp_path)?;
+    file.write_all(bytes)?;
+    file.flush()?;
+
+    // Best-effort preservation of the original file's mode.
+    if let Ok(meta) = std::fs::metadata(&target) {
+        let _ = std::fs::set_permissions(&tmp_path, meta.permissions());
+    }
+
+    match std::fs::rename(&tmp_path, &target) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(err)
+        }
+    }
+}
+
 /// Opens `path` for reading, or stdin when `path == "-"`.
 pub fn open_input(path: &Path) -> io::Result<Box<dyn io::Read>> {
     if path == Path::new("-") {
