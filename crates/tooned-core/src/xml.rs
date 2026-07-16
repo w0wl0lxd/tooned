@@ -348,7 +348,7 @@ fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, Par
 
     let mut reader = Reader::from_reader(input);
 
-    let mut stack: Vec<ElementFrame> = Vec::new();
+    let mut stack: Vec<ElementFrame> = Vec::with_capacity(opts.max_depth);
     let mut root: Option<Value> = None;
     let version = XmlVersion::Implicit1_0;
 
@@ -506,7 +506,10 @@ fn attr_key(
     let bytes =
         if opts.strip_namespaces { attr.key.local_name().into_inner() } else { attr.key.as_ref() };
     let name = std::str::from_utf8(bytes).map_err(|_| ParseError::Utf8)?;
-    Ok(format!("{}{}", opts.attribute_prefix, name))
+    let mut result = String::with_capacity(opts.attribute_prefix.len() + name.len());
+    result.push_str(&opts.attribute_prefix);
+    result.push_str(name);
+    Ok(result)
 }
 
 fn attr_value(
@@ -600,7 +603,7 @@ fn append_or_insert(map: &mut Map<String, Value>, key: String, value: Value) {
         if let Value::Array(arr) = existing {
             arr.push(value);
         } else {
-            let old = std::mem::replace(existing, Value::Array(Vec::new()));
+            let old = std::mem::replace(existing, Value::Array(Vec::with_capacity(2)));
             if let Value::Array(arr) = existing {
                 arr.push(old);
                 arr.push(value);
