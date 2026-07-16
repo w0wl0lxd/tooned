@@ -14,7 +14,7 @@ use tooned_core::{Conversion, ConversionOptions, decode_toon, maybe_tooned};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
-    BoundedRead, open_input, open_output, read_bounded, read_input, write_output,
+    BoundedRead, open_input, open_output, read_bounded, read_input, write_atomic, write_output,
 };
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -153,12 +153,47 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
     };
 
     let output = adaptive_bytes(&bytes, opts);
-    if let Err(err) = std::fs::write(input, output) {
+    if let Err(err) = write_in_place(input, &output) {
         eprintln!("tooned: failed to write output: {err}");
         std::process::exit(2);
     }
 
     Ok(())
+}
+
+/// Writes `output` back to `input` when they are the same file. Uses an
+/// atomic temp-file-then-rename whenever the file has only one link, so a
+/// crash cannot leave a partially-written source. Files with multiple
+/// hardlinks cannot be atomically replaced without breaking the link, so
+/// those fall back to an in-place `fs::write` (the source was already fully
+/// read before this point, so truncation mid-process is not a concern).
+fn write_in_place(input: &Path, output: &[u8]) -> std::io::Result<()> {
+    let target = std::fs::canonicalize(input).unwrap_or_else(|_| input.to_path_buf());
+    if nlink(&target).is_some_and(|n| n > 1) {
+        std::fs::write(&target, output)
+    } else {
+        write_atomic(input, output)
+    }
+}
+
+/// Returns the number of hard links for `path`, or `None` if it cannot be
+/// determined on the current platform.
+fn nlink(path: &Path) -> Option<u64> {
+    let meta = std::fs::metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(meta.nlink())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        Some(meta.number_of_links())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
+    }
 }
 
 /// Shared bounded-read path for both the default adaptive direction and
