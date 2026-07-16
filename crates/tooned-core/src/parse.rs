@@ -29,33 +29,31 @@ use crate::DocType;
 /// `criterion` benchmarks before v1 ships (Polish phase, T077).
 pub const SONIC_RS_THRESHOLD_BYTES: usize = 8 * 1024;
 
-/// Conservative nesting-depth guard applied before any of these bytes reach
-/// a real deserializer. `serde_json`'s own `Value` deserializer defaults to
-/// rejecting recursion past depth ~127; `serde_yaml` and `toml` similarly
-/// self-guard well below this. **`sonic-rs`'s deserializer does not** --
-/// verified empirically (see module tests below and the T009 no-panic
-/// property test): adversarially deep bracket nesting fed through
+/// Conservative nesting-depth guard applied before JSON bytes reach a real
+/// deserializer. `serde_json`'s own `Value` deserializer defaults to
+/// rejecting recursion past depth ~127, but **`sonic-rs`'s deserializer does
+/// not** -- verified empirically (see module tests below and the T009
+/// no-panic property test): adversarially deep bracket nesting fed through
 /// `sonic_rs::from_slice::<serde_json::Value>` overflows the stack rather
 /// than returning an `Err` once past roughly depth 150-200 on a 2 MiB
 /// thread stack (the default per-test-thread stack size `cargo test`/
 /// `cargo nextest` use) -- a fatal, *uncatchable* process abort, not a
 /// panic, so it cannot be guarded against after the fact. This scan runs
-/// ahead of every parser here (not just the sonic-rs path) so behavior is
-/// identical regardless of which deserializer actually handles a given
-/// input, and stays well under the 150-200 boundary with a wide safety
-/// margin (also protects the *subsequent* recursive operations on a
-/// successfully-parsed `Value` -- encode/serialize/Drop -- which have the
-/// same recursion-depth-proportional-to-value-nesting shape).
+/// ahead of the JSON/NDJSON paths (not YAML/TOML, whose parsers have their
+/// own recursion limits and whose quoted/comment text can legitimately
+/// contain unbalanced brackets). It stays well under the 150-200 boundary
+/// with a wide safety margin (also protects the *subsequent* recursive
+/// operations on a successfully-parsed `Value` -- encode/serialize/Drop --
+/// which have the same recursion-depth-proportional-to-value-nesting shape).
 const MAX_STRUCTURAL_DEPTH: usize = 100;
 
 /// Flat, iterative (non-recursive) walk that rejects input nested deeper
 /// than [`MAX_STRUCTURAL_DEPTH`] worth of `{`/`[`/`}`/`]`, ignoring bracket
 /// characters inside double-quoted strings (with `\"` escape handling).
-/// Deliberately shared across JSON/YAML/TOML: all three use this bracket
-/// punctuation for nested structures (YAML flow style, TOML inline tables/
-/// arrays), and a single-quote-string false positive here (over-counting
-/// depth inside a YAML/TOML single-quoted string containing many brackets)
-/// only ever makes this *more* conservative, never less safe.
+/// Only JSON and NDJSON use this guard; YAML and TOML are excluded because
+/// their parsers already enforce safe recursion limits and their quoted
+/// strings/comments can contain brackets that would produce false positives
+/// here.
 pub(crate) fn exceeds_max_structural_depth(input: &[u8]) -> bool {
     let mut depth: usize = 0;
     let mut in_string = false;
@@ -152,16 +150,10 @@ fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
 }
 
 fn parse_yaml(input: &[u8]) -> Result<Value, ParseError> {
-    if exceeds_max_structural_depth(input) {
-        return Err(ParseError::TooDeep);
-    }
     serde_yaml::from_slice::<Value>(input).map_err(|e| ParseError::Yaml(e.to_string()))
 }
 
 fn parse_toml(input: &[u8]) -> Result<Value, ParseError> {
-    if exceeds_max_structural_depth(input) {
-        return Err(ParseError::TooDeep);
-    }
     let text = std::str::from_utf8(input).map_err(|_| ParseError::Utf8)?;
     toml::from_str::<Value>(text).map_err(|e| ParseError::Toml(e.to_string()))
 }
@@ -304,6 +296,24 @@ mod tests {
             matches!(result, Err(ParseError::Csv(_))),
             "duplicate TSV header must error, not silently drop a column: {result:?}"
         );
+    }
+
+    #[test]
+    fn yaml_brackets_in_string_are_not_false_positive_depth() {
+        let yaml = b"a: '[[[[[[[[[[[[[[[[[[[[[[[['";
+        assert!(parse(yaml, DocType::Yaml).is_ok());
+    }
+
+    #[test]
+    fn yaml_brackets_in_comments_are_not_false_positive_depth() {
+        let yaml = b"# [[[[[[[[[[[[[[[[[[[[[[[[\na: 1\n";
+        assert!(parse(yaml, DocType::Yaml).is_ok());
+    }
+
+    #[test]
+    fn toml_brackets_in_string_are_not_false_positive_depth() {
+        let toml = b"a = \"[[[[[[[[[[[[[[[[[[[[[[[[\"";
+        assert!(parse(toml, DocType::Toml).is_ok());
     }
 
     #[test]
