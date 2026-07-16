@@ -1,6 +1,20 @@
 [workspace]
 resolver = "3"
-members = ["crates/tooned-core", "crates/tooned-index", "crates/tooned-cli"]
+members = [
+    "crates/tooned-core",
+    "crates/tooned-index",
+    "crates/tooned-cli",
+    "crates/tooned-types",
+    "crates/tooned-parse",
+    "crates/tooned-detect",
+    "crates/tooned-json",
+    "crates/tooned-yaml",
+    "crates/tooned-toml",
+    "crates/tooned-csv",
+    "crates/tooned-xml",
+    "crates/tooned-toon",
+    "crates/tooned-convert",
+]
 
 [workspace.package]
 version = "0.1.0"
