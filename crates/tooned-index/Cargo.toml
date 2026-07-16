@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 tooned-core = { path = "../tooned-core", version = "0.1.0" }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 ignore = "0.4"
 blake3 = "1"
 thiserror = { workspace = true }
