@@ -88,7 +88,7 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         return Some(delimited);
     }
 
-    None
+    crate::xml::sniff(input)
 }
 
 /// Whether the first line of `trimmed` is, by itself, a TOML table header:

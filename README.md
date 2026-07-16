@@ -134,7 +134,7 @@ tools below over stdio.
 
 For every payload tooned sees, it:
 
-1. Sniffs the format — JSON, NDJSON/JSONL, YAML, TOML, or CSV/TSV — from an
+1. Sniffs the format — JSON, NDJSON/JSONL, YAML, TOML, CSV/TSV, or XML — from an
    explicit hint if one exists, otherwise from the content itself.
 2. Parses it into a structured value.
 3. Encodes that value as TOON and as compact (non-pretty) JSON, and compares
@@ -220,8 +220,8 @@ Contribution guidelines, DCO sign-off, and commit conventions are in
 
 ## Status
 
-v1's feature set is implemented, not a scaffold: adaptive JSON/NDJSON/
-YAML/TOML/CSV/TSV conversion; the Claude Code and Codex CLI hooks
+v2 adds XML input support to the existing v1 surface: adaptive JSON/NDJSON/
+YAML/TOML/CSV/TSV/XML conversion; the Claude Code and Codex CLI hooks
 (install/uninstall/status/doctor, idempotent and safe alongside another
 tool's hook entries); the standalone `convert`/`check`/`pipe`/`wrap` CLI;
 the `.tooned/` project index (`index`/`index sync`/`stats`); and an
@@ -234,11 +234,9 @@ adversarial input and a latency guardrail for the hot conversion path.
 
 It is not yet published to crates.io or tagged as a release — see
 [`specs/001-adaptive-toon-conversion/`](specs/001-adaptive-toon-conversion/)
+and [`specs/002-xml-conversion/`](specs/002-xml-conversion/)
 for the spec/plan/task breakdown this was built from, which remains the
 source of truth over this README if the two ever disagree.
-
-XML input support is deliberately out of scope for v1 — tracked as
-[issue #1](https://github.com/w0wl0lxd/tooned/issues/1) for v2.
 
 ## License
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tooned-core`: XML input support (detect + parse + adaptive TOON conversion). The XML
+  sniffer is conservative (rejects HTML/DOCTYPE html and common HTML tags), the `quick-xml`
+  parser uses streaming events with a depth guard, namespace stripping, and mixed-content
+  handling, and `proptest` property tests now cover XML round-trip fidelity, never-a-regression,
+  no-panic on adversarial/invalid UTF-8/HTML-like/truncated input, and cross-format parity with
+  JSON. The `tooned` CLI and MCP server both accept `--format-hint xml` / `format_hint: "xml"`.
 - `tooned-core`: dependency-minimal detect + adaptive-convert pipeline (`maybe_tooned`,
   `inspect`, `decode_toon`), embeddable in a hot `PostToolUse` hook path. Detects and
   converts JSON, NDJSON/JSONL, YAML, TOML, CSV, and TSV. Conversion always compares TOON
