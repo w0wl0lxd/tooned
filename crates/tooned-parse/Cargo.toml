@@ -12,8 +12,6 @@ name = "tooned_parse"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-types = { path = "../tooned-types", version = "0.1.0" }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]
