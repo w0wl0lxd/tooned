@@ -8,7 +8,7 @@
 //! input (constitution Principle I), and byte-level line/prefix inspection
 //! sidesteps UTF-8 concerns entirely rather than needing to handle them.
 
-use crate::DocType;
+use tooned_types::DocType;
 
 /// Detects the document type of `input`. `format_hint`, when present, is
 /// honored unconditionally -- even if it conflicts with the content -- per
@@ -90,7 +90,7 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         return Some(delimited);
     }
 
-    crate::xml::sniff(input)
+    tooned_xml::sniff(input)
 }
 
 /// Whether the first line of `trimmed` is, by itself, a TOML table header:
