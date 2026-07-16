@@ -126,34 +126,15 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         }
         // `--to tron` forces JSON-like input into the prototype TRON
         // record-stream encoding. It requires a uniform object/array of flat
-        // objects. Like `--to onto`, the margin is forced to 0% but round-trip
+        // objects. Like `--to toon`, the margin is forced to 0% but round-trip
         // fidelity is still enforced.
         Some(Direction::Tron) => {
-            let bytes = match read_input(&args.input) {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
-                    std::process::exit(2);
-                }
-            };
             let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+            // `--to tron` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
-            let output = match maybe_tron(&bytes, &opts) {
-                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
-                Err(_) => bytes.clone(),
-            };
-            let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
-                write_in_place(&args.input, &output)
-            } else {
-                write_output(args.out.as_deref(), &output)
-            };
-            if let Err(err) = write_result {
-                eprintln!("tooned convert: failed to write output: {err}");
-                std::process::exit(2);
-            }
+            run_conversion_bounded(args, &opts, tron_bytes)?;
         }
         // `--to toon` forces the JSON->TOON direction, bypassing the
         // adaptive default's 2% savings cushion (margin_pct: 0.0) while
@@ -167,13 +148,13 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
-            run_adaptive_bounded(args, &opts)?;
+            run_conversion_bounded(args, &opts, adaptive_bytes)?;
         }
         None => {
             let config = crate::config::Config::load(args.config.as_deref())?;
             let opts =
                 config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
-            run_adaptive_bounded(args, &opts)?;
+            run_conversion_bounded(args, &opts, adaptive_bytes)?;
         }
     }
 
@@ -201,13 +182,17 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     }
 }
 
-/// Adaptive conversion when `--out` points at the same file as `input`.
+/// Conversion when `--out` points at the same file as `input`.
 /// Reads the source fully before opening the destination, so `File::create`
 /// cannot truncate the input before it is consumed (FR-005). If the file is
 /// already larger than `max_input_bytes`, the conversion would pass through
 /// unchanged, so no write is performed.
 #[allow(clippy::unnecessary_wraps)]
-fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Result<()> {
+fn run_conversion_in_place(
+    input: &Path,
+    opts: &ConversionOptions,
+    convert: fn(&[u8], &ConversionOptions) -> Vec<u8>,
+) -> anyhow::Result<()> {
     if let Ok(meta) = std::fs::metadata(input)
         && meta.len() > opts.max_input_bytes as u64
     {
@@ -238,7 +223,7 @@ fn run_adaptive_in_place(input: &Path, opts: &ConversionOptions) -> anyhow::Resu
         BoundedRead::Streamed { .. } => return Ok(()),
     };
 
-    let output = adaptive_bytes(&bytes, opts);
+    let output = convert(&bytes, opts);
     if let Err(err) = write_in_place(input, &output) {
         eprintln!("tooned convert: failed to write output: {err}");
         std::process::exit(2);
@@ -288,12 +273,12 @@ fn nlink(path: &Path) -> Option<u64> {
     }
 }
 
-/// Shared bounded-read path for both the default adaptive direction and
-/// `--to toon`: both go through `maybe_tooned`, whose `InputTooLarge` gate
-/// makes "larger than `opts.max_input_bytes`" and "guaranteed unchanged
-/// passthrough" equivalent -- so the input is never fully buffered in
-/// memory when it's oversized (finding: unbounded `read_to_end`/`fs::read`
-/// previously ran before that size cap was ever consulted).
+/// Shared bounded-read path for the default adaptive direction, `--to toon`,
+/// and `--to tron`: the converter's `InputTooLarge` gate makes "larger than
+/// `max_input_bytes`" and "guaranteed unchanged passthrough" equivalent --
+/// so the input is never fully buffered in memory when it's oversized
+/// (finding: unbounded `read_to_end`/`fs::read` previously ran before that
+/// size cap was ever consulted).
 //
 // For a file destination the output is staged through a same-directory temp
 // file and promoted with a single `rename`, so a crash can never leave the
@@ -301,9 +286,13 @@ fn nlink(path: &Path) -> Option<u64> {
 // `Result` is kept for uniformity with `run` (see its own comment on the
 // same trade-off); every failure path below exits the process directly.
 #[allow(clippy::unnecessary_wraps)]
-fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow::Result<()> {
+fn run_conversion_bounded(
+    args: &ConvertArgs,
+    opts: &ConversionOptions,
+    convert: fn(&[u8], &ConversionOptions) -> Vec<u8>,
+) -> anyhow::Result<()> {
     if output_is_same_as_input(&args.input, args.out.as_deref()) {
-        return run_adaptive_in_place(&args.input, opts);
+        return run_conversion_in_place(&args.input, opts, convert);
     }
 
     let mut reader = match open_input(&args.input) {
@@ -337,7 +326,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
 
     match outcome {
         BoundedRead::Fits(bytes) => {
-            let output = adaptive_bytes(&bytes, opts);
+            let output = convert(&bytes, opts);
             if let Err(err) = out.write_all(&output) {
                 eprintln!("tooned convert: failed to write output: {err}");
                 if let Some(tmp) = &tmp_path {
@@ -388,7 +377,7 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
         match decode_tron(text) {
             Ok(value) => value,
             Err(err) => {
-                eprintln!("tooned convert: failed to decode TRON: {err}");
+                eprintln!("tooned convert: failed to decode tron: {err}");
                 std::process::exit(3);
             }
         }
@@ -421,6 +410,19 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
         Ok(Conversion::Passthrough { bytes, .. }) => bytes,
         // Infallible in practice (see maybe_tooned's doc comment); fail
         // safe to the original bytes rather than panicking or erroring.
+        Err(_) => bytes.to_vec(),
+    }
+}
+
+/// Runs the TRON encoder and returns the bytes to emit: TRON text on a
+/// genuine conversion, or the original bytes verbatim on any passthrough
+/// outcome.
+fn tron_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
+    match maybe_tron(bytes, opts) {
+        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
+        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+        // Infallible in practice (see maybe_tron's doc comment); fail safe
+        // to the original bytes rather than panicking or erroring.
         Err(_) => bytes.to_vec(),
     }
 }

@@ -12,7 +12,7 @@
 //! values must be primitive for the encoder, but the decoder expands any
 //! class calls found in the body.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use tooned_types::{
@@ -22,6 +22,7 @@ use tooned_types::{
 use crate::shape;
 
 const CLASS_PREFIX: &str = "class ";
+const MAX_TRON_DEPTH: usize = 64;
 
 /// Encode a uniform array of flat objects (or a single flat object) as TRON text.
 ///
@@ -163,6 +164,12 @@ fn is_valid_header_key(key: &str) -> bool {
     !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+fn is_valid_class_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_uppercase())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Decode TRON text back to a `serde_json::Value`.
 ///
 /// If the text has no class header, it is parsed as plain JSON. Otherwise the
@@ -174,7 +181,7 @@ pub fn decode(text: &str) -> Result<Value, ToonedError> {
         serde_json::from_str(body.trim())
             .map_err(|e| ToonedError::DecodeFailed(format!("TRON body is not valid JSON: {e}")))
     } else {
-        let json_text = expand_tron(body, &classes)?;
+        let json_text = expand_tron(body, &classes, 0)?;
         serde_json::from_str(&json_text).map_err(|e| {
             ToonedError::DecodeFailed(format!("expanded TRON body is not valid JSON: {e}"))
         })
@@ -230,12 +237,40 @@ fn parse_header(text: &str) -> Result<(HashMap<String, Vec<String>>, &str), Toon
         if name.is_empty() {
             return Err(ToonedError::DecodeFailed("TRON class name is empty".into()));
         }
-        let fields: Vec<String> =
-            fields.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-        if fields.is_empty() {
+        if !is_valid_class_name(&name) {
+            return Err(ToonedError::DecodeFailed(format!(
+                "TRON class name {name:?} is not a valid identifier"
+            )));
+        }
+        if classes.contains_key(&name) {
+            return Err(ToonedError::DecodeFailed(format!(
+                "TRON class {name} defined more than once"
+            )));
+        }
+
+        let mut seen_fields = HashSet::new();
+        let mut field_list = Vec::new();
+        for field in fields.split(',') {
+            let field = field.trim();
+            if field.is_empty() {
+                continue;
+            }
+            if !is_valid_header_key(field) {
+                return Err(ToonedError::DecodeFailed(format!(
+                    "TRON class {name} field {field:?} is not a valid identifier"
+                )));
+            }
+            if !seen_fields.insert(field.to_string()) {
+                return Err(ToonedError::DecodeFailed(format!(
+                    "TRON class {name} has duplicate field {field:?}"
+                )));
+            }
+            field_list.push(field.to_string());
+        }
+        if field_list.is_empty() {
             return Err(ToonedError::DecodeFailed(format!("TRON class {name} has no fields")));
         }
-        classes.insert(name, fields);
+        classes.insert(name, field_list);
         offset += line.len();
     }
 
@@ -244,7 +279,17 @@ fn parse_header(text: &str) -> Result<(HashMap<String, Vec<String>>, &str), Toon
 }
 
 #[allow(clippy::indexing_slicing)]
-fn expand_tron(s: &str, classes: &HashMap<String, Vec<String>>) -> Result<String, ToonedError> {
+fn expand_tron(
+    s: &str,
+    classes: &HashMap<String, Vec<String>>,
+    depth: usize,
+) -> Result<String, ToonedError> {
+    if depth > MAX_TRON_DEPTH {
+        return Err(ToonedError::DecodeFailed(format!(
+            "TRON class nesting exceeds maximum depth of {MAX_TRON_DEPTH}"
+        )));
+    }
+
     let chars: Vec<(usize, char)> = s.char_indices().collect();
     let mut out = String::with_capacity(s.len());
     let mut idx = 0;
@@ -276,7 +321,9 @@ fn expand_tron(s: &str, classes: &HashMap<String, Vec<String>>) -> Result<String
 
         if c.is_ascii_uppercase() {
             let name_start_byte = pos;
-            while idx < chars.len() && chars[idx].1.is_ascii_uppercase() {
+            while idx < chars.len()
+                && (chars[idx].1.is_ascii_alphanumeric() || chars[idx].1 == '_')
+            {
                 idx += 1;
             }
             let name_end_byte = if idx < chars.len() { chars[idx].0 } else { s.len() };
@@ -291,7 +338,7 @@ fn expand_tron(s: &str, classes: &HashMap<String, Vec<String>>) -> Result<String
                 let args = split_args(args_str)?;
                 let mut expanded = Vec::with_capacity(args.len());
                 for arg in args {
-                    expanded.push(expand_tron(arg.trim(), classes)?);
+                    expanded.push(expand_tron(arg.trim(), classes, depth + 1)?);
                 }
                 let fields = classes.get(name).ok_or_else(|| {
                     ToonedError::DecodeFailed(format!("undefined TRON class: {name}"))
