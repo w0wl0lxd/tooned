@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration test: full scan populates `files`/`shapes`/`conversions`
 //! correctly, respecting `.gitignore` via the `ignore` crate (T050).
 

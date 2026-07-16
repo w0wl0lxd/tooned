@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! MCP stdio server implementation (`rmcp`, `transport-io` feature).
 //!
 //! Every tool delegates to the exact same `tooned_core`/`tooned_index`

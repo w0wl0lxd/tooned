@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration test (T027b): `tooned hook run --codex` must exit within its
 //! internal watchdog bound even when the worker computing the conversion
 //! stalls, since Codex CLI does not blanket-guarantee fail-open behavior for
