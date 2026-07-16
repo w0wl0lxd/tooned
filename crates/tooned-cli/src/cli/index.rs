@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 
+use crate::config::Config;
+
 #[derive(Debug, Args)]
 pub struct IndexArgs {
     /// Project path (default: current directory). Ignored when a subcommand is given.
@@ -33,15 +35,13 @@ pub enum IndexSubcommand {
     Show { file: PathBuf },
     /// Checkpoint the SQLite WAL and truncate the `-wal` file.
     Compact { path: Option<PathBuf> },
-    /// Poll `index sync` at a regular interval.
-    ///
-    /// This is a polling implementation; a future release will switch to a
-    /// `notify`-based filesystem watcher.
+    /// Watch `project_root` and run `index sync` on debounced filesystem
+    /// events.
     Watch {
         path: Option<PathBuf>,
-        /// Seconds between sync polls.
-        #[arg(long, default_value = "5")]
-        interval: u64,
+        /// Quiet period in milliseconds before a change triggers a sync.
+        #[arg(long)]
+        debounce_ms: Option<u64>,
     },
 }
 
@@ -53,6 +53,7 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
 }
 
 pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
+    let config = Config::load(None)?;
     match &args.command {
         None => run_scan(&resolve_project_root(args.path.as_ref())),
         Some(IndexSubcommand::Sync { path }) => run_sync(&resolve_project_root(path.as_ref())),
@@ -61,8 +62,17 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
         Some(IndexSubcommand::Compact { path }) => {
             run_compact(&resolve_project_root(path.as_ref()))
         }
-        Some(IndexSubcommand::Watch { path, interval }) => {
-            Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), *interval)?)
+        Some(IndexSubcommand::Watch { path, debounce_ms }) => {
+            let configured_debounce = config.watch.as_ref().and_then(|w| w.debounce_ms);
+            // `clippy::disallowed_methods` forbids `unwrap_or` (silent default),
+            // and the config-file fallback means the default isn't a simple
+            // literal here, so spell it out explicitly.
+            #[allow(clippy::manual_unwrap_or)]
+            let debounce = match debounce_ms.or(configured_debounce) {
+                Some(d) => d,
+                None => 1000,
+            };
+            Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), debounce)?)
         }
     }
 }

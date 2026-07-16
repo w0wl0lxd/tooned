@@ -17,6 +17,8 @@ path = "src/lib.rs"
 [dependencies]
 blake3 = "1"
 ignore = "0.4"
+notify = "8.2"
+notify-debouncer-mini = "0.7"
 rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = { workspace = true }
 tooned-core = { workspace = true }                      #unified
