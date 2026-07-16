@@ -12,15 +12,15 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use serde_json::{Map, Value};
 
-use crate::DocType;
-use crate::parse::ParseError;
+use tooned_parse::ParseError;
+use tooned_types::DocType;
 
 /// Tunables for the XML parser. Exposed publicly so tests and future callers
 /// can adjust them without changing the crate API.
 #[derive(Debug, Clone, PartialEq)]
 pub struct XmlParseOptions {
     /// Maximum XML element nesting depth. Past this, parsing errors with
-    /// [`ParseError::TooDeep`].
+    /// `ParseError::TooDeep`.
     pub max_depth: usize,
     /// Strip namespace prefixes from element and attribute names, keeping only
     /// the local name.
