@@ -101,3 +101,41 @@ fn convert_missing_file_exits_2() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn convert_does_not_truncate_source_when_out_is_a_hardlink() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json = uniform_array_json(20);
+    let input = write_fixture(&dir, "input.json", &json);
+    let link = dir.path().join("link.json");
+
+    // Hard links are supported on most, but not all, filesystems. If the
+    // filesystem cannot create one, skip this test rather than fail.
+    if let Err(err) = fs::hard_link(&input, &link) {
+        eprintln!("skipping hardlink test: filesystem does not support hard links: {err}");
+        return;
+    }
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args([
+            "convert",
+            input.to_str().expect("utf8 path"),
+            "--out",
+            link.to_str().expect("utf8 path"),
+            "--to",
+            "toon",
+        ])
+        .assert()
+        .success();
+
+    let input_bytes = fs::read(&input).expect("read input after");
+    let link_bytes = fs::read(&link).expect("read link after");
+
+    assert!(!input_bytes.is_empty(), "source must not be truncated when out is a hardlink");
+    assert_eq!(input_bytes, link_bytes, "hardlinked input and out must remain identical");
+    assert!(
+        String::from_utf8_lossy(&input_bytes).contains("id,name,active,score"),
+        "output should be TOON, not the original JSON"
+    );
+}
