@@ -13,7 +13,6 @@ path = "src/lib.rs"
 
 [dependencies]
 thiserror = { workspace = true }
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

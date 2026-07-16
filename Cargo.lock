@@ -2110,7 +2110,6 @@ name = "tooned-convert"
 version = "0.1.0"
 dependencies = [
  "serde_json",
- "thiserror",
  "tiktoken-rs",
  "tooned-csv",
  "tooned-detect",
@@ -2133,7 +2132,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sonic-rs",
- "thiserror",
  "toml",
  "tooned-convert",
  "tooned-json",
@@ -2149,14 +2147,12 @@ dependencies = [
  "csv",
  "serde_json",
  "tooned-parse",
- "tooned-types",
 ]
 
 [[package]]
 name = "tooned-detect"
 version = "0.1.0"
 dependencies = [
- "tooned-parse",
  "tooned-types",
  "tooned-xml",
 ]
@@ -2181,16 +2177,13 @@ dependencies = [
  "serde_json",
  "sonic-rs",
  "tooned-parse",
- "tooned-types",
 ]
 
 [[package]]
 name = "tooned-parse"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "thiserror",
- "tooned-types",
 ]
 
 [[package]]
@@ -2200,7 +2193,6 @@ dependencies = [
  "serde_json",
  "toml",
  "tooned-parse",
- "tooned-types",
 ]
 
 [[package]]
@@ -2208,8 +2200,8 @@ name = "tooned-toon"
 version = "0.1.0"
 dependencies = [
  "serde_json",
- "thiserror",
  "toon-lsp",
+ "tooned-parse",
  "tooned-types",
 ]
 
@@ -2217,7 +2209,6 @@ dependencies = [
 name = "tooned-types"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "thiserror",
 ]
 
@@ -2238,7 +2229,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tooned-parse",
- "tooned-types",
 ]
 
 [[package]]
