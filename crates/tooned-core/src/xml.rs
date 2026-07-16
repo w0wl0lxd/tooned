@@ -605,11 +605,8 @@ fn append_or_insert(map: &mut Map<String, Value>, key: String, value: Value) {
         if let Value::Array(arr) = existing {
             arr.push(value);
         } else {
-            let old = std::mem::replace(existing, Value::Array(Vec::with_capacity(2)));
-            if let Value::Array(arr) = existing {
-                arr.push(old);
-                arr.push(value);
-            }
+            let old = std::mem::take(existing);
+            *existing = Value::Array(vec![old, value]);
         }
     } else {
         map.insert(key, value);
