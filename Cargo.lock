@@ -2086,6 +2086,7 @@ dependencies = [
  "predicates",
  "proptest",
  "rmcp",
+ "same-file",
  "serde",
  "serde_json",
  "tempfile",
