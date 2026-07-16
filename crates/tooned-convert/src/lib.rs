@@ -23,6 +23,9 @@ mod shape;
 pub mod onto;
 pub use onto::{decode as decode_onto, encode as encode_onto, maybe_onto};
 
+pub mod tron;
+pub use tron::{decode as decode_tron, encode as encode_tron, maybe_tron};
+
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
 struct AttemptToon {
