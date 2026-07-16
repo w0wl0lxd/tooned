@@ -54,7 +54,7 @@ Key design choices:
 - `cargo fmt --all -- --check` — PASS
 - `cargo clippy --all-features --all-targets -- -D warnings` — PASS
 - `cargo nextest run --all-features` — **247 passed, 1 skipped**
-- `cargo vet` — pending supply-chain review (see Follow-ups)
+- `cargo vet --locked` — PASS
 
 ## PR description
 
@@ -70,8 +70,4 @@ work-log file.
 
 ## Follow-ups
 
-- `cargo vet` currently reports unvetted `notify` transitive dependencies.
-  This needs either supply-chain audits, publisher trusts, or explicit
-  exemptions before the PR can pass the `security.yml` `cargo vet --locked`
-  gate. After the PR is opened, add the chosen supply-chain coverage and
-  then continue to PR2 (TRON record-stream encoding).
+- Continue to PR2 (TRON record-stream encoding) once PR #12 is merged.
