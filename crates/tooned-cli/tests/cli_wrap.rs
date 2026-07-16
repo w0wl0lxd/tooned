@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test for `tooned wrap` (T043).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned check <file|-> [--precise]`
 //!
 //! Dry-run: prints doc type, shape class, byte-size comparison, convertible

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test for `tooned index` / `index sync` / `index status` /
 //! `index show <file>` (T054).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned mcp serve`: the agent-agnostic Model Context Protocol server.
 //! See `specs/001-adaptive-toon-conversion/contracts/mcp-tools.md`.
 
