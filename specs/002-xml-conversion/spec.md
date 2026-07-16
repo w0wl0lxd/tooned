@@ -1,8 +1,8 @@
 # Feature Specification: XML Input Support for Adaptive TOON Conversion
 
-**Feature Branch**: `002-xml-conversion`  
-**Created**: 2026-07-15  
-**Status**: Draft  
+**Feature Branch**: `002-xml-conversion`
+**Created**: 2026-07-15
+**Status**: Implemented (2026-07-16)  
 **Input**: User description: "v2 support for XML input format. XML needs its own detection path (distinct from the leading-byte/line-shape sniff used for v1 doctypes) and its own viability analysis for adaptive TOON conversion (attribute vs. element modeling, mixed content, namespaces don't map cleanly onto TOON's array-of-objects sweet spot). This should wait until the core detection/conversion API in `tooned-core` stabilizes so XML support doesn't force an early API redesign."  
 **Issue**: GitHub issue #1  
 
