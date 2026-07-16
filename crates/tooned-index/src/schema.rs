@@ -87,11 +87,33 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool, IndexError> {
     Ok(rows.next()?.is_some())
 }
 
+/// Reject paths that are symlinks. `tooned index` accepts an MCP/client
+/// supplied `project_root`, so a pre-placed symlink under `.tooned` or at
+/// `index.db` could otherwise redirect reads/writes to an arbitrary location.
+fn refuse_symlink(path: &Path, label: &str) -> Result<(), IndexError> {
+    if let Ok(meta) = std::fs::symlink_metadata(path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(IndexError::Io(std::io::Error::other(format!(
+            "refusing to follow a symlinked {label} at {}",
+            path.display()
+        ))));
+    }
+    Ok(())
+}
+
 pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
     let db_path = index_db_path(project_root);
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let Some(tooned_dir) = db_path.parent() else {
+        return Err(IndexError::Io(std::io::Error::other("index.db path has no parent directory")));
+    };
+    refuse_symlink(tooned_dir, ".tooned directory")?;
+    refuse_symlink(&db_path, "index database")?;
+    std::fs::create_dir_all(tooned_dir)?;
+    // Re-check after creating the directory in case a TOCTOU swap occurred
+    // (best-effort; the earlier check already stops the common case).
+    refuse_symlink(tooned_dir, ".tooned directory")?;
+    refuse_symlink(&db_path, "index database")?;
     let mut conn = Connection::open(db_path)?;
     // Wait up to 5 seconds when the database is locked by a concurrent
     // process (e.g. another `tooned index` or `sync` run) instead of failing
@@ -478,5 +500,33 @@ mod tests {
 
         let err = open_index(dir.path()).expect_err("v99 should fail");
         assert!(format!("{err}").contains("unsupported schema version"), "unexpected error: {err}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn open_index_rejects_symlinked_tooned_dir() {
+        let project = tempdir().expect("tempdir");
+        let real_dir = tempdir().expect("tempdir");
+        let tooned_link = project.path().join(".tooned");
+        std::os::unix::fs::symlink(real_dir.path(), &tooned_link).expect("symlink");
+
+        let err = open_index(project.path()).expect_err("symlinked .tooned should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("symlinked .tooned directory"), "unexpected error: {err}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn open_index_rejects_symlinked_index_db() {
+        let project = tempdir().expect("tempdir");
+        std::fs::create_dir_all(project.path().join(".tooned")).expect("create .tooned");
+        let real_db = project.path().join("index_real.db");
+        std::fs::File::create(&real_db).expect("create real db");
+        let db_link = project.path().join(".tooned").join("index.db");
+        std::os::unix::fs::symlink(&real_db, &db_link).expect("symlink");
+
+        let err = open_index(project.path()).expect_err("symlinked index.db should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("symlinked index database"), "unexpected error: {err}");
     }
 }

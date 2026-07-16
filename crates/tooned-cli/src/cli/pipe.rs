@@ -9,9 +9,10 @@
 //! the caller with a hard failure".
 
 use std::io::Write as _;
+use std::path::PathBuf;
 
 use clap::Args;
-use tooned_core::{Conversion, ConversionOptions};
+use tooned_core::Conversion;
 
 use crate::cli::FormatHint;
 use crate::cli::io::{BoundedRead, read_bounded};
@@ -29,27 +30,16 @@ pub struct PipeArgs {
     /// Force the parser's doc type instead of relying on content-sniffing.
     #[arg(long = "format-hint", value_enum)]
     pub format_hint: Option<FormatHint>,
+
+    /// Path to a tooned config file.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
-    let mut opts = ConversionOptions::default();
-    if let Some(margin) = args.margin {
-        opts.margin_pct = margin;
-    }
-    if let Some(format_hint) = args.format_hint {
-        opts.format_hint = Some(format_hint.into());
-    }
-    if let Some(max_bytes) = args.max_bytes {
-        // Defensive clamp rather than a fallible conversion: an
-        // absurdly large --max-bytes on a 32-bit target simply saturates
-        // to usize::MAX (still a "no effective limit" outcome), never a
-        // panic or CLI error.
-        opts.max_input_bytes = match usize::try_from(max_bytes) {
-            Ok(clamped) => clamped,
-            Err(_) => usize::MAX,
-        };
-    }
+    let config = crate::config::Config::load(args.config.as_deref())?;
+    let opts = config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
 
     let mut stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
