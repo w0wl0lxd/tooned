@@ -39,7 +39,7 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
         }
         Err(tooned_index::IndexError::NoIndex(path)) => {
             eprintln!(
-                "no existing index at {}; run `tooned index` first",
+                "tooned stats: no existing index at {}; run `tooned index` first",
                 tooned_index::index_db_path(&path).display()
             );
             std::process::exit(1);
