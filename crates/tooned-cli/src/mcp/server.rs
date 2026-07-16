@@ -49,6 +49,7 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
         "toml" => Some(DocType::Toml),
         "csv" => Some(DocType::Csv),
         "tsv" => Some(DocType::Tsv),
+        "xml" => Some(DocType::Xml),
         _ => None,
     }
 }
@@ -146,6 +147,7 @@ pub enum DocTypeDto {
     Toml,
     Csv,
     Tsv,
+    Xml,
 }
 
 impl From<DocType> for DocTypeDto {
@@ -157,6 +159,7 @@ impl From<DocType> for DocTypeDto {
             DocType::Toml => Self::Toml,
             DocType::Csv => Self::Csv,
             DocType::Tsv => Self::Tsv,
+            DocType::Xml => Self::Xml,
         }
     }
 }
