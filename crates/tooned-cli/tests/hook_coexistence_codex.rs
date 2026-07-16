@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Coexistence test (T063): installing tooned's Codex hook alongside a
 //! pre-existing foreign `hooks/hooks.json` entry must leave the foreign
 //! entry structurally unchanged and simply append tooned's own.

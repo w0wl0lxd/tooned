@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `ToonedError` and the `decode_toon` entrypoint
 //! (`contracts/tooned-core-api.md`).
 

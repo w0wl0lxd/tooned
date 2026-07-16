@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Full directory scan (T056): walk via the `ignore` crate (respects
 //! `.gitignore`), blake3 content fingerprinting, doctype detection + shape
 //! classification via `tooned_core::inspect`, persisted into

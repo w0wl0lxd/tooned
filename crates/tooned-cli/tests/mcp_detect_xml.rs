@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test for `tooned_detect` with XML format hint.
 //! See `specs/002-xml-conversion/contracts/mcp-tools.md`.
 
