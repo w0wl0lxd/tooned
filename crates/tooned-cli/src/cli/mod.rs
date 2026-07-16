@@ -19,7 +19,7 @@ pub mod wrap;
 /// no CLI equivalent at all (`--to toon`/`--to json` on `convert` forces
 /// conversion *direction*, not the parser doctype, so it couldn't fix a
 /// wrong doctype guess either).
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 pub enum FormatHint {
     Json,
     Ndjson,
