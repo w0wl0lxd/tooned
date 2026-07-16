@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned` standalone CLI subcommands: `convert`, `check`, `pipe`, `wrap`,
 //! `index`, `stats`. See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

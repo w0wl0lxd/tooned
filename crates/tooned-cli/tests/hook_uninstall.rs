@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Uninstall tests (T064, T065): `tooned hook uninstall` removes only
 //! tooned's own entry, leaves a foreign entry untouched, and reports
 //! "nothing to remove" (without erroring) when tooned was never installed.

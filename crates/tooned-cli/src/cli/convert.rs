@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned convert <file|-> [--to toon|json] [--out <file|->]`
 //!
 //! One-shot conversion; stdout by default. Never mutates the source file
