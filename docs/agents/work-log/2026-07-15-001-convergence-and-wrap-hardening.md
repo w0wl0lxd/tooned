@@ -3,7 +3,7 @@
 - **Date:** 2026-07-15
 - **Author:** w0wl0lxd
 - **Branch:** `001-adaptive-toon-conversion`
-- **PR(s):** (to be filled after PR creation)
+- **PR(s):** [#3](https://github.com/w0wl0lxd/tooned/pull/3)
 
 ## Context
 
