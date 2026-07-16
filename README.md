@@ -191,7 +191,7 @@ that project's `.gitignore` the first time it's created.
 | `tooned pipe` | stdin → adaptive conversion → stdout. |
 | `tooned wrap -- <command>` | Runs `<command>`, adaptively converts its captured stdout. |
 | `tooned index [path]` / `index sync` / `index status` / `index show <file>` | The `.tooned/` project index. |
-| `tooned stats [path] [--top N]` | Ranked savings report from the index. |
+| `tooned stats [path] [--top N] [--json]` | Ranked savings report from the index. `--json` emits machine-readable JSON. |
 | `tooned hook install (--claude-code\|--codex) [--scope user\|project] [--mcp]` | Installs the agent hook, idempotently. |
 | `tooned hook uninstall / status / doctor` | Removes, checks, or audits hook installations — never touches another tool's entries. |
 | `tooned mcp serve` | Runs the MCP server over stdio. |
