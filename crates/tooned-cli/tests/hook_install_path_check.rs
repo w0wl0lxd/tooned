@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration test (T030): `tooned hook install` aborts clearly, without
 //! writing any config, when the `tooned` binary cannot be resolved on
 //! `PATH`. See `specs/001-adaptive-toon-conversion/contracts/cli.md`

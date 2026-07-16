@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Shared XML fixture helpers for `tooned-cli` integration tests.
 #![allow(dead_code)]
 

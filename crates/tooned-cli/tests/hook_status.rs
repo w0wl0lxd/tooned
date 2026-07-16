@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test (T067): `tooned hook status (--claude-code|--codex)`
 //! correctly reports installed vs. not-installed.
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md` ("0 always").

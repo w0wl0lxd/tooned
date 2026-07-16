@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `--ignored` latency guardrail test (T077, companion to
 //! `crates/tooned-cli/benches/hot_path.rs`'s criterion benchmark).
 //!
