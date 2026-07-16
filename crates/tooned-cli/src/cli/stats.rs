@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned stats [path] [--top N]`
 //!
 //! Ranked savings-opportunity report from the index (FR-022, T060). Exit
@@ -39,7 +41,7 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
         }
         Err(tooned_index::IndexError::NoIndex(path)) => {
             eprintln!(
-                "no existing index at {}; run `tooned index` first",
+                "tooned stats: no existing index at {}; run `tooned index` first",
                 tooned_index::index_db_path(&path).display()
             );
             std::process::exit(1);
