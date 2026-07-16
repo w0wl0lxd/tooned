@@ -86,10 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tooned-core:** XML entity reference resolution in text content: character references
   (`&#65;`, `&#x41;`) and predefined entities (`&lt;`, `&amp;`, `&gt;`, `&apos;`, `&quot;`)
   are now resolved to their Unicode equivalents; unknown custom entities remain literal
-  `&name;`. (bfdd12a)
+  `&name;`. ([work-log](docs/agents/work-log/2026-07-16-002-xml-conversion.md), bfdd12a)
 - **tooned-core:** preservation of `xml:*` attributes (e.g., `xml:lang`, `xml:space`) in
   parsed XML output; custom entity references are preserved as literal text rather than
-  being stripped. (dd63632, d014002)
+  being stripped. ([work-log](docs/agents/work-log/2026-07-16-002-xml-conversion.md), dd63632,
+  d014002)
 - **tooned-cli / tooned-index:** closed 001 Phase 8 convergence gaps: in-place
   `convert --out` no longer truncates the source; `read_bounded` and `wrap` cap
   their initial allocation and use saturating arithmetic for `take` limits;
