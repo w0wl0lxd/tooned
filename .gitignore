@@ -54,6 +54,15 @@ coverage/
 tarpaulin-report.html
 lcov.info
 
+# Local agent/skill/tooling state
+.devin/
+.github/agents/
+.github/prompts/
+mutants.out/
+mutants.out.old/
+fuzz/corpus/
+fuzz/artifacts/
+
 # NOTE: specs/ (spec-kit spec/plan/tasks documents) is intentionally
 # committed, not ignored — traceability from spec to plan to tasks to code
 # is the point of running the spec-kit pipeline here.
