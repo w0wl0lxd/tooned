@@ -24,7 +24,9 @@ pub mod onto;
 pub use onto::{decode as decode_onto, encode as encode_onto, maybe_onto};
 
 pub mod tron;
-pub use tron::{decode as decode_tron, encode as encode_tron, maybe_tron};
+pub use tron::{
+    StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
+};
 
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
@@ -228,7 +230,7 @@ fn precise_token_savings_pct(json_text: &str, toon_text: &str) -> f64 {
 /// an infinite margin) -- clamping to 0 is the conservative, still-safe
 /// interpretation ("no margin required" rather than "reject everything" or
 /// "accept everything").
-pub(crate) fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
+pub fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
     let margin_pct = if margin_pct.is_finite() { margin_pct.max(0.0) } else { 0.0 };
     let threshold = (json_bytes as f64) * (1.0 - margin_pct / 100.0);
     (toon_bytes as f64) < threshold
