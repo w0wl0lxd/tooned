@@ -44,6 +44,15 @@ Thumbs.db
 .kilo/
 .gstack/
 
+# Local agent/skill/tooling state
+.devin/
+.github/agents/
+.github/prompts/
+mutants.out/
+mutants.out.old/
+fuzz/corpus/
+fuzz/artifacts/
+
 # direnv's local cache (flake.nix + .envrc + .mise.toml are committed and
 # shared; direnv's per-machine build cache is not)
 .direnv/

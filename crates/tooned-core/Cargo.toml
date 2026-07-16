@@ -16,7 +16,6 @@ path = "src/lib.rs"
 
 [dependencies]
 toon-lsp = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
 toml = "1"
@@ -33,6 +32,9 @@ tiktoken-rs = "0.12"
 [dev-dependencies]
 proptest = "1.4"
 criterion = "0.5"
+
+[package.metadata.cargo-machete]
+ignored = ["criterion"]
 
 [lints]
 workspace = true
