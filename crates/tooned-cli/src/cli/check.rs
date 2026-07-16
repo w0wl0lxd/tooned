@@ -51,8 +51,7 @@ pub struct CheckArgs {
 pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
     let precise = Some(args.precise || matches!(config.precise_tokens, Some(true)));
-    let opts =
-        config.conversion_options(args.margin, args.max_bytes, args.format_hint, precise);
+    let opts = config.conversion_options(args.margin, args.max_bytes, args.format_hint, precise);
 
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,

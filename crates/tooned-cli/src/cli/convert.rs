@@ -22,6 +22,8 @@ use crate::cli::io::{
 pub enum Direction {
     Toon,
     Json,
+    Onto,
+    Tron,
 }
 
 #[derive(Debug, Args)]
@@ -88,6 +90,42 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 eprintln!("tooned convert: failed to write output: {err}");
                 std::process::exit(2);
             }
+        }
+        // `--to onto` forces JSON-like input into the prototype ONTO
+        // columnar encoding. It requires a uniform array of flat objects.
+        // Like `--to toon`, the margin is forced to 0% but round-trip
+        // fidelity is still enforced.
+        Some(Direction::Onto) => {
+            let bytes = match read_input(&args.input) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
+                    std::process::exit(2);
+                }
+            };
+            let config = crate::config::Config::load(args.config.as_deref())?;
+            let mut opts =
+                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+            opts.margin_pct = 0.0;
+            let output = match tooned_core::maybe_onto(&bytes, &opts) {
+                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
+                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                Err(_) => bytes.clone(),
+            };
+            let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
+                write_in_place(&args.input, &output)
+            } else {
+                write_output(args.out.as_deref(), &output)
+            };
+            if let Err(err) = write_result {
+                eprintln!("tooned convert: failed to write output: {err}");
+                std::process::exit(2);
+            }
+        }
+        // `--to tron` is a placeholder for the TRON record-stream encoding.
+        Some(Direction::Tron) => {
+            eprintln!("tooned convert: TRON encoding is not yet implemented");
+            std::process::exit(2);
         }
         // `--to toon` forces the JSON->TOON direction, bypassing the
         // adaptive default's 2% savings cushion (margin_pct: 0.0) while
