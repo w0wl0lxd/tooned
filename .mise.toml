@@ -1,0 +1,18 @@
+# mise config: https://mise.jdx.dev
+#
+# Paired with flake.nix: `nix develop` (or direnv's `use flake`) makes `mise`
+# itself reproducible; mise then owns actual tool versions. Rust's own
+# version is NOT redeclared here — mise reads `rust-toolchain.toml` directly,
+# so that file stays the single source of truth (also what CI and rustup-only
+# contributors use).
+
+[tools]
+# cargo-subcommand tools via mise's `cargo` backend (`cargo install` under the
+# hood, cached in mise's shared installs dir instead of per-project target/).
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-deny" = "latest"
+"cargo:cargo-audit" = "latest"
+
+[settings]
+# Needed for the `cargo:` backend above.
+experimental = true
