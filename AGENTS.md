@@ -19,3 +19,12 @@ Enforced globally (see `~/.agents/AGENTS.md`) — this project does not opt out.
 here is CLI/error-message register only, not UI copy: `eprintln!`/`anyhow::bail!` diagnostics in
 `crates/tooned-cli/src/cli/*.rs` follow a `tooned <subcommand>: <message>` prefix, lowercase,
 one line. Match that register before adding a new CLI message.
+
+## Attribution
+
+All commits, pull requests, changelogs, work-logs, and other project artifacts
+must attribute authorship to the human maintainer only
+(`w0wl0lxd <199849635+w0wl0lxd@users.noreply.github.com>`). Do not add
+`Co-Authored-By: Devin ...`, `Generated with [Devin](...)`, or any other
+AI-agent attribution to commit messages, PR descriptions, comments, or
+repository files.
