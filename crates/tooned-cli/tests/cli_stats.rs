@@ -8,6 +8,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value;
 
 /// Builds a uniform array of `rows` objects, each with `field_count` short
 /// numeric fields (`f0`, `f1`, ...) -- more fields means more repeated-key
@@ -105,4 +106,72 @@ fn stats_top_n_limits_the_result_count() {
         ["a.json", "b.json", "c.json"].iter().filter(|name| stdout.contains(**name)).count();
     assert_eq!(mentioned, 1, "--top 1 must limit output to exactly one file, got:\n{stdout}");
     assert!(stdout.contains("c.json"), "the single result must be the highest-savings file");
+}
+
+#[test]
+fn stats_json_output_is_valid_and_ordered_by_savings_descending() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("low.json"), uniform_array_json(20, 2)).expect("write low.json");
+    fs::write(dir.path().join("mid.json"), uniform_array_json(20, 10)).expect("write mid.json");
+    fs::write(dir.path().join("high.json"), uniform_array_json(20, 30)).expect("write high.json");
+    run_index(dir.path()).expect("run_index");
+
+    let output = Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["stats", "--json"])
+        .output()
+        .expect("run stats --json");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    let parsed: Vec<Value> = serde_json::from_str(&stdout).expect("stats --json emits valid JSON");
+    assert_eq!(parsed.len(), 3, "expected one JSON object per indexed file");
+
+    let first = parsed.first().expect("first entry");
+    let second = parsed.get(1).expect("second entry");
+    let third = parsed.get(2).expect("third entry");
+    assert_eq!(first.get("path").expect("path").as_str().expect("path string"), "high.json");
+    assert_eq!(second.get("path").expect("path").as_str().expect("path string"), "mid.json");
+    assert_eq!(third.get("path").expect("path").as_str().expect("path string"), "low.json");
+    assert!(
+        first.get("savings_pct").expect("savings").as_f64().expect("savings number")
+            > second.get("savings_pct").expect("savings").as_f64().expect("savings number")
+    );
+    assert!(
+        second.get("savings_pct").expect("savings").as_f64().expect("savings number")
+            > third.get("savings_pct").expect("savings").as_f64().expect("savings number")
+    );
+}
+
+#[test]
+fn stats_json_top_n_limits_result_count() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.json"), uniform_array_json(20, 2)).expect("write a.json");
+    fs::write(dir.path().join("b.json"), uniform_array_json(20, 10)).expect("write b.json");
+    fs::write(dir.path().join("c.json"), uniform_array_json(20, 30)).expect("write c.json");
+    run_index(dir.path()).expect("run_index");
+
+    let output = Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["stats", "--json", "--top", "1"])
+        .output()
+        .expect("run stats --json --top 1");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    let parsed: Vec<Value> =
+        serde_json::from_str(&stdout).expect("stats --json --top 1 emits valid JSON");
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(
+        parsed
+            .first()
+            .expect("one entry")
+            .get("path")
+            .expect("path field")
+            .as_str()
+            .expect("path string"),
+        "c.json"
+    );
 }
