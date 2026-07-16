@@ -506,3 +506,36 @@ pub fn serve() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(serve_async())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_doc_type_hint_round_trips_all_format_hints() {
+        let cases = [
+            ("json", Some(DocType::Json)),
+            ("JSON", Some(DocType::Json)),
+            ("ndjson", Some(DocType::NdJson)),
+            ("jsonl", Some(DocType::NdJson)),
+            ("yaml", Some(DocType::Yaml)),
+            ("yml", Some(DocType::Yaml)),
+            ("toml", Some(DocType::Toml)),
+            ("csv", Some(DocType::Csv)),
+            ("tsv", Some(DocType::Tsv)),
+            ("xml", Some(DocType::Xml)),
+            ("XML", Some(DocType::Xml)),
+            ("unknown", None),
+            ("", None),
+        ];
+
+        for (hint, expected) in cases {
+            assert_eq!(
+                parse_doc_type_hint(Some(hint)),
+                expected,
+                "parse_doc_type_hint({hint:?}) should return {expected:?}"
+            );
+        }
+        assert_eq!(parse_doc_type_hint(None), None, "no hint is treated as None");
+    }
+}
