@@ -5,7 +5,7 @@
 //! contract (`contracts/cli.md`).
 
 use std::io::{self, Read as _, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Reads all of `path`'s bytes, or all of stdin when `path == "-"`. A
 /// read-only operation in both cases -- never opens `path` for writing, so
@@ -24,6 +24,9 @@ pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
 }
 
 /// Writes `bytes` to `out`, or to stdout when `out` is `None` or `Some("-")`.
+/// For a file path the write goes through the same temp-file-then-rename
+/// atomic path used by [`write_atomic`] so the destination is never observed
+/// partially written.
 pub fn write_output(out: Option<&Path>, bytes: &[u8]) -> io::Result<()> {
     match out {
         None => {
@@ -34,7 +37,7 @@ pub fn write_output(out: Option<&Path>, bytes: &[u8]) -> io::Result<()> {
             io::stdout().write_all(bytes)?;
             Ok(())
         }
-        Some(path) => std::fs::write(path, bytes),
+        Some(path) => write_atomic(path, bytes),
     }
 }
 
@@ -78,6 +81,41 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         Ok(()) => Ok(()),
         Err(err) => {
             let _ = std::fs::remove_file(&tmp_path);
+            Err(err)
+        }
+    }
+}
+
+/// Opens a uniquely-named temp file in the same directory as `path` and
+/// returns its path together with a writer. The caller must rename the temp
+/// path to `path` on success (or delete it on failure).
+pub fn open_output_temp(path: &Path) -> io::Result<(PathBuf, Box<dyn io::Write>)> {
+    let parent =
+        path.parent().ok_or_else(|| io::Error::other("output path has no parent directory"))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| io::Error::other("output path has no file name"))?
+        .to_string_lossy();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let tmp_name = format!(".{file_name}.tmp.{}.{nanos}", std::process::id());
+    let tmp_path = parent.join(tmp_name);
+    let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp_path)?;
+    Ok((tmp_path, Box::new(file)))
+}
+
+/// Promotes `tmp_path` to `target` with a same-directory `rename`, preserving
+/// the target's existing permissions when possible, and deletes the temp file
+/// if the rename fails.
+pub fn atomic_rename(tmp_path: &Path, target: &Path) -> io::Result<()> {
+    if let Ok(meta) = std::fs::metadata(target) {
+        let _ = std::fs::set_permissions(tmp_path, meta.permissions());
+    }
+    match std::fs::rename(tmp_path, target) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(tmp_path);
             Err(err)
         }
     }
