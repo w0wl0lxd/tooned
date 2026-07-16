@@ -1,0 +1,27 @@
+#!/bin/sh
+# Pre-commit hook for tooned
+# Runs cargo fmt and clippy on staged Rust changes.
+# Enable with: git config core.hooksPath .githooks
+
+set -e
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "Error: cargo not found in PATH" >&2
+    exit 1
+fi
+
+STAGED_RS_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.rs$' || true)
+
+if [ -n "$STAGED_RS_FILES" ]; then
+    echo "==> Running cargo fmt..."
+    cargo fmt --all
+
+    echo "$STAGED_RS_FILES" | xargs git add
+    echo "    Formatting complete."
+
+    echo "==> Running cargo clippy..."
+    cargo clippy --all-features --all-targets -- -D warnings
+    echo "    Clippy passed."
+fi
+
+echo "==> Pre-commit checks passed."

@@ -54,6 +54,15 @@ Please open an issue or discussion before working on:
 - Add tests for new functionality
 - Update documentation as needed
 
+### Local Git Hooks (optional)
+
+`.githooks/` ships a `pre-commit` (runs `cargo fmt` + `cargo clippy`) and a
+`commit-msg` (enforces the DCO trailer) hook. Enable them once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ### Commit Messages
 
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
