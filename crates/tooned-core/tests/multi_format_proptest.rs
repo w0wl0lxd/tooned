@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T078: `proptest` coverage for CSV/TSV and YAML/TOML detection+conversion
 //! parity, beyond the JSON-only Foundational-phase property tests
 //! (`roundtrip_proptest.rs`/`never_regression_proptest.rs`/
@@ -332,6 +334,58 @@ proptest! {
                     false,
                     "JSON and NDJSON sources for the same value reached different decisions: \
                      json={json_result:?}, ndjson={ndjson_result:?}"
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// XML: record-list-style XML with repeated child elements and many
+// attributes -- the shape `tooned-core::xml::parse` produces a uniform
+// array of `@`-prefixed objects from, which TOON's tabular encoding
+// compresses well.
+// ---------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn xml_round_trips_and_never_regresses((bytes, expected) in common::xml::arb_xml_record_list()) {
+        let opts = ConversionOptions { format_hint: Some(DocType::Xml), ..ConversionOptions::default() };
+        let result = maybe_tooned(&bytes, &opts).expect("maybe_tooned must not error for XML input");
+
+        if let Conversion::Toon { text, report } = result {
+            prop_assert!(report.toon_bytes < report.json_bytes);
+            let decoded = decode_toon(&text).expect("a Conversion::Toon's own text must decode");
+            prop_assert_eq!(decoded, expected);
+        }
+    }
+
+    /// Cross-format parity: the same abstract value, sourced from JSON vs
+    /// XML, must reach the same `Toon`-vs-`Passthrough` decision and (when
+    /// `Toon`) decode back to the identical value either way.
+    #[test]
+    fn xml_and_json_reach_the_same_conversion_decision_for_the_same_value(
+        (xml_bytes, value) in common::xml::arb_xml_record_list(),
+    ) {
+        let json_bytes = common::to_json_bytes(&value);
+        let json_opts = ConversionOptions { format_hint: Some(DocType::Json), ..ConversionOptions::default() };
+        let xml_opts = ConversionOptions { format_hint: Some(DocType::Xml), ..ConversionOptions::default() };
+
+        let from_json = maybe_tooned(&json_bytes, &json_opts).expect("maybe_tooned must not error");
+        let from_xml = maybe_tooned(&xml_bytes, &xml_opts).expect("maybe_tooned must not error");
+
+        match (from_json, from_xml) {
+            (Conversion::Toon { text: json_text, .. }, Conversion::Toon { text: xml_text, .. }) => {
+                let decoded_from_json = decode_toon(&json_text).expect("valid TOON");
+                let decoded_from_xml = decode_toon(&xml_text).expect("valid TOON");
+                prop_assert_eq!(decoded_from_json, decoded_from_xml);
+            }
+            (Conversion::Passthrough { .. }, Conversion::Passthrough { .. }) => {}
+            (json_result, xml_result) => {
+                prop_assert!(
+                    false,
+                    "JSON and XML sources for the same value reached different decisions: \
+                     json={json_result:?}, xml={xml_result:?}"
                 );
             }
         }
