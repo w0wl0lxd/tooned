@@ -1,0 +1,21 @@
+[package]
+name = "tooned-csv"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+
+[lib]
+name = "tooned_csv"
+path = "src/lib.rs"
+
+[dependencies]
+tooned-types = { path = "../tooned-types", version = "0.1.0" }
+tooned-parse = { path = "../tooned-parse", version = "0.1.0" }
+csv = "1"
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
