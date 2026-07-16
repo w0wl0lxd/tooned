@@ -93,8 +93,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI flags override config-file values. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
 - **tooned-convert / tooned-cli:** added prototype ONTO (`Object-Notation Tabular
   Output`) encoder/decoder for uniform arrays of flat objects and
-  `tooned convert --to onto`; `--to tron` is exposed as a placeholder for the
-  future TRON record-stream encoding. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+  `tooned convert --to onto`. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-convert / tooned-cli:** added prototype TRON (`Token-Reduced Object
+  Notation`) record-stream encoder/decoder for flat objects and uniform arrays
+  of flat objects, with `tooned convert --to tron` producing a class header and
+  compact `A(value, value, ...)` record bodies, and `tooned convert --to json`
+  decoding TRON back to compact JSON. ([work-log](docs/agents/work-log/2026-07-16-005-tron-record-stream-encoding.md))
 - **tooned-cli / release pipeline:** added hidden `completions` and `man`
   subcommands and packaged generated shell completion scripts and a man page
   in release artifacts. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
