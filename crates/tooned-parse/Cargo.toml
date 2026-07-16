@@ -1,0 +1,20 @@
+[package]
+name = "tooned-parse"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+
+[lib]
+name = "tooned_parse"
+path = "src/lib.rs"
+
+[dependencies]
+tooned-types = { path = "../tooned-types", version = "0.1.0" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

@@ -2106,20 +2106,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "tooned-convert"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+ "tiktoken-rs",
+ "tooned-csv",
+ "tooned-detect",
+ "tooned-json",
+ "tooned-parse",
+ "tooned-toml",
+ "tooned-toon",
+ "tooned-types",
+ "tooned-xml",
+ "tooned-yaml",
+]
+
+[[package]]
 name = "tooned-core"
 version = "0.1.0"
 dependencies = [
  "criterion",
  "csv",
  "proptest",
- "quick-xml",
  "serde_json",
  "serde_yaml",
  "sonic-rs",
  "thiserror",
- "tiktoken-rs",
  "toml",
- "toon-lsp",
+ "tooned-convert",
+ "tooned-json",
+ "tooned-toon",
+ "tooned-types",
+ "tooned-xml",
+]
+
+[[package]]
+name = "tooned-csv"
+version = "0.1.0"
+dependencies = [
+ "csv",
+ "serde_json",
+ "tooned-parse",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-detect"
+version = "0.1.0"
+dependencies = [
+ "tooned-parse",
+ "tooned-types",
+ "tooned-xml",
 ]
 
 [[package]]
@@ -2133,6 +2172,73 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tooned-core",
+]
+
+[[package]]
+name = "tooned-json"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sonic-rs",
+ "tooned-parse",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-parse"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-toml"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "toml",
+ "tooned-parse",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-toon"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+ "toon-lsp",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-types"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "tooned-xml"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde_json",
+ "tooned-parse",
+ "tooned-types",
+]
+
+[[package]]
+name = "tooned-yaml"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "serde_yaml",
+ "tooned-parse",
+ "tooned-types",
 ]
 
 [[package]]
