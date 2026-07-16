@@ -20,7 +20,9 @@ fn uniform_array_json(rows: usize) -> String {
 }
 
 fn set_mtime(path: &std::path::Path, when: SystemTime) -> std::io::Result<()> {
-    let file = fs::File::open(path)?;
+    // Open with write permission; Windows requires a writable handle to call
+    // `SetFileTime` via `set_modified`.
+    let file = fs::OpenOptions::new().write(true).open(path)?;
     file.set_modified(when)
 }
 
