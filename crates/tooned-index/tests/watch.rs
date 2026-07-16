@@ -7,6 +7,11 @@ use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
+#[cfg(target_os = "macos")]
+const WATCH_TIMEOUT_SECS: u64 = 30;
+#[cfg(not(target_os = "macos"))]
+const WATCH_TIMEOUT_SECS: u64 = 5;
+
 #[test]
 fn watch_with_stop_triggers_sync_on_new_file() {
     let dir = tempdir().expect("tempdir");
@@ -26,14 +31,16 @@ fn watch_with_stop_triggers_sync_on_new_file() {
             .expect("watch loop should exit cleanly");
     });
 
-    // Give the watcher time to register.
-    thread::sleep(Duration::from_millis(150));
+    // Give the watcher time to register. FSEvents on macOS can take a
+    // noticeable amount of time to start delivering events, especially on
+    // CI runners, so allow a generous warm-up period.
+    thread::sleep(Duration::from_millis(500));
 
     std::fs::write(root.join("new.json"), br#"{"id":1}"#).expect("write new file");
 
-    // Poll status for up to a few seconds: filesystem watchers (especially
-    // kqueue on macOS) can deliver events with variable latency.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Poll status for the platform-specific timeout: filesystem watchers
+    // (especially FSEvents on macOS) can deliver events with variable latency.
+    let deadline = Instant::now() + Duration::from_secs(WATCH_TIMEOUT_SECS);
     while Instant::now() < deadline {
         thread::sleep(Duration::from_millis(100));
         if tooned_index::status(root).is_ok_and(|s| s.file_count == 1) {
