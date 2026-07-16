@@ -10,6 +10,13 @@
 
 use tooned_types::DocType;
 
+#[cfg(test)]
+use std::alloc::System;
+
+#[cfg(test)]
+#[global_allocator]
+pub(crate) static GLOBAL: heapster::Heapster<System> = heapster::Heapster::new(System);
+
 /// Detects the document type of `input`. `format_hint`, when present, is
 /// honored unconditionally -- even if it conflicts with the content -- per
 /// FR-002's explicit-hint-first contract.
@@ -340,5 +347,40 @@ mod tests {
         assert_eq!(detect(b"", None), None);
         assert_eq!(detect(b"   \n\t  ", None), None);
         assert_eq!(detect(b"this is just some prose without any structure at all", None), None);
+    }
+
+    #[test]
+    fn detect_is_zero_allocation_on_representative_inputs() {
+        // `heapster` wraps the global allocator for this test binary. The
+        // sniffing hot path must not allocate on the heap: it works purely
+        // with byte slices and iterators, so any regression that introduces
+        // a `Vec`, `String`, or boxed state in `detect`/`sniff` will fail
+        // this guardrail.
+        //
+        // Skip under `cargo llvm-cov`: the coverage instrumentation itself
+        // performs heap allocations and would false-positive this test.
+        if std::env::var_os("CARGO_LLVM_COV").is_some() {
+            return;
+        }
+
+        let cases: &[&[u8]] = &[
+            br#"{"a": 1, "b": [1,2,3]}"#,
+            b"[1, 2, 3]",
+            b"{\"a\":1}\n{\"a\":2}\n",
+            b"---\nname: alice\nage: 30\n",
+            b"[server]\nhost = \"localhost\"\nport = 8080\n",
+            b"name,age,active\nalice,30,true\nbob,25,false\n",
+            b"name\tage\tactive\nalice\t30\ttrue\nbob\t25\tfalse\n",
+            b"this is just some prose without any structure at all",
+            b"",
+        ];
+        for input in cases {
+            let (_, diff) = GLOBAL.measure(|| detect(input, None));
+            assert_eq!(
+                diff.alloc_count, 0,
+                "detect({input:?}) must not perform any heap allocations"
+            );
+            assert_eq!(diff.alloc_sum, 0, "detect({input:?}) must not allocate any heap bytes");
+        }
     }
 }
