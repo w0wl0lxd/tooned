@@ -1,5 +1,8 @@
 # 2026-07-16-006: Streaming NDJSON/JSONL Conversion
 
+**Branch:** `006-streaming-ndjson`  
+**PR:** [#15](https://github.com/w0wl0lxd/tooned/pull/15)
+
 ## Context
 The `tooned convert` subcommand previously used bounded conversion for all inputs, loading the entire file into memory. For large NDJSON/JSONL files (e.g., >2 MiB), this could cause memory pressure. The goal was to add streaming support for NDJSON/JSONL inputs to handle large files efficiently.
 
@@ -84,3 +87,9 @@ $ cargo clippy --all-targets --all-features -- -D warnings
 - Small NDJSON inputs continue to use the bounded path for simplicity
 - The implementation uses temp files for both input (stdin) and output, ensuring atomic operations and error recovery
 - On parse/IO errors, the original input is passed through unchanged, ensuring robustness
+
+## Changelog
+
+Inserted under `### Added` (line **108**) in [CHANGELOG.md](../../../CHANGELOG.md).
+The CHANGELOG bullet records the reverse reference via the Markdown link
+`([work-log](docs/agents/work-log/2026-07-16-006-streaming-ndjson.md))`.
