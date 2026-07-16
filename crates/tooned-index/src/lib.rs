@@ -18,6 +18,46 @@ pub use scan::{ScanSummary, scan_full};
 pub use schema::{ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists};
 pub use sync::{SyncSummary, sync};
 
+/// Checkpoint the SQLite WAL and truncate the `-wal` file (backs
+/// `tooned index compact`). Safe to call on a live index; concurrent readers
+/// are not blocked.
+pub fn compact(project_root: &Path) -> Result<(), IndexError> {
+    if !schema::index_exists(project_root) {
+        return Err(IndexError::NoIndex(project_root.to_path_buf()));
+    }
+    let conn = schema::open_index(project_root)?;
+    conn.pragma_update(None, "wal_checkpoint", "TRUNCATE")?;
+    Ok(())
+}
+
+/// Poll `tooned index sync` every `interval_secs` seconds.
+///
+/// This is a minimal, dependency-light watch implementation. A future
+/// iteration should replace the polling loop with a `notify`-based
+/// filesystem watcher with debounce.
+pub fn watch(root: &Path, interval_secs: u64) -> Result<(), IndexError> {
+    if !schema::index_exists(root) {
+        return Err(IndexError::NoIndex(root.to_path_buf()));
+    }
+    let interval = std::time::Duration::from_secs(interval_secs);
+    let mut count: u64 = 0;
+    loop {
+        count += 1;
+        match sync(root) {
+            Ok(summary) => println!(
+                "[watch #{count}] synced {}: +{} ~{} -{} ({} unchanged)",
+                root.display(),
+                summary.added,
+                summary.updated,
+                summary.removed,
+                summary.unchanged
+            ),
+            Err(err) => eprintln!("tooned index watch: sync failed: {err}"),
+        }
+        std::thread::sleep(interval);
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error(transparent)]
