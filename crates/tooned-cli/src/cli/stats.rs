@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use serde::Serialize;
 
 #[derive(Debug, Args)]
 pub struct StatsArgs {
@@ -17,6 +18,18 @@ pub struct StatsArgs {
     /// Limit results to the top N entries by savings percentage.
     #[arg(long)]
     pub top: Option<u32>,
+
+    /// Emit the report as a JSON array instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Serialize)]
+struct StatsEntry<'a> {
+    path: &'a str,
+    json_bytes: i64,
+    toon_bytes: i64,
+    savings_pct: f64,
 }
 
 pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
@@ -27,6 +40,20 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
 
     match tooned_index::stats(&root, args.top) {
         Ok(rows) => {
+            if args.json {
+                let entries: Vec<StatsEntry> = rows
+                    .iter()
+                    .map(|row| StatsEntry {
+                        path: &row.path,
+                        json_bytes: row.json_bytes,
+                        toon_bytes: row.toon_bytes,
+                        savings_pct: row.savings_pct,
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string(&entries)?);
+                return Ok(());
+            }
+
             if rows.is_empty() {
                 println!("No conversion data in the index yet. Run `tooned index` first.");
                 return Ok(());
