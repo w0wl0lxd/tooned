@@ -356,6 +356,13 @@ mod tests {
         // with byte slices and iterators, so any regression that introduces
         // a `Vec`, `String`, or boxed state in `detect`/`sniff` will fail
         // this guardrail.
+        //
+        // Skip under `cargo llvm-cov`: the coverage instrumentation itself
+        // performs heap allocations and would false-positive this test.
+        if std::env::var_os("CARGO_LLVM_COV").is_some() {
+            return;
+        }
+
         let cases: &[&[u8]] = &[
             br#"{"a": 1, "b": [1,2,3]}"#,
             b"[1, 2, 3]",
