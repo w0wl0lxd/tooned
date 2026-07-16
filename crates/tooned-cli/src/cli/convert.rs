@@ -14,8 +14,8 @@ use tooned_core::{Conversion, ConversionOptions, decode_toon, maybe_tooned};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
-    BoundedRead, atomic_rename, open_input, open_output, open_output_temp, read_bounded,
-    read_input, write_atomic, write_output,
+    BoundedRead, atomic_rename, open_input, open_output_temp, read_bounded, read_input,
+    write_atomic, write_output,
 };
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -233,8 +233,8 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
 
     let out_path = args.out.as_deref();
     let (tmp_path, mut out): (Option<PathBuf>, Box<dyn std::io::Write>) = match out_path {
-        None => (None, open_output(out_path)?),
-        Some(p) if p == Path::new("-") => (None, open_output(out_path)?),
+        None => (None, Box::new(std::io::stdout())),
+        Some(p) if p == Path::new("-") => (None, Box::new(std::io::stdout())),
         Some(p) => {
             let (tmp, file) = open_output_temp(p)?;
             (Some(tmp), file)

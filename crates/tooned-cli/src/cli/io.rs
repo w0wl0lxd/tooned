@@ -130,15 +130,6 @@ pub fn open_input(path: &Path) -> io::Result<Box<dyn io::Read>> {
     }
 }
 
-/// Opens `out` for writing, or stdout when `out` is `None` or `Some("-")`.
-pub fn open_output(out: Option<&Path>) -> io::Result<Box<dyn io::Write>> {
-    match out {
-        None => Ok(Box::new(io::stdout())),
-        Some(path) if path == Path::new("-") => Ok(Box::new(io::stdout())),
-        Some(path) => Ok(Box::new(std::fs::File::create(path)?)),
-    }
-}
-
 /// Outcome of [`read_bounded`].
 pub enum BoundedRead {
     /// The input was `<= cap` bytes and is fully buffered here, same as a
