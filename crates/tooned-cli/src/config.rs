@@ -28,6 +28,15 @@ pub struct Config {
     pub format_hint: Option<String>,
     /// Default `precise_tokens` for `tooned check`.
     pub precise_tokens: Option<bool>,
+    /// `tooned index watch` defaults.
+    pub watch: Option<WatchConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct WatchConfig {
+    /// Quiet period, in milliseconds, before a filesystem change triggers
+    /// an incremental `tooned index sync`.
+    pub debounce_ms: Option<u64>,
 }
 
 impl Config {
