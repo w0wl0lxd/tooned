@@ -85,8 +85,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `validate` recipes. Workspace dependencies are now centrally declared and inherited via
   `workspace = true`, with `cargo-rail unify` keeping the graph consistent across targets.
   ([work-log](docs/agents/work-log/2026-07-16-cargo-rail-setup.md))
+- **tooned-cli:** added `index compact` (SQLite WAL checkpoint), `index watch`
+  (polling `index sync`), and `diff` (compare original JSON with TOON round-trip
+  using `similar`). ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-cli:** added TOML configuration file support loaded from `--config`,
+  `TOONED_CONFIG`, `$XDG_CONFIG_HOME/tooned/config.toml`, or `.tooned.toml`;
+  CLI flags override config-file values. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-convert / tooned-cli:** added prototype ONTO (`Object-Notation Tabular
+  Output`) encoder/decoder for uniform arrays of flat objects and
+  `tooned convert --to onto`; `--to tron` is exposed as a placeholder for the
+  future TRON record-stream encoding. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-cli / release pipeline:** added hidden `completions` and `man`
+  subcommands and packaged generated shell completion scripts and a man page
+  in release artifacts. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **CI:** added Criterion benchmark and latency guardrail jobs, a `cargo vet`
+  supply-chain audit gate with mozilla/google audit imports, and switched
+  `security.yml` to direct `cargo audit`. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
 
 ### Fixed
+
+- **tooned-core:** removed the redundant JSON-style structural-depth preflight
+  from XML parsing; `quick-xml`'s own recursion limits and new adversarial
+  tests now guard malformed input. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
 
 - **tooned-core:** XML entity reference resolution in text content: character references
   (`&#65;`, `&#x41;`) and predefined entities (`&lt;`, `&amp;`, `&gt;`, `&apos;`, `&quot;`)
@@ -112,6 +132,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strings/comments and TOML basic strings. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
 - **tooned-cli / tooned-core:** format-hint coverage tests for all CLI/MCP
   `parse_doc_type_hint` mappings (json, ndjson, yaml, toml, csv, tsv, xml). (d014002)
+
+### Security
+
+- **tooned-index:** hardened `.tooned/index.db` and `.gitignore` temp-file
+  paths against symlink redirection by refusing to follow symlinks and using
+  same-directory temp-file-then-rename writes. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
 
 ### Known limitations
 
