@@ -32,7 +32,9 @@ fn is_tool_error(result: &Value) -> bool {
 /// unchanged mtime at the filesystem's timestamp resolution (mirrors
 /// `crates/tooned-index/tests/sync.rs`'s `set_mtime` helper).
 fn set_mtime(path: &std::path::Path, when: SystemTime) -> std::io::Result<()> {
-    let file = fs::File::open(path)?;
+    // Open with write permission; Windows requires a writable handle to call
+    // `SetFileTime` via `set_modified`.
+    let file = fs::OpenOptions::new().write(true).open(path)?;
     file.set_modified(when)
 }
 
