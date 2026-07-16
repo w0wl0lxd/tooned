@@ -36,11 +36,11 @@ pub fn classify(value: &Value) -> ShapeClass {
 /// Sorted key set for an object; the empty vector for any non-object
 /// element (including an empty object) -- non-object elements are simply
 /// elements that all share the same "no keys" signature as each other.
-fn key_signature(value: &Value) -> Vec<String> {
+fn key_signature(value: &Value) -> Vec<&str> {
     match value {
         Value::Object(map) => {
-            let mut keys: Vec<String> = map.keys().cloned().collect();
-            keys.sort();
+            let mut keys: Vec<&str> = map.keys().map(std::string::String::as_str).collect();
+            keys.sort_unstable();
             keys
         }
         _ => Vec::new(),
@@ -55,7 +55,7 @@ fn classify_array(arr: &[Value]) -> ShapeClass {
     let sampled: Vec<&Value> = arr.iter().take(SHAPE_SAMPLE_CAP).collect();
     let sample_count = sampled.len();
 
-    let mut counts: HashMap<Vec<String>, usize> = HashMap::new();
+    let mut counts: HashMap<Vec<&str>, usize> = HashMap::new();
     for item in &sampled {
         let sig = key_signature(item);
         counts.entry(sig).and_modify(|c| *c += 1).or_insert(1);

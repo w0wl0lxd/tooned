@@ -138,7 +138,9 @@ fn use_simd_json(_len: usize) -> bool {
 }
 
 fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
-    let mut items = Vec::new();
+    #[allow(clippy::naive_bytecount)]
+    let estimated_lines = input.iter().filter(|&&b| b == b'\n').count() + 1;
+    let mut items = Vec::with_capacity(estimated_lines);
     for line in input.split(|b| *b == b'\n') {
         let trimmed = line.trim_ascii();
         if trimmed.is_empty() {
@@ -181,7 +183,7 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
         .flexible(true)
         .from_reader(input);
 
-    let headers = reader.headers().map_err(|e| ParseError::Csv(e.to_string()))?.clone();
+    let headers = reader.headers().map_err(|e| ParseError::Csv(e.to_string()))?;
 
     // A duplicate column header (e.g. `a,a,b` from a SQL join/export tool)
     // would otherwise silently collapse via `map.insert` below -- the
@@ -191,14 +193,18 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
     // fail-safe passthrough, constitution Principle I) rather than emitting
     // a silently-corrupted `Value`, mirroring how JSON's duplicate-key case
     // is already handled correctly (see `tests/duplicate_keys.rs`).
-    if let Some(dup) = first_duplicate_header(&headers) {
+    if let Some(dup) = first_duplicate_header(headers) {
         return Err(ParseError::Csv(format!(
             "duplicate column header {dup:?}: refusing to parse, since later columns of the \
              same name would silently overwrite earlier ones and lose data"
         )));
     }
 
-    let mut rows = Vec::new();
+    let headers = headers.clone();
+
+    #[allow(clippy::naive_bytecount)]
+    let estimated_rows = input.iter().filter(|&&b| b == b'\n').count() + 1;
+    let mut rows = Vec::with_capacity(estimated_rows);
     for record in reader.records() {
         let record = record.map_err(|e| ParseError::Csv(e.to_string()))?;
         let mut map = Map::new();
