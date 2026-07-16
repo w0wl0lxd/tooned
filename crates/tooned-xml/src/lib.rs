@@ -255,75 +255,6 @@ pub fn sniff(input: &[u8]) -> Option<DocType> {
     None
 }
 
-/// Iterative depth guard that counts `<`/`>` nesting while ignoring contents of
-/// CDATA sections, comments, and double/single-quoted strings. This mirrors the
-/// bracket guard used for JSON/YAML/TOML but for XML element syntax.
-fn exceeds_max_depth(input: &[u8], max_depth: usize) -> bool {
-    #[derive(Clone, Copy)]
-    enum State {
-        Outside,
-        InTag,
-        InQuote(u8),
-    }
-
-    let mut depth: usize = 0;
-    let mut state = State::Outside;
-    let mut i = 0;
-
-    while let Some(b) = input.get(i).copied() {
-        match state {
-            State::Outside => {
-                if b == b'<' {
-                    // Skip comments: <!-- ... -->
-                    if input.get(i + 1..i + 4) == Some(b"!--") {
-                        let Some(tail) = input.get(i + 4..) else {
-                            break;
-                        };
-                        if let Some(end) = tail.windows(3).position(|w| w == b"-->") {
-                            i += 4 + end + 3;
-                            continue;
-                        }
-                        break;
-                    }
-                    // Skip CDATA sections entirely so brackets inside do not count.
-                    if input.get(i + 1..i + 9) == Some(b"![CDATA[") {
-                        let Some(tail) = input.get(i + 9..) else {
-                            break;
-                        };
-                        if let Some(end) = tail.windows(3).position(|w| w == b"]]>") {
-                            i += 9 + end + 3;
-                            continue;
-                        }
-                        break;
-                    }
-                    depth += 1;
-                    if depth > max_depth {
-                        return true;
-                    }
-                    state = State::InTag;
-                }
-                i += 1;
-            }
-            State::InTag => {
-                if b == b'"' || b == b'\'' {
-                    state = State::InQuote(b);
-                } else if b == b'>' {
-                    depth = depth.saturating_sub(1);
-                    state = State::Outside;
-                }
-                i += 1;
-            }
-            State::InQuote(q) => {
-                if b == q {
-                    state = State::InTag;
-                }
-                i += 1;
-            }
-        }
-    }
-    false
-}
-
 /// A single child of an element frame, preserving the order in which it was
 /// encountered.
 enum ChildNode {
@@ -344,10 +275,6 @@ pub fn parse(input: &[u8]) -> Result<Value, ParseError> {
 }
 
 fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, ParseError> {
-    if exceeds_max_depth(input, opts.max_depth) {
-        return Err(ParseError::TooDeep);
-    }
-
     let mut reader = Reader::from_reader(input);
 
     let mut stack: Vec<ElementFrame> = Vec::with_capacity(opts.max_depth);
@@ -768,13 +695,27 @@ mod tests {
     #[test]
     fn depth_guard_ignores_brackets_in_cdata() {
         let xml = b"<a><![CDATA[ <<<<<<< >>>>>>> ]]></a>";
-        assert!(!exceeds_max_depth(xml, 2));
+        let value = parse(xml).expect("CDATA brackets must not count toward nesting depth");
+        assert_eq!(value, json!({"a": " <<<<<<< >>>>>>> "}));
     }
 
     #[test]
     fn depth_guard_ignores_brackets_in_quoted_strings() {
         let xml = br#"<a b="<<<<<<< >>>>>>>"></a>"#;
-        assert!(!exceeds_max_depth(xml, 2));
+        let value = parse(xml).expect("quoted string brackets must not count toward nesting depth");
+        assert_eq!(value, json!({"a": {"@b": "<<<<<<< >>>>>>>"}}));
+    }
+
+    #[test]
+    fn unclosed_cdata_is_an_error_not_a_bypass() {
+        let xml = b"<a><![CDATA[unclosed";
+        assert!(parse(xml).is_err(), "unclosed CDATA section must not silently pass the guard");
+    }
+
+    #[test]
+    fn unclosed_comment_is_an_error_not_a_bypass() {
+        let xml = b"<a><!-- unclosed";
+        assert!(parse(xml).is_err(), "unclosed comment must not silently pass the guard");
     }
 
     #[test]
