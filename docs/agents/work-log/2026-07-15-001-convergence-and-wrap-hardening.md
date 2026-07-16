@@ -31,6 +31,10 @@ The convergence work was safety-critical: it touched in-place file writes, bound
 5. Hardened `wrap.rs` to mirror `io.rs`: capped initial allocation and `saturating_add` for the `take` limit.
 6. Re-ran the full release gate (`fmt`, `clippy`, `nextest`, `deny`) and committed/pushed the fixes.
 7. Added `CHANGELOG.md` and this work-log per the `changelog-worklog-pr-trail` skill.
+8. Post-PR review fixes (CodeRabbit/Gemini/Codex): made `convert --out` and
+   `.gitignore` writes use a same-directory temp-file-then-rename pattern, and
+   removed the JSON-style structural-depth pre-check from YAML/TOML parsing to
+   avoid bracket false positives in strings/comments.
 
 ## Verification
 
@@ -61,4 +65,4 @@ Closes 001 Phase 8 convergence gaps and the `wrap.rs` overflow finding from the 
 
 ## Changelog
 
-Inserted under `### Fixed` (line **80**) in [CHANGELOG.md](../../../CHANGELOG.md) — this bullet is the FIRST bullet of the new `### Fixed` subsection. The CHANGELOG bullet records the reverse reference via the Markdown link: [work-log](2026-07-15-001-convergence-and-wrap-hardening.md).
+Inserted under `### Fixed` (line **80**) in [CHANGELOG.md](../../../CHANGELOG.md) — this bullet is the FIRST bullet of the new `### Fixed` subsection. The CHANGELOG bullet records the reverse reference via the Markdown link: [work-log](2026-07-15-001-convergence-and-wrap-hardening.md). The YAML/TOML structural-depth fix was inserted immediately AFTER the preceding bullet that begins with **tooned-cli / tooned-index: closed 001 Phase 8 convergence gaps** at line **90**, also linking back to this work-log.
