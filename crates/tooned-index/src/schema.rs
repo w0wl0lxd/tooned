@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use crate::IndexError;
 
 /// Current schema version, stamped into `meta` on first creation.
-pub const SCHEMA_VERSION: &str = "1";
+pub const SCHEMA_VERSION: &str = "2";
 
 /// One row of the `files` table.
 #[derive(Debug, Clone, PartialEq)]
@@ -92,13 +92,32 @@ pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> 
     // actually take effect -- SQLite has foreign key enforcement off by
     // default per-connection.
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // WAL mode improves concurrency for the write-heavy scan/sync path;
+    // synchronous=NORMAL is safe with WAL and avoids fsync on every commit.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
     create_schema(&conn)?;
+    let version = schema_version(&conn)?;
+    match version.as_deref() {
+        Some(SCHEMA_VERSION) => {}
+        Some("1") | None => migrate(&conn, "1")?,
+        Some(other) => return Err(IndexError::UnsupportedSchemaVersion(other.to_string())),
+    }
     Ok(conn)
 }
 
-/// Creates every table (`meta`/`files`/`shapes`/`conversions`) if it
-/// doesn't already exist, and bootstraps `meta.schema_version` /
-/// `meta.created_at`. Idempotent: safe to call on every `open_index`.
+/// SQL to create secondary indexes added in schema version 2.
+const INDEXES_SQL: &str = "
+    CREATE INDEX IF NOT EXISTS idx_files_scanned_at ON files(scanned_at);
+    CREATE INDEX IF NOT EXISTS idx_files_mtime ON files(mtime_unix);
+    CREATE INDEX IF NOT EXISTS idx_files_doc_type ON files(doc_type);
+    CREATE INDEX IF NOT EXISTS idx_conversions_savings_pct ON conversions(savings_pct);
+";
+
+/// Creates every table (`meta`/`files`/`shapes`/`conversions`) and
+/// supporting secondary indexes if they don't already exist, and
+/// bootstraps `meta.schema_version` / `meta.created_at`. Idempotent: safe
+/// to call on every `open_index`.
 pub(crate) fn create_schema(conn: &Connection) -> Result<(), IndexError> {
     conn.execute_batch(
         "
@@ -139,6 +158,7 @@ pub(crate) fn create_schema(conn: &Connection) -> Result<(), IndexError> {
         );
         ",
     )?;
+    conn.execute_batch(INDEXES_SQL)?;
     bootstrap_meta(conn)
 }
 
@@ -152,6 +172,51 @@ fn bootstrap_meta(conn: &Connection) -> Result<(), IndexError> {
         [now_unix().to_string()],
     )?;
     Ok(())
+}
+
+/// Reads the `schema_version` meta row, returning `None` when the database
+/// predates version tracking or the row is missing for any reason.
+fn schema_version(conn: &Connection) -> Result<Option<String>, IndexError> {
+    let mut stmt = conn.prepare("SELECT value FROM meta WHERE key = 'schema_version'")?;
+    let mut rows = stmt.query([])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// Updates the stored `schema_version` meta row to `version`.
+fn set_schema_version(conn: &Connection, version: &str) -> Result<(), IndexError> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('schema_version', ?1) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [version],
+    )?;
+    Ok(())
+}
+
+/// Applies migrations starting from `from` until the database reaches
+/// `SCHEMA_VERSION`. Each migration is idempotent so it can safely be
+/// re-run on an already-partially-migrated database.
+fn migrate(conn: &Connection, from: &str) -> Result<(), IndexError> {
+    let mut current = from;
+    while current != SCHEMA_VERSION {
+        current = apply_single_migration(conn, current)?;
+    }
+    Ok(())
+}
+
+/// Applies one schema migration, returning the version the database is on
+/// after the migration completes.
+fn apply_single_migration(conn: &Connection, from: &str) -> Result<&'static str, IndexError> {
+    match from {
+        "1" => {
+            conn.execute_batch(INDEXES_SQL)?;
+            set_schema_version(conn, "2")?;
+            Ok("2")
+        }
+        _ => Err(IndexError::UnsupportedSchemaVersion(from.to_string())),
+    }
 }
 
 /// Current Unix timestamp (seconds), clamped to `0` if the system clock is
@@ -300,5 +365,94 @@ mod tests {
             .expect("count conversions");
         assert_eq!(shape_count, 0, "shapes row must cascade-delete with its file");
         assert_eq!(conversion_count, 0, "conversions row must cascade-delete with its file");
+    }
+
+    fn index_names(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+        let mut stmt =
+            conn.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")?;
+        stmt.query_map([], |row| row.get::<_, String>(0))?.collect()
+    }
+
+    #[test]
+    fn new_index_uses_wal_mode_and_schema_version_2() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+
+        let version: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |row| row.get(0))
+            .expect("schema_version row present");
+        assert_eq!(version, SCHEMA_VERSION);
+
+        let journal_mode: String =
+            conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).expect("read journal_mode");
+        assert_eq!(journal_mode.to_lowercase(), "wal");
+    }
+
+    #[test]
+    fn new_index_creates_secondary_indexes() {
+        let dir = tempdir().expect("tempdir");
+        let conn = open_index(dir.path()).expect("open index");
+        let indexes = index_names(&conn).expect("index_names");
+        for expected in [
+            "idx_files_scanned_at",
+            "idx_files_mtime",
+            "idx_files_doc_type",
+            "idx_conversions_savings_pct",
+        ] {
+            assert!(
+                indexes.iter().any(|n| n == expected),
+                "missing index {expected}, have {indexes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn migration_from_v1_adds_indexes_and_bumps_schema_version() {
+        let dir = tempdir().expect("tempdir");
+        {
+            let conn = open_index(dir.path()).expect("open index");
+            // Simulate a pre-existing v1 database.
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')",
+                [],
+            )
+            .expect("set v1");
+            // Also wipe indexes created by create_schema so the migration path
+            // actually has work to do.
+            conn.execute_batch(
+                "DROP INDEX IF EXISTS idx_files_scanned_at; \
+                 DROP INDEX IF EXISTS idx_files_mtime; \
+                 DROP INDEX IF EXISTS idx_files_doc_type; \
+                 DROP INDEX IF EXISTS idx_conversions_savings_pct;",
+            )
+            .expect("drop indexes");
+        }
+
+        let conn = open_index(dir.path()).expect("reopen and migrate");
+
+        let version: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |row| row.get(0))
+            .expect("schema_version row present");
+        assert_eq!(version, SCHEMA_VERSION);
+
+        let indexes = index_names(&conn).expect("index_names");
+        assert!(indexes.iter().any(|n| n == "idx_files_scanned_at"));
+        assert!(indexes.iter().any(|n| n == "idx_conversions_savings_pct"));
+    }
+
+    #[test]
+    fn unsupported_schema_version_errors() {
+        let dir = tempdir().expect("tempdir");
+        {
+            let conn = open_index(dir.path()).expect("open index");
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '99')",
+                [],
+            )
+            .expect("set v99");
+        }
+
+        let err = open_index(dir.path()).expect_err("v99 should fail");
+        assert!(format!("{err}").contains("unsupported schema version"), "unexpected error: {err}");
     }
 }

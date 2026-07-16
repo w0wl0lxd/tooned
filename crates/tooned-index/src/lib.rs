@@ -34,6 +34,8 @@ pub enum IndexError {
          a home directory rather than a project root)"
     )]
     ScanTooLarge(usize),
+    #[error("unsupported schema version: {0}; delete or migrate the index database")]
+    UnsupportedSchemaVersion(String),
 }
 
 /// `tooned index status` report: whether an index exists, how many files
