@@ -12,10 +12,10 @@ name = "tooned_xml"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-types = { path = "../tooned-types", version = "0.1.0" }
-tooned-parse = { path = "../tooned-parse", version = "0.1.0" }
 quick-xml = { version = "0.41.0", default-features = false }
 serde_json = { workspace = true }
+tooned-parse = { workspace = true }                          #unified
+tooned-types = { workspace = true }                          #unified
 
 [lints]
 workspace = true

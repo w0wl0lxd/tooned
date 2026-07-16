@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls), and `tooned-core` itself pulls in none of `rusqlite`/`ignore`/`walkdir`
   (constitution Principle III, dependency-minimal core).
 - Dual licensing (AGPL-3.0-only + commercial), mirroring `toon-lsp`.
+- Monorepo build tooling: `.config/rail.toml` for `cargo-rail` (workspace plan/run/unify/release
+  orchestration) and a `justfile` with `fmt`, `check`, `clippy`, `test`, `doc`, `build`, and
+  `validate` recipes. Workspace dependencies are now centrally declared and inherited via
+  `workspace = true`, with `cargo-rail unify` keeping the graph consistent across targets.
+  ([work-log](docs/agents/work-log/2026-07-16-cargo-rail-setup.md))
 
 ### Fixed
 
