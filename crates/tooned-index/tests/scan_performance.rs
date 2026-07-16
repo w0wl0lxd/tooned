@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Timed performance test (T061b, SC-005): a full scan of a fixture project
 //! with 1,000+ files completes well under a minute, and `index sync` after
 //! touching only a handful of files is markedly faster than the initial

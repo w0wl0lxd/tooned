@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! # tooned-index
 //!
 //! The `.tooned/` on-disk SQLite index: directory scanning, content

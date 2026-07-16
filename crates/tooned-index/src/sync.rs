@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Incremental sync (T057): stat-first logic (check `mtime` before
 //! re-hashing), prune rows for files that no longer exist.
 
