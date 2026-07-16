@@ -12,9 +12,9 @@ name = "tooned_csv"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-parse = { path = "../tooned-parse", version = "0.1.0" }
-csv = "1"
+csv = { workspace = true }          #unified
 serde_json = { workspace = true }
+tooned-parse = { workspace = true } #unified
 
 [lints]
 workspace = true
