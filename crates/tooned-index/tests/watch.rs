@@ -7,9 +7,6 @@ use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
-#[cfg(target_os = "macos")]
-const WATCH_TIMEOUT_SECS: u64 = 30;
-#[cfg(not(target_os = "macos"))]
 const WATCH_TIMEOUT_SECS: u64 = 5;
 
 #[test]

@@ -17,11 +17,15 @@ path = "src/lib.rs"
 [dependencies]
 blake3 = "1"
 ignore = "0.4"
-notify = "8.2"
-notify-debouncer-mini = "0.7"
+notify = { version = "8.2", default-features = false }
+notify-debouncer-mini = { version = "0.7", default-features = false }
 rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = { workspace = true }
 tooned-core = { workspace = true }                      #unified
+
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = { version = "8.2", default-features = false, features = ["macos_kqueue"] }
+notify-debouncer-mini = { version = "0.7", default-features = false, features = ["macos_kqueue"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
