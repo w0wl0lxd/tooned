@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Format sniffing (JSON/NDJSON/YAML/TOML/CSV/TSV), hint-first.
 //!
 //! Operates purely on raw bytes -- never requires valid UTF-8 -- so it can
@@ -88,7 +90,7 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         return Some(delimited);
     }
 
-    None
+    crate::xml::sniff(input)
 }
 
 /// Whether the first line of `trimmed` is, by itself, a TOML table header:

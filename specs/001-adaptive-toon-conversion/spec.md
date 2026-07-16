@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-adaptive-toon-conversion`
 **Created**: 2026-07-13
-**Status**: Draft
+**Status**: Implemented (2026-07-15)
 **Input**: User description: "Build tooned: transparently detect JSON-shaped structured data flowing through AI coding agents' tool-call context (API responses, DB rows, config files) and adaptively re-encode it as TOON whenever that measurably reduces size versus compact JSON — never mutating source files, never requiring hand-authored TOON, always falling back safely to passthrough on any doubt. Complementary to rtk (not a replacement); MVP integration targets are Claude Code, Codex CLI, and an agent-agnostic MCP server."
 
 ## Clarifications

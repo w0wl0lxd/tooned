@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned wrap -- <command...>`
 //!
 //! Runs `<command...>`, captures stdout, feeds it through the same adaptive

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! # tooned-core
 //!
 //! Doctype detection and adaptive TOON-vs-compact-JSON conversion.
@@ -19,14 +21,14 @@ mod detect;
 mod error;
 mod parse;
 mod shape;
+pub mod xml;
 
 pub use convert::{Conversion, ConversionReport, InspectReport, inspect, maybe_tooned};
 pub use error::{ToonedError, decode_toon};
 pub use parse::SONIC_RS_THRESHOLD_BYTES;
 pub use shape::ShapeClass;
 
-/// Supported source document types (v1 scope; XML deferred to v2, tracked
-/// as a GitHub issue per plan.md).
+/// Supported source document types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DocType {
     Json,
@@ -35,6 +37,7 @@ pub enum DocType {
     Toml,
     Csv,
     Tsv,
+    Xml,
 }
 
 /// Tunables for [`maybe_tooned`]/[`inspect`]. See [`ConversionOptions::default`]

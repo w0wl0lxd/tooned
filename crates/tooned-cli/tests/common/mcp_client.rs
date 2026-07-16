@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Minimal blocking JSON-RPC client for driving `tooned mcp serve` over
 //! real stdio pipes in integration tests (T073/T074). Deliberately hand-
 //! rolled rather than depending on an `rmcp` client transport in

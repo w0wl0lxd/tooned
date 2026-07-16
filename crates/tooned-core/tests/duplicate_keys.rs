@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T013: a JSON object with duplicate keys must produce identical
 //! `maybe_tooned` output via the `sonic-rs` fast path and the `serde_json`
 //! fallback path (research.md #4's duplicate-key caveat).
