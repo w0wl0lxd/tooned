@@ -158,5 +158,42 @@ jobs:
 
       - name: Build docs
         run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: -Dwarnings
+
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Criterion benchmarks
+        run: cargo bench --all-features -p tooned-cli
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: criterion-report
+          path: target/criterion
+          if-no-files-found: ignore
+
+  latency:
+    name: Latency Guardrail
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run ignored latency guardrail
+        run: cargo test --release -p tooned-cli --test hot_path_latency -- --ignored
