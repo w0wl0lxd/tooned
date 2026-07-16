@@ -172,7 +172,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         };
     }
 
-    let round_trip_ok = match tooned_toon::decode_toon(&encoded) {
+    let round_trip_ok = match tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes) {
         Ok(decoded) => decoded == value,
         Err(_) => false,
     };
