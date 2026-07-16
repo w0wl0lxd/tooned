@@ -10,7 +10,9 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use tooned_core::{Conversion, ConversionOptions, decode_onto, decode_toon, maybe_tooned};
+use tooned_core::{
+    Conversion, ConversionOptions, decode_onto, decode_toon, decode_tron, maybe_tooned, maybe_tron,
+};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
@@ -122,10 +124,36 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 std::process::exit(2);
             }
         }
-        // `--to tron` is a placeholder for the TRON record-stream encoding.
+        // `--to tron` forces JSON-like input into the prototype TRON
+        // record-stream encoding. It requires a uniform object/array of flat
+        // objects. Like `--to onto`, the margin is forced to 0% but round-trip
+        // fidelity is still enforced.
         Some(Direction::Tron) => {
-            eprintln!("tooned convert: TRON encoding is not yet implemented");
-            std::process::exit(2);
+            let bytes = match read_input(&args.input) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
+                    std::process::exit(2);
+                }
+            };
+            let config = crate::config::Config::load(args.config.as_deref())?;
+            let mut opts =
+                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+            opts.margin_pct = 0.0;
+            let output = match maybe_tron(&bytes, &opts) {
+                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
+                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                Err(_) => bytes.clone(),
+            };
+            let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
+                write_in_place(&args.input, &output)
+            } else {
+                write_output(args.out.as_deref(), &output)
+            };
+            if let Err(err) = write_result {
+                eprintln!("tooned convert: failed to write output: {err}");
+                std::process::exit(2);
+            }
         }
         // `--to toon` forces the JSON->TOON direction, bypassing the
         // adaptive default's 2% savings cushion (margin_pct: 0.0) while
@@ -333,13 +361,15 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
     Ok(())
 }
 
-/// `--to json` forces decoding the input as either raw TOON or, when the text
-/// starts with the ONTO `!schema ` header, as ONTO. Unlike the adaptive
-/// JSON->TOON path, an invalid decode here is a genuine contract-level
-/// failure (not payload-driven ambiguity in the adaptive sense), so it exits 3
-/// rather than silently passing through (`contracts/cli.md`).
+/// `--to json` forces decoding the input as raw TOON, ONTO (when the text
+/// starts with the `!schema ` header), or TRON (when the text starts with a
+/// `class ` header). Unlike the adaptive JSON->TOON path, an invalid decode
+/// here is a genuine contract-level failure (not payload-driven ambiguity in
+/// the adaptive sense), so it exits 3 rather than silently passing through
+/// (`contracts/cli.md`).
 fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
     const ONTO_SCHEMA_PREFIX: &str = "!schema ";
+    const TRON_CLASS_PREFIX: &str = "class ";
 
     let Ok(text) = std::str::from_utf8(bytes) else {
         eprintln!("tooned convert: input is not valid UTF-8 text");
@@ -351,6 +381,14 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
             Ok(value) => value,
             Err(err) => {
                 eprintln!("tooned convert: failed to decode ONTO: {err}");
+                std::process::exit(3);
+            }
+        }
+    } else if text.trim_start().starts_with(TRON_CLASS_PREFIX) {
+        match decode_tron(text) {
+            Ok(value) => value,
+            Err(err) => {
+                eprintln!("tooned convert: failed to decode TRON: {err}");
                 std::process::exit(3);
             }
         }
