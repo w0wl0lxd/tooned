@@ -78,13 +78,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **tooned-cli / tooned-index:** closed 001 Phase 8 convergence gaps: in-place
-  `convert --out` no longer truncates the source; `read_bounded` and `wrap` cap
-  their initial allocation and use saturating arithmetic for `take` limits;
-  `.gitignore` appends use `O_NOFOLLOW` on Unix; `sync` includes `size_bytes` and
-  keeps transient metadata-failure files in `seen`; `open_index` sets a 5-second
-  SQLite busy timeout; MCP handlers run conversion/detect/decode and index tools
-  on `tokio::task::spawn_blocking`; `tooned check` prints size fields
+  `convert --out` reads the source fully and writes via a same-directory
+  temp-file-then-rename so a crash cannot leave a partially-written source;
+  `read_bounded` and `wrap` cap their initial allocation and use saturating
+  arithmetic for `take` limits; `.gitignore` appends use `O_NOFOLLOW` on Unix and
+  write via a same-directory temp-file-then-rename; `sync` includes `size_bytes`
+  and keeps transient metadata-failure files in `seen`; `open_index` sets a
+  5-second SQLite busy timeout; MCP handlers run conversion/detect/decode and
+  index tools on `tokio::task::spawn_blocking`; `tooned check` prints size fields
   independently. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
+- **tooned-core:** removed the JSON-style structural-depth pre-check from YAML
+  and TOML parsing; the parsers have their own recursion limits and the
+  pre-check produced false positives on brackets inside YAML single-quoted
+  strings/comments and TOML basic strings. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
 
 ### Known limitations
 
