@@ -357,8 +357,19 @@ fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, Par
         match event {
             Event::Decl(_) | Event::Comment(_) | Event::PI(_) | Event::DocType(_) => {}
             Event::GeneralRef(e) => {
-                let name = std::str::from_utf8(e.as_ref()).map_err(|_| ParseError::Utf8)?;
-                push_text(&mut stack, format!("&{name};"))?;
+                if let Some(ch) =
+                    e.resolve_char_ref().map_err(|err| ParseError::Xml(err.to_string()))?
+                {
+                    push_text(&mut stack, ch.to_string())?;
+                } else {
+                    let name = std::str::from_utf8(e.as_ref()).map_err(|_| ParseError::Utf8)?;
+                    let text = if let Some(s) = quick_xml::escape::resolve_predefined_entity(name) {
+                        s.to_string()
+                    } else {
+                        format!("&{name};")
+                    };
+                    push_text(&mut stack, text)?;
+                }
             }
             Event::Start(e) => {
                 let name = local_name(&e, opts)?;
@@ -793,5 +804,26 @@ mod tests {
     #[test]
     fn rejects_html_doctype_without_trailing_tag_characters() {
         assert_eq!(sniff(b"<!DOCTYPE html>"), None);
+    }
+
+    #[test]
+    fn resolves_predefined_entities_in_text() {
+        let xml = b"<root>a&lt;b</root>";
+        let value = parse(xml).expect("valid XML must parse");
+        assert_eq!(value, json!({"root": "a<b"}));
+    }
+
+    #[test]
+    fn resolves_numeric_character_references_in_text() {
+        let xml = b"<root>&#65; and &#x42;</root>";
+        let value = parse(xml).expect("valid XML must parse");
+        assert_eq!(value, json!({"root": "A and B"}));
+    }
+
+    #[test]
+    fn resolves_amp_and_quote_entities_in_text() {
+        let xml = b"<root>a&amp;b&quot;c&apos;</root>";
+        let value = parse(xml).expect("valid XML must parse");
+        assert_eq!(value, json!({"root": "a&b\"c'"}));
     }
 }
