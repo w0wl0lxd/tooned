@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned hook` subcommands: `run`, `install`, `uninstall`, `status`,
 //! `doctor`, for both Claude Code and Codex CLI.
 //! See `specs/001-adaptive-toon-conversion/contracts/{claude-code-hook,codex-hook}.md`.

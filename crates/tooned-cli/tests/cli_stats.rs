@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test for `tooned stats [path] [--top N]` (T053).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

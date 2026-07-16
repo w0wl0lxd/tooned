@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T009: no-panic property + example tests (constitution Principle I;
 //! contract postcondition in `contracts/tooned-core-api.md`).
 //!

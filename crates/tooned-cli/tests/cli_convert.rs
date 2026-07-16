@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract tests for `tooned convert` (T038-T040).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

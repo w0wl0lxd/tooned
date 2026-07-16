@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Shared proptest generators for tooned-core's Foundational-phase safety-
 //! invariant property tests (T007-T009).
 //!
@@ -14,6 +16,8 @@
 //! per-item since which helpers go unused varies by which test file is
 //! compiling this module.
 #![allow(dead_code)]
+
+pub mod xml;
 
 use proptest::prelude::*;
 use serde_json::{Map, Value};

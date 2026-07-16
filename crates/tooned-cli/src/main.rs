@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! tooned CLI entrypoint.
 //!
 //! Scaffold only: subcommands (`convert`, `check`, `pipe`, `wrap`, `index`,
