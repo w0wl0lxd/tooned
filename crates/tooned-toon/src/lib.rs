@@ -1,31 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `ToonedError` and the `decode_toon` entrypoint
-//! (`contracts/tooned-core-api.md`).
+//! TOON encode/decode wrapper.
 
 use serde_json::Value;
+use tooned_parse::exceeds_max_structural_depth;
+use tooned_types::{ConversionOptions, ToonedError};
 
-use crate::ConversionOptions;
-use crate::parse::exceeds_max_structural_depth;
-
-/// Reserved for genuine caller misuse or explicit decode failures -- never
-/// returned by `maybe_tooned`/`inspect` for payload-driven failure
-/// (malformed/oversized/ambiguous input), which always resolves to
-/// `Conversion::Passthrough` instead (constitution Principle I,
-/// `contracts/tooned-core-api.md` preconditions).
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ToonedError {
-    /// Input exceeded a caller-declared size limit. Not actually returned by
-    /// `maybe_tooned`/`inspect` (those downgrade to
-    /// `Passthrough { reason: InputTooLarge }` instead, per FR-006); kept as
-    /// a variant for callers that want to pre-validate a size limit
-    /// themselves before calling in.
-    #[error("input exceeds max_input_bytes limit")]
-    InputTooLarge,
-    /// `decode_toon` failed because `text` is not valid TOON.
-    #[error("failed to decode TOON input: {0}")]
-    DecodeFailed(String),
+/// Encodes a `serde_json::Value` into TOON format.
+pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
+    toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
 /// Decodes a TOON document back into a structured [`serde_json::Value`].
@@ -47,7 +30,18 @@ pub enum ToonedError {
 /// `max_input_bytes` cap, [`ToonedError::DecodeFailed`] when `text` exceeds
 /// the safe structural-nesting depth or is otherwise not valid TOON.
 pub fn decode_toon(text: &str) -> Result<Value, ToonedError> {
-    if text.len() > ConversionOptions::default().max_input_bytes {
+    decode_toon_with_limit(text, ConversionOptions::default().max_input_bytes)
+}
+
+/// Decodes a TOON document with a caller-supplied byte-size cap.
+///
+/// This is used by `tooned-convert`'s internal round-trip check so an
+/// input that passed the caller's `max_input_bytes` is not rejected again
+/// by the default 2 MiB cap when the TOON text is larger than the original
+/// JSON (TOON is normally smaller, but callers can raise the cap above the
+/// default).
+pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Value, ToonedError> {
+    if text.len() > max_input_bytes {
         return Err(ToonedError::InputTooLarge);
     }
     if exceeds_max_structural_depth(text.as_bytes()) {

@@ -34,6 +34,36 @@ exceptions = [
   { allow = [
     "AGPL-3.0-only",
   ], crate = "tooned-cli" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-types" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-parse" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-detect" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-json" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-yaml" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-toml" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-csv" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-xml" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-toon" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-convert" },
 ]
 
 [bans]
@@ -41,6 +71,7 @@ exceptions = [
 multiple-versions = "warn"
 # Lint level for wildcard dependencies
 wildcards = "deny"
+allow-wildcard-paths = true
 # Explicit bans, not merely advisory-db ignores, so a future transitive bump
 # can't silently reintroduce these.
 deny = [
