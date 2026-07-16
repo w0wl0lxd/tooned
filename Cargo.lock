@@ -2103,8 +2103,6 @@ dependencies = [
  "tokio",
  "tooned-core",
  "tooned-index",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2115,7 +2113,6 @@ dependencies = [
  "csv",
  "proptest",
  "quick-xml",
- "serde",
  "serde_json",
  "serde_yaml",
  "sonic-rs",
@@ -2133,8 +2130,6 @@ dependencies = [
  "ignore",
  "libc",
  "rusqlite",
- "serde",
- "serde_json",
  "tempfile",
  "thiserror",
  "tooned-core",
