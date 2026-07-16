@@ -74,4 +74,4 @@ Implements XML input support for adaptive TOON conversion, including conservativ
 
 ## Changelog
 
-Inserted under `### Fixed` (line **86**) in [CHANGELOG.md](../../../CHANGELOG.md) — bullets for entity reference resolution, `xml:*` attribute preservation, and format-hint coverage tests.
+Inserted under `### Fixed` (line **86**) in [CHANGELOG.md](../../../CHANGELOG.md), immediately AFTER the preceding bullet that begins with **Dual licensing (AGPL-3.0-only + commercial).** The CHANGELOG bullets for the XML follow-up fixes record the reverse reference via the Markdown link `[work-log](docs/agents/work-log/2026-07-16-002-xml-conversion.md)`.
