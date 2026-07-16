@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! T007: round-trip fidelity property test (constitution Principle IV;
 //! contract postcondition in `contracts/tooned-core-api.md`).
 //!

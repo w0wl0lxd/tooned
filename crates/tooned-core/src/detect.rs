@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Format sniffing (JSON/NDJSON/YAML/TOML/CSV/TSV), hint-first.
 //!
 //! Operates purely on raw bytes -- never requires valid UTF-8 -- so it can

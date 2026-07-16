@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! SQLite schema for `.tooned/index.db`: table creation +
 //! `meta.schema_version` bootstrap (T055). Exact schema per data-model.md's
 //! "Project Index" section.

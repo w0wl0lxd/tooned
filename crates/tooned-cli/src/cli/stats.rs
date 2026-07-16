@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `tooned stats [path] [--top N]`
 //!
 //! Ranked savings-opportunity report from the index (FR-022, T060). Exit

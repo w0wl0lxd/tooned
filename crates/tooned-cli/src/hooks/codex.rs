@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Codex CLI hook integration: `tooned hook run --codex`,
 //! `hook install --codex`.
 //! See `specs/001-adaptive-toon-conversion/contracts/codex-hook.md`.
