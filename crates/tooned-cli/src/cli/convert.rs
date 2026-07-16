@@ -6,12 +6,13 @@
 //! (FR-005): reads are always read-only, and `--out` writes to a distinct
 //! destination, never back onto `input`.
 
-use std::io::Write as _;
+use std::io::{BufRead, Write as _};
 use std::path::{Path, PathBuf};
 
 use clap::Args;
 use tooned_core::{
-    Conversion, ConversionOptions, decode_onto, decode_toon, decode_tron, maybe_tooned, maybe_tron,
+    Conversion, ConversionOptions, StreamStats, decode_onto, decode_toon, decode_tron,
+    is_smaller_enough, maybe_tooned, maybe_tron, maybe_tron_stream,
 };
 
 use crate::cli::FormatHint;
@@ -129,30 +130,48 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // objects. Like `--to onto`, the margin is forced to 0% but round-trip
         // fidelity is still enforced.
         Some(Direction::Tron) => {
-            let bytes = match read_input(&args.input) {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
-                    std::process::exit(2);
-                }
-            };
             let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
             opts.margin_pct = 0.0;
-            let output = match maybe_tron(&bytes, &opts) {
-                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
-                Err(_) => bytes.clone(),
-            };
-            let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
-                write_in_place(&args.input, &output)
+
+            // Check if we should use streaming for NDJSON input
+            let input_size = get_input_size(&args.input);
+            let is_ndjson_hint = args.format_hint == Some(FormatHint::Ndjson);
+            let is_ndjson_ext = is_ndjson_extension(&args.input);
+            let use_streaming =
+                is_ndjson_hint || is_ndjson_ext || input_size > opts.max_input_bytes as u64;
+
+            if use_streaming && (is_ndjson_hint || is_ndjson_ext) {
+                // Stream NDJSON to TRON
+                let result = run_tron_streaming(args, &opts);
+                if let Err(err) = result {
+                    eprintln!("tooned convert: failed to stream TRON: {err}");
+                    std::process::exit(2);
+                }
             } else {
-                write_output(args.out.as_deref(), &output)
-            };
-            if let Err(err) = write_result {
-                eprintln!("tooned convert: failed to write output: {err}");
-                std::process::exit(2);
+                // Use the existing bounded path for non-NDJSON or small inputs
+                let bytes = match read_input(&args.input) {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        eprintln!("tooned convert: failed to read {}: {err}", args.input.display());
+                        std::process::exit(2);
+                    }
+                };
+                let output = match maybe_tron(&bytes, &opts) {
+                    Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
+                    Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                    Err(_) => bytes.clone(),
+                };
+                let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
+                    write_in_place(&args.input, &output)
+                } else {
+                    write_output(args.out.as_deref(), &output)
+                };
+                if let Err(err) = write_result {
+                    eprintln!("tooned convert: failed to write output: {err}");
+                    std::process::exit(2);
+                }
             }
         }
         // `--to toon` forces the JSON->TOON direction, bypassing the
@@ -173,7 +192,24 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let config = crate::config::Config::load(args.config.as_deref())?;
             let opts =
                 config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
-            run_adaptive_bounded(args, &opts)?;
+
+            // Check if we should use streaming for NDJSON input
+            let input_size = get_input_size(&args.input);
+            let is_ndjson_hint = args.format_hint == Some(FormatHint::Ndjson);
+            let is_ndjson_ext = is_ndjson_extension(&args.input);
+            let use_streaming =
+                is_ndjson_hint || is_ndjson_ext || input_size > opts.max_input_bytes as u64;
+
+            if use_streaming && (is_ndjson_hint || is_ndjson_ext) {
+                // Stream NDJSON to TRON with adaptive size check
+                let result = run_adaptive_streaming(args, &opts);
+                if let Err(err) = result {
+                    eprintln!("tooned convert: failed to stream adaptive conversion: {err}");
+                    std::process::exit(2);
+                }
+            } else {
+                run_adaptive_bounded(args, &opts)?;
+            }
         }
     }
 
@@ -423,4 +459,210 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
         // safe to the original bytes rather than panicking or erroring.
         Err(_) => bytes.to_vec(),
     }
+}
+
+/// Returns the size of the input in bytes, or 0 for stdin (unknown size).
+fn get_input_size(input: &Path) -> u64 {
+    if input == Path::new("-") {
+        return 0;
+    }
+    std::fs::metadata(input).map_or(0, |m| m.len())
+}
+
+/// Checks if the file extension indicates NDJSON/JSONL format.
+fn is_ndjson_extension(path: &Path) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => ext.eq_ignore_ascii_case("ndjson") || ext.eq_ignore_ascii_case("jsonl"),
+        None => false,
+    }
+}
+
+/// Guard for a temporary file. Deletes the file on drop unless the path is
+/// explicitly taken via `into_path`.
+struct TempFile(Option<PathBuf>);
+
+impl TempFile {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn path(&self) -> &Path {
+        match &self.0 {
+            Some(p) => p,
+            None => Path::new(""),
+        }
+    }
+
+    fn into_path(mut self) -> PathBuf {
+        match self.0.take() {
+            Some(p) => p,
+            None => PathBuf::new(),
+        }
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// Returns a unique temporary path in `dir` with the given `prefix`.
+fn unique_temp_path(dir: &Path, prefix: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    dir.join(format!(".{prefix}.{}.{}.tmp", std::process::id(), nanos))
+}
+
+/// Spools stdin to a uniquely-named temp file and returns the temp file guard,
+/// an open `File` for reading, and the number of bytes copied.
+fn spool_stdin_to_temp() -> anyhow::Result<(TempFile, std::fs::File, u64)> {
+    let path = unique_temp_path(&std::env::temp_dir(), "tooned-stdin");
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+    let mut stdin = std::io::stdin().lock();
+    let size = std::io::copy(&mut stdin, &mut file)?;
+    drop(file);
+    let file = std::fs::File::open(&path)?;
+    Ok((TempFile::new(path), file, size))
+}
+
+/// Opens a temp output writer. For a file destination the temp is created in
+/// the same directory and can be atomically renamed; for stdout it is created
+/// in the system temp directory and copied on success.
+fn open_streaming_output(
+    out: Option<&Path>,
+) -> anyhow::Result<(TempFile, Box<dyn std::io::Write>)> {
+    match out {
+        Some(p) if p != Path::new("-") => {
+            let (tmp_path, file) = open_output_temp(p)?;
+            Ok((TempFile::new(tmp_path), Box::new(std::io::BufWriter::new(file))))
+        }
+        _ => {
+            let path = unique_temp_path(&std::env::temp_dir(), "tooned-out");
+            let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+            Ok((TempFile::new(path), Box::new(std::io::BufWriter::new(file))))
+        }
+    }
+}
+
+/// Copies `input` to the requested output destination without buffering the
+/// whole file in memory. Skips the copy when the output is the same file as
+/// the input.
+fn copy_input_to_output(input: &Path, out: Option<&Path>) -> anyhow::Result<()> {
+    if let Some(out) = out {
+        if out == Path::new("-") {
+            let mut src = std::fs::File::open(input)?;
+            std::io::copy(&mut src, &mut std::io::stdout())?;
+            return Ok(());
+        }
+        if output_is_same_as_input(input, Some(out)) {
+            return Ok(());
+        }
+        std::fs::copy(input, out)?;
+    } else {
+        let mut src = std::fs::File::open(input)?;
+        std::io::copy(&mut src, &mut std::io::stdout())?;
+    }
+    Ok(())
+}
+
+/// Runs streaming TRON conversion for `--to tron` on NDJSON input.
+/// Streams to a temp file, then promotes it atomically for file output
+/// or copies to stdout for stdout output. Falls back to passthrough on
+/// parse/IO errors.
+fn run_tron_streaming(args: &ConvertArgs, _opts: &ConversionOptions) -> anyhow::Result<()> {
+    let out_path = args.out.as_deref();
+
+    let (stdin_tmp, mut reader): (Option<TempFile>, Box<dyn BufRead>) =
+        if args.input == Path::new("-") {
+            let (tmp, file, _size) = spool_stdin_to_temp()?;
+            (Some(tmp), Box::new(std::io::BufReader::new(file)))
+        } else {
+            let file = std::fs::File::open(&args.input)?;
+            (None, Box::new(std::io::BufReader::new(file)))
+        };
+    let input_path: PathBuf =
+        if let Some(tmp) = &stdin_tmp { tmp.path().to_path_buf() } else { args.input.clone() };
+
+    let (output_tmp, mut out) = open_streaming_output(out_path)?;
+
+    let stream_result = maybe_tron_stream(&mut *reader, &mut out);
+    let flush_result = out.flush();
+
+    if stream_result.is_err() || flush_result.is_err() {
+        drop(out);
+        copy_input_to_output(&input_path, out_path)?;
+        return Ok(());
+    }
+
+    drop(out);
+
+    match out_path {
+        Some(p) if p != Path::new("-") => {
+            let tmp_path = output_tmp.into_path();
+            atomic_rename(&tmp_path, p)?;
+        }
+        _ => {
+            let mut src = std::fs::File::open(output_tmp.path())?;
+            std::io::copy(&mut src, &mut std::io::stdout())?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Runs adaptive streaming conversion for the default path.
+/// Streams NDJSON to TRON in a temp file, then compares output size
+/// vs input size using the margin check. If not smaller enough,
+/// discards the temp and passthrough the original input.
+fn run_adaptive_streaming(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow::Result<()> {
+    let out_path = args.out.as_deref();
+
+    let (stdin_tmp, mut reader, input_size): (Option<TempFile>, Box<dyn BufRead>, u64) =
+        if args.input == Path::new("-") {
+            let (tmp, file, size) = spool_stdin_to_temp()?;
+            (Some(tmp), Box::new(std::io::BufReader::new(file)), size)
+        } else {
+            let size = get_input_size(&args.input);
+            let file = std::fs::File::open(&args.input)?;
+            (None, Box::new(std::io::BufReader::new(file)), size)
+        };
+    let input_path: PathBuf =
+        if let Some(tmp) = &stdin_tmp { tmp.path().to_path_buf() } else { args.input.clone() };
+
+    let (output_tmp, mut out) = open_streaming_output(out_path)?;
+
+    let stream_result = maybe_tron_stream(&mut *reader, &mut out);
+    let flush_result = out.flush();
+
+    if stream_result.is_err() || flush_result.is_err() {
+        drop(out);
+        copy_input_to_output(&input_path, out_path)?;
+        return Ok(());
+    }
+
+    let StreamStats { output_bytes, .. } = stream_result?;
+    let output_size = output_bytes as usize;
+
+    drop(out);
+
+    if is_smaller_enough(input_size as usize, output_size, opts.margin_pct) {
+        match out_path {
+            Some(p) if p != Path::new("-") => {
+                let tmp_path = output_tmp.into_path();
+                atomic_rename(&tmp_path, p)?;
+            }
+            _ => {
+                let mut src = std::fs::File::open(output_tmp.path())?;
+                std::io::copy(&mut src, &mut std::io::stdout())?;
+            }
+        }
+    } else {
+        copy_input_to_output(&input_path, out_path)?;
+    }
+
+    Ok(())
 }
