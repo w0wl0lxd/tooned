@@ -12,8 +12,8 @@ name = "tooned_detect"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-types = { path = "../tooned-types", version = "0.1.0" }
-tooned-xml = { path = "../tooned-xml", version = "0.1.0" }
+tooned-types = { workspace = true } #unified
+tooned-xml = { workspace = true }   #unified
 
 [lints]
 workspace = true
