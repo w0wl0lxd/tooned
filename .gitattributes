@@ -1,0 +1,33 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Rust source files
+*.rs text eol=lf
+*.toml text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Nix
+*.nix text eol=lf
+.envrc text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Config files
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Lock files
+Cargo.lock text eol=lf
+Cargo.lock merge=binary
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
