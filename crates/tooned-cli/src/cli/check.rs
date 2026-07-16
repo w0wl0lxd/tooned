@@ -46,8 +46,7 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", args.input.display());
-            println!("error: failed to read {}: {err}", args.input.display());
+            eprintln!("tooned check: failed to read {}: {err}", args.input.display());
             println!("convertible: no");
             return Ok(());
         }
@@ -63,8 +62,7 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
         Ok(outcome) => outcome,
         Err(err) => {
-            eprintln!("tooned: failed to read {}: {err}", args.input.display());
-            println!("error: failed to read {}: {err}", args.input.display());
+            eprintln!("tooned check: failed to read {}: {err}", args.input.display());
             println!("convertible: no");
             return Ok(());
         }
