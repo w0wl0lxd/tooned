@@ -75,6 +75,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (constitution Principle III, dependency-minimal core).
 - Dual licensing (AGPL-3.0-only + commercial), mirroring `toon-lsp`.
 
+### Fixed
+
+- **tooned-cli / tooned-index:** closed 001 Phase 8 convergence gaps: in-place
+  `convert --out` no longer truncates the source; `read_bounded` and `wrap` cap
+  their initial allocation and use saturating arithmetic for `take` limits;
+  `.gitignore` appends use `O_NOFOLLOW` on Unix; `sync` includes `size_bytes` and
+  keeps transient metadata-failure files in `seen`; `open_index` sets a 5-second
+  SQLite busy timeout; MCP handlers run conversion/detect/decode and index tools
+  on `tokio::task::spawn_blocking`; `tooned check` prints size fields
+  independently. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
+
 ### Known limitations
 
 - Not yet published to crates.io or tagged as a release.
