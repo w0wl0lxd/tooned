@@ -53,7 +53,9 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     for i in 0..5 {
         let path = dir.path().join(format!("file-{i:05}.json"));
         fs::write(&path, format!("[{}]", uniform_row_json(i + 999))).expect("rewrite fixture file");
-        let file = fs::File::open(&path).expect("open fixture file");
+        // Open with write permission; Windows requires a writable handle to call
+        // `SetFileTime` via `set_modified`.
+        let file = fs::OpenOptions::new().write(true).open(&path).expect("open fixture file");
         file.set_modified(future).expect("set_modified");
     }
 

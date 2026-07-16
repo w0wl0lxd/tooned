@@ -93,14 +93,18 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 }
 
 /// Returns `true` when the requested output destination is the same file as
-/// the input, including via symlinks or different relative paths that resolve
-/// to the same inode. Stdin/stdout (`-`) is never considered the same file.
+/// the input, including via symlinks, hardlinks, or different relative paths
+/// that resolve to the same inode. Stdin/stdout (`-`) is never considered the
+/// same file.
 fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     let Some(out) = out else { return false };
     if input == Path::new("-") || out == Path::new("-") {
         return false;
     }
     if input == out {
+        return true;
+    }
+    if let Ok(true) = same_file::is_same_file(input, out) {
         return true;
     }
     match (std::fs::canonicalize(input), std::fs::canonicalize(out)) {
