@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
@@ -31,8 +31,15 @@ fn watch_with_stop_triggers_sync_on_new_file() {
 
     std::fs::write(root.join("new.json"), br#"{"id":1}"#).expect("write new file");
 
-    // Wait for the debounce window plus a sync pass.
-    thread::sleep(Duration::from_millis(400));
+    // Poll status for up to a few seconds: filesystem watchers (especially
+    // kqueue on macOS) can deliver events with variable latency.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(100));
+        if tooned_index::status(root).is_ok_and(|s| s.file_count == 1) {
+            break;
+        }
+    }
 
     stop.store(true, Ordering::SeqCst);
     handle.join().expect("watch thread should join");

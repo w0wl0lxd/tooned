@@ -53,7 +53,6 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
 }
 
 pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
-    let config = Config::load(None)?;
     match &args.command {
         None => run_scan(&resolve_project_root(args.path.as_ref())),
         Some(IndexSubcommand::Sync { path }) => run_sync(&resolve_project_root(path.as_ref())),
@@ -63,6 +62,7 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
             run_compact(&resolve_project_root(path.as_ref()))
         }
         Some(IndexSubcommand::Watch { path, debounce_ms }) => {
+            let config = Config::load(None)?;
             let configured_debounce = config.watch.as_ref().and_then(|w| w.debounce_ms);
             // `clippy::disallowed_methods` forbids `unwrap_or` (silent default),
             // and the config-file fallback means the default isn't a simple
