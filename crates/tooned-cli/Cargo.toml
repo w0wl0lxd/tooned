@@ -33,6 +33,9 @@ criterion = "0.5"
 tempfile = "3"
 proptest = "1.4"
 
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"
+
 [[bench]]
 name = "hot_path"
 harness = false
