@@ -1,0 +1,41 @@
+[package]
+name = "tooned-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Doctype detection and adaptive TOON-vs-JSON conversion, dependency-minimal for embedding in a hot hook path"
+categories.workspace = true
+readme = "../../README.md"
+keywords = ["toon", "json", "llm", "tokens", "compression"]
+
+[lib]
+name = "tooned_core"
+path = "src/lib.rs"
+
+[dependencies]
+toon-lsp = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+toml = "1"
+csv = "1"
+sonic-rs = "0.5"
+thiserror = { workspace = true }
+# Opt-in precise BPE-token-based savings estimate (`ConversionOptions.precise_tokens`,
+# T076). Bundles its BPE rank tables as compile-time assets (`include_str!`) --
+# no network fetch, no `reqwest`/telemetry surface (constitution: zero
+# external calls in v1). `async-openai`/`dhat-heap` features are NOT enabled:
+# default features only, keeping this dependency-minimal.
+tiktoken-rs = "0.12"
+quick-xml = { version = "0.41.0", default-features = false }
+
+[dev-dependencies]
+proptest = "1.4"
+criterion = "0.5"
+
+[package.metadata.cargo-machete]
+ignored = ["criterion"]
+
+[lints]
+workspace = true
