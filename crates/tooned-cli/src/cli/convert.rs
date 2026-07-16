@@ -188,16 +188,19 @@ fn write_in_place(input: &Path, output: &[u8]) -> std::io::Result<()> {
 /// Returns the number of hard links for `path`, or `None` if it cannot be
 /// determined on the current platform.
 fn nlink(path: &Path) -> Option<u64> {
-    let meta = std::fs::metadata(path).ok()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(path).ok()?;
         Some(meta.nlink())
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        Some(meta.number_of_links())
+        // `std::os::windows::fs::MetadataExt::number_of_links` is a nightly
+        // feature (`windows_by_handle`). Open the file and query it through
+        // `winapi_util` on stable Rust instead.
+        let file = std::fs::File::open(path).ok()?;
+        Some(winapi_util::file::information(&file).ok()?.number_of_links())
     }
     #[cfg(not(any(unix, windows)))]
     {
