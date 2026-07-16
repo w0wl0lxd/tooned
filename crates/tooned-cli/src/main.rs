@@ -9,6 +9,7 @@
 //! command surface every variant below mirrors.
 
 mod cli;
+mod config;
 mod hooks;
 mod mcp;
 

@@ -91,7 +91,9 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool, IndexError> {
 /// supplied `project_root`, so a pre-placed symlink under `.tooned` or at
 /// `index.db` could otherwise redirect reads/writes to an arbitrary location.
 fn refuse_symlink(path: &Path, label: &str) -> Result<(), IndexError> {
-    if let Ok(meta) = std::fs::symlink_metadata(path) && meta.file_type().is_symlink() {
+    if let Ok(meta) = std::fs::symlink_metadata(path)
+        && meta.file_type().is_symlink()
+    {
         return Err(IndexError::Io(std::io::Error::other(format!(
             "refusing to follow a symlinked {label} at {}",
             path.display()
@@ -103,9 +105,7 @@ fn refuse_symlink(path: &Path, label: &str) -> Result<(), IndexError> {
 pub(crate) fn open_index(project_root: &Path) -> Result<Connection, IndexError> {
     let db_path = index_db_path(project_root);
     let Some(tooned_dir) = db_path.parent() else {
-        return Err(IndexError::Io(std::io::Error::other(
-            "index.db path has no parent directory",
-        )));
+        return Err(IndexError::Io(std::io::Error::other("index.db path has no parent directory")));
     };
     refuse_symlink(tooned_dir, ".tooned directory")?;
     refuse_symlink(&db_path, "index database")?;

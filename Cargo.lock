@@ -2174,6 +2174,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "toml",
  "tooned-core",
  "tooned-index",
  "winapi-util",

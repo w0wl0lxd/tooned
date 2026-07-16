@@ -25,6 +25,7 @@ similar = "2.7"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 tooned-core = { workspace = true }                                            #unified
 tooned-index = { workspace = true }                                           #unified

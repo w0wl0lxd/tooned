@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use tooned_core::{ConversionOptions, InspectReport, PassthroughReason, ShapeClass, inspect};
+use tooned_core::{InspectReport, PassthroughReason, ShapeClass, inspect};
 
 use crate::cli::FormatHint;
 use crate::cli::io::{BoundedRead, open_input, read_bounded};
@@ -27,6 +27,18 @@ pub struct CheckArgs {
     /// Force the parser's doc type instead of relying on content-sniffing.
     #[arg(long = "format-hint", value_enum)]
     pub format_hint: Option<FormatHint>,
+
+    /// Minimum savings margin, as a percentage, required to convert (default 2%).
+    #[arg(long)]
+    pub margin: Option<f64>,
+
+    /// Maximum input size in bytes before hard passthrough (default 2 MiB).
+    #[arg(long = "max-bytes")]
+    pub max_bytes: Option<u64>,
+
+    /// Path to a tooned config file.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 // `Result` is kept (rather than `()`) to match every other subcommand's
@@ -37,11 +49,10 @@ pub struct CheckArgs {
 // reported on stdout/stderr and `run` still returns `Ok(())`.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
-    let opts = ConversionOptions {
-        precise_tokens: args.precise,
-        format_hint: args.format_hint.map(Into::into),
-        ..ConversionOptions::default()
-    };
+    let config = crate::config::Config::load(args.config.as_deref())?;
+    let precise = Some(args.precise || matches!(config.precise_tokens, Some(true)));
+    let opts =
+        config.conversion_options(args.margin, args.max_bytes, args.format_hint, precise);
 
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,
