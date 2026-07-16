@@ -61,11 +61,27 @@ pub fn ensure_ignored(project_root: &Path) -> Result<(), IndexError> {
     Ok(())
 }
 
-/// Race-resistant write of `.gitignore`: on Unix the file is opened with
-/// `O_NOFOLLOW` so a symlink swapped in after the `symlink_metadata` probe
-/// above cannot be followed; on other platforms the `symlink_metadata` probe
-/// is the best available guard and `std::fs::write` is used.
+/// Atomic, race-resistant write of `.gitignore`: the contents are first
+/// written in full to a uniquely-named temp file in the same directory, then
+/// promoted into place with a single `rename`. A same-directory rename is
+/// atomic, so readers (or a concurrent `tooned index` run) never observe a
+/// partially-written `.gitignore`. On Unix the temp file is opened with
+/// `O_NOFOLLOW` and `O_EXCL` so a symlink swapped in under the temp name
+/// cannot be followed or clobbered.
 fn write_gitignore(path: &Path, contents: &str) -> Result<(), IndexError> {
+    let parent = path.parent().ok_or_else(|| {
+        IndexError::Io(std::io::Error::other(".gitignore path has no parent directory"))
+    })?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| IndexError::Io(std::io::Error::other(".gitignore path has no file name")))?
+        .to_string_lossy();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let tmp_name = format!(".{file_name}.tmp.{}.{nanos}", std::process::id());
+    let tmp_path = parent.join(tmp_name);
+
     #[cfg(unix)]
     {
         use std::fs::OpenOptions;
@@ -74,19 +90,18 @@ fn write_gitignore(path: &Path, contents: &str) -> Result<(), IndexError> {
 
         let mut file = match OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
+            .open(&tmp_path)
         {
             Ok(f) => f,
             Err(err) => {
-                if let Ok(meta) = std::fs::symlink_metadata(path)
+                if let Ok(meta) = std::fs::symlink_metadata(&tmp_path)
                     && meta.file_type().is_symlink()
                 {
                     return Err(IndexError::Io(std::io::Error::other(format!(
-                        "refusing to write through a symlinked .gitignore at {}",
-                        path.display()
+                        "refusing to write through a symlinked temp file at {}",
+                        tmp_path.display()
                     ))));
                 }
                 return Err(IndexError::Io(err));
@@ -98,10 +113,16 @@ fn write_gitignore(path: &Path, contents: &str) -> Result<(), IndexError> {
 
     #[cfg(not(unix))]
     {
-        std::fs::write(path, contents)?;
+        std::fs::write(&tmp_path, contents)?;
     }
 
-    Ok(())
+    match std::fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(IndexError::Io(err))
+        }
+    }
 }
 
 fn already_covers_tooned(contents: &str) -> bool {
