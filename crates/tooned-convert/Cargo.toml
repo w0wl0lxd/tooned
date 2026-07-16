@@ -12,17 +12,17 @@ name = "tooned_convert"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-types = { path = "../tooned-types", version = "0.1.0" }
-tooned-detect = { path = "../tooned-detect", version = "0.1.0" }
-tooned-parse = { path = "../tooned-parse", version = "0.1.0" }
-tooned-json = { path = "../tooned-json", version = "0.1.0" }
-tooned-yaml = { path = "../tooned-yaml", version = "0.1.0" }
-tooned-toml = { path = "../tooned-toml", version = "0.1.0" }
-tooned-csv = { path = "../tooned-csv", version = "0.1.0" }
-tooned-xml = { path = "../tooned-xml", version = "0.1.0" }
-tooned-toon = { path = "../tooned-toon", version = "0.1.0" }
-tiktoken-rs = "0.12"
 serde_json = { workspace = true }
+tiktoken-rs = "0.12"
+tooned-csv = { workspace = true }    #unified
+tooned-detect = { workspace = true } #unified
+tooned-json = { workspace = true }   #unified
+tooned-parse = { workspace = true }  #unified
+tooned-toml = { workspace = true }   #unified
+tooned-toon = { workspace = true }   #unified
+tooned-types = { workspace = true }  #unified
+tooned-xml = { workspace = true }    #unified
+tooned-yaml = { workspace = true }   #unified
 
 [lints]
 workspace = true

@@ -15,17 +15,17 @@ name = "tooned_index"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-core = { path = "../tooned-core", version = "0.1.0" }
-rusqlite = { version = "0.40", features = ["bundled"] }
-ignore = "0.4"
 blake3 = "1"
+ignore = "0.4"
+rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = { workspace = true }
+tooned-core = { workspace = true }                      #unified
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true } #unified
 
 [lints]
 workspace = true

@@ -12,9 +12,9 @@ name = "tooned_toml"
 path = "src/lib.rs"
 
 [dependencies]
-tooned-parse = { path = "../tooned-parse", version = "0.1.0" }
-toml = "1"
 serde_json = { workspace = true }
+toml = { workspace = true }         #unified
+tooned-parse = { workspace = true } #unified
 
 [lints]
 workspace = true

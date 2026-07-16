@@ -1,19 +1,19 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/tooned-core",
-    "crates/tooned-index",
-    "crates/tooned-cli",
-    "crates/tooned-types",
-    "crates/tooned-parse",
-    "crates/tooned-detect",
-    "crates/tooned-json",
-    "crates/tooned-yaml",
-    "crates/tooned-toml",
-    "crates/tooned-csv",
-    "crates/tooned-xml",
-    "crates/tooned-toon",
-    "crates/tooned-convert",
+  "crates/tooned-core",
+  "crates/tooned-index",
+  "crates/tooned-cli",
+  "crates/tooned-types",
+  "crates/tooned-parse",
+  "crates/tooned-detect",
+  "crates/tooned-json",
+  "crates/tooned-yaml",
+  "crates/tooned-toml",
+  "crates/tooned-csv",
+  "crates/tooned-xml",
+  "crates/tooned-toon",
+  "crates/tooned-convert",
 ]
 
 [workspace.package]
@@ -25,12 +25,30 @@ repository = "https://github.com/w0wl0lxd/tooned"
 categories = ["development-tools"]
 
 [workspace.dependencies]
-toon-lsp = { version = "0.6", default-features = false }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["preserve_order"] }
-thiserror = "2"
 anyhow = "1.0"
 clap = { version = "4", features = ["derive"] }
+criterion = "^0.8.2"                                                    #unified
+csv = "^1.4.0"                                                          #unified
+proptest = "^1.11.0"                                                    #unified
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_yaml = "^0.9.34"                                                  #unified
+tempfile = "^3.27.0"                                                    #unified
+thiserror = "2"
+toml = "^1.1.3"                                                         #unified
+toon-lsp = { version = "0.6", default-features = false }
+tooned-convert = { path = "crates/tooned-convert", version = "^0.1.0" } #unified
+tooned-core = { path = "crates/tooned-core", version = "^0.1.0" }       #unified
+tooned-csv = { path = "crates/tooned-csv", version = "^0.1.0" }         #unified
+tooned-detect = { path = "crates/tooned-detect", version = "^0.1.0" }   #unified
+tooned-index = { path = "crates/tooned-index", version = "^0.1.0" }     #unified
+tooned-json = { path = "crates/tooned-json", version = "^0.1.0" }       #unified
+tooned-parse = { path = "crates/tooned-parse", version = "^0.1.0" }     #unified
+tooned-toml = { path = "crates/tooned-toml", version = "^0.1.0" }       #unified
+tooned-toon = { path = "crates/tooned-toon", version = "^0.1.0" }       #unified
+tooned-types = { path = "crates/tooned-types", version = "^0.1.0" }     #unified
+tooned-xml = { path = "crates/tooned-xml", version = "^0.1.0" }         #unified
+tooned-yaml = { path = "crates/tooned-yaml", version = "^0.1.0" }       #unified
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
