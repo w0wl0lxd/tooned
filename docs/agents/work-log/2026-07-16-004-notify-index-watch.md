@@ -3,7 +3,7 @@
 - **Date:** 2026-07-16
 - **Author:** w0wl0lxd
 - **Branch:** `003-notify-index-watch`
-- **PR(s):** TBD
+- **PR(s):** [#12](https://github.com/w0wl0lxd/tooned/pull/12)
 
 ## Context
 
