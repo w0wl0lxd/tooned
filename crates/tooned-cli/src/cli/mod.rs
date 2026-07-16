@@ -24,6 +24,7 @@ pub enum FormatHint {
     Toml,
     Csv,
     Tsv,
+    Xml,
 }
 
 impl From<FormatHint> for tooned_core::DocType {
@@ -35,6 +36,7 @@ impl From<FormatHint> for tooned_core::DocType {
             FormatHint::Toml => tooned_core::DocType::Toml,
             FormatHint::Csv => tooned_core::DocType::Csv,
             FormatHint::Tsv => tooned_core::DocType::Tsv,
+            FormatHint::Xml => tooned_core::DocType::Xml,
         }
     }
 }
