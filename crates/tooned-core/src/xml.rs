@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! XML detection and conversion to `serde_json::Value` for the TOON pipeline.
 //!
 //! Detection is intentionally conservative: it returns `DocType::Xml` only when

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! XML-specific proptest generators for `tooned-core` XML property tests.
 //!
 //! `arb_xml_record_list` builds a record-list XML document whose `tooned-core`

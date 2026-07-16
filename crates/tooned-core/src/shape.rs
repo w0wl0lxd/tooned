@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Payload shape classification (`ShapeClass`): `K = 64` sampling,
 //! per-element key-signature, `uniformity_pct` computation.
 //!

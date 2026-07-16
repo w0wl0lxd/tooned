@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Idempotent `.tooned/` append to the scanned project's `.gitignore`
 //! (T058, FR-020, research.md #5): on first index creation, ensure
 //! `.tooned/` is covered, creating `.gitignore` if it doesn't exist yet.

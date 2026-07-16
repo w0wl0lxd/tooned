@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Criterion benchmark for the conversion hot path (T077).
 //!
 //! Benchmarks `tooned_core::maybe_tooned` against a ~100 KiB uniform

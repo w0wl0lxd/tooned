@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! `maybe_tooned` and `inspect`: the adaptive TOON-vs-compact-JSON
 //! conversion decision (`contracts/tooned-core-api.md`, data-model.md).
 //!

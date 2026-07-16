@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Integration tests for `tooned hook run --codex` (T025, T026).
 //! See `specs/001-adaptive-toon-conversion/contracts/codex-hook.md`.
 

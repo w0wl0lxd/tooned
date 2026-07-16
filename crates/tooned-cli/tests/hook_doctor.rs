@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Contract test (T066): `tooned hook doctor` reports both tooned's own
 //! and a foreign tool's hook entries correctly, across both agents' configs,
 //! and performs no writes to either config file.
