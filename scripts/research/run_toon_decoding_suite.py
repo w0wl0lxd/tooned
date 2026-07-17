@@ -359,13 +359,13 @@ def test_cases() -> list[TestCase]:
                 mode="direct",
                 fixture="complex/people_addresses.json",
                 prompt='read agent-test/complex/people_addresses.json and tell me how many people are in the state CA',
-                expected=["4", "four"],
+                expected=["3", "three"],
             ),
             TestCase(
                 mode="direct",
                 fixture="complex/ecommerce_orders.json",
                 prompt='read agent-test/complex/ecommerce_orders.json and tell me the sku of the first item in order ORD-1002',
-                expected=["SKU-1011"],
+                expected=["SKU-1020"],
             ),
             TestCase(
                 mode="direct",
@@ -407,7 +407,7 @@ def test_cases() -> list[TestCase]:
                 mode="direct",
                 fixture="complex/inventory.csv",
                 prompt='read agent-test/complex/inventory.csv and tell me the price of the item with id 7',
-                expected=["8.99"],
+                expected=["9.99"],
             ),
             TestCase(
                 mode="direct",
@@ -431,8 +431,8 @@ def test_cases() -> list[TestCase]:
                 mode="direct",
                 fixture="complex/matrix.json",
                 prompt='read agent-test/complex/matrix.json and tell me the value at row 2, column 3 (1-indexed)',
-                expected=["9.6"],
-                note="Expected value is matrix[1][2] = (2*3)+0.1*2 = 6.2? Wait: formula (i+1)*(j+1)+0.1*i. For 1-indexed row 2, col 3: i=2? Actually row index 1 (0-indexed), col index 2 (0-indexed). value = (2)*(3)+0.1*1 = 6.1. Hmm need recalc. Adjust expected after generation.",
+                expected=["6.1"],
+                note="Computed expected value for row 2, column 3 (1-indexed) is 6.1.",
             ),
             TestCase(
                 mode="direct",
@@ -502,7 +502,7 @@ def fix_matrix_expected(cases: list[TestCase]) -> None:
     # 1-indexed row 2, col 3 -> i=1, j=2
     expected_value = str(matrix[1][2])
     for c in cases:
-        if c.fixture == "complex/matrix.json":
+        if c.fixture == "complex/matrix.json" and c.mode == "direct":
             c.expected = [expected_value]
             c.note = f"Computed expected value for row 2, column 3 (1-indexed) is {expected_value}."
 
