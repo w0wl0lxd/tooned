@@ -79,6 +79,23 @@ on every tool call, automatically. A one-off scalar value or a deeply nested,
 irregular object usually doesn't compress this way, and JSON — often — stays
 smaller. tooned measures both and keeps whichever one actually wins.
 
+In testing, I found that agents using `tooned` still interpret and reason with
+the response as if it were the original JSON structure, even though the literal
+JSON bytes have been rewritten into TOON. The model does not need the original
+syntax to stay intact to understand the data.
+
+Example:
+
+- A `read` of a JSON array of user objects produced a natural-language summary
+  of the users, reasoning entirely over the TOON `additionalContext`.
+- When the hook was configured to inject the TOON encoding of a *products* file
+  as `additionalContext` while the agent `read` a *users* file, asking "what is
+  the SKU of the first product?" returned `SKU-1001` — a value that only existed
+  in the TOON context, not in the original `read` output.
+- Exact-raw-output prompts ("print the file unchanged") still returned the
+  original JSON, because the hook preserves the original tool output alongside
+  the TOON context.
+
 ## Install
 
 ```bash
