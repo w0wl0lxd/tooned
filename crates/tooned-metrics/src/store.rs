@@ -913,6 +913,7 @@ fn refuse_symlink(path: &Path, label: &str) -> Result<(), MetricsError> {
 fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
     if let Some(parent) = db_path.parent() {
         refuse_symlink(parent, "metrics database directory")?;
+        #[cfg(unix)]
         let parent_existed = parent.exists();
         std::fs::create_dir_all(parent).map_err(MetricsError::Io)?;
         // Re-check after creating the directory in case a TOCTOU swap occurred
