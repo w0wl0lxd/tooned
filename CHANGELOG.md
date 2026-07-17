@@ -109,6 +109,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI:** added Criterion benchmark and latency guardrail jobs, a `cargo vet`
   supply-chain audit gate with mozilla/google audit imports, and switched
   `security.yml` to direct `cargo audit`. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-convert / tooned-detect / tooned-cli / tooned-index:** added MessagePack, CBOR,
+  and JSON5 as input formats. `tooned-detect` now sniffs `.msgpack`/`.cbor` binary payloads
+  and JSON5 text (comments, single-quoted strings, unquoted keys, trailing commas), while
+  `tooned-cli` maps `.msgpack`, `.msg`, `.cbor`, and `.json5` extensions to the appropriate
+  parser, and `--format-hint` / MCP `format_hint` accept `msgpack`, `cbor`, and `json5`.
+- **tooned-convert / tooned-cli:** added streaming NDJSON/JSONL conversion for large inputs.
+  `tooned convert --to tron` and the default adaptive path now stream NDJSON/JSONL inputs
+  (when the format is explicit via `--format-hint ndjson` or the file extension is
+  `.jsonl`/`.ndjson`). For `--to tron` forced, streaming writes to a temp file and then
+  promotes it atomically for file output or copies to stdout for stdout output. For the
+  default adaptive case, streaming writes to a temp file, compares output size vs input
+  size using the margin check, and discards the temp and passthrough the original input
+  if not smaller enough. On parse/IO error, falls back to passthrough of the original
+  input (for stdin, spools stdin to a temp file first so it can be retried/copied). Only
+  uses streaming when the input is large (above `max_input_bytes`) or the user explicitly
+  forced `--to tron` with an NDJSON hint/extension. Small NDJSON inputs continue to use
+  the bounded path. ([work-log](docs/agents/work-log/2026-07-16-006-streaming-ndjson.md))
 
 ### Fixed
 

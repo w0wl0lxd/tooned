@@ -19,7 +19,7 @@ pub mod wrap;
 /// no CLI equivalent at all (`--to toon`/`--to json` on `convert` forces
 /// conversion *direction*, not the parser doctype, so it couldn't fix a
 /// wrong doctype guess either).
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
 pub enum FormatHint {
     Json,
     Ndjson,
@@ -28,6 +28,9 @@ pub enum FormatHint {
     Csv,
     Tsv,
     Xml,
+    Msgpack,
+    Cbor,
+    Json5,
 }
 
 impl From<FormatHint> for tooned_core::DocType {
@@ -40,6 +43,26 @@ impl From<FormatHint> for tooned_core::DocType {
             FormatHint::Csv => tooned_core::DocType::Csv,
             FormatHint::Tsv => tooned_core::DocType::Tsv,
             FormatHint::Xml => tooned_core::DocType::Xml,
+            FormatHint::Msgpack => tooned_core::DocType::Msgpack,
+            FormatHint::Cbor => tooned_core::DocType::Cbor,
+            FormatHint::Json5 => tooned_core::DocType::Json5,
         }
+    }
+}
+
+/// Guess a CLI `FormatHint` from a file extension.
+pub fn format_hint_from_extension(ext: &str) -> Option<FormatHint> {
+    match ext {
+        "json" => Some(FormatHint::Json),
+        "ndjson" | "jsonl" => Some(FormatHint::Ndjson),
+        "yaml" | "yml" => Some(FormatHint::Yaml),
+        "toml" => Some(FormatHint::Toml),
+        "csv" => Some(FormatHint::Csv),
+        "tsv" => Some(FormatHint::Tsv),
+        "xml" => Some(FormatHint::Xml),
+        "msgpack" | "msg" => Some(FormatHint::Msgpack),
+        "cbor" => Some(FormatHint::Cbor),
+        "json5" => Some(FormatHint::Json5),
+        _ => None,
     }
 }

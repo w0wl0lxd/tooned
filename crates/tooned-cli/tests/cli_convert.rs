@@ -178,3 +178,255 @@ fn convert_to_json_decodes_a_tron_file_back_to_compact_json() {
                 .and(predicate::str::contains(r#""score":0.5"#)),
         );
 }
+
+#[test]
+fn convert_to_tron_on_ndjson_with_format_hint_produces_tron_stream() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n{\"id\":1,\"name\":\"row-1\",\"active\":false,\"score\":1.5}\n";
+    let path = write_fixture(&dir, "input.json", ndjson);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args([
+            "convert",
+            path.to_str().expect("utf8 path"),
+            "--to",
+            "tron",
+            "--format-hint",
+            "ndjson",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("class A:"))
+        .stdout(predicate::str::contains("A(0,\"row-0\",true,0.5)"));
+}
+
+#[test]
+fn convert_to_tron_on_ndjson_extension_produces_tron_stream() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n{\"id\":1,\"name\":\"row-1\",\"active\":false,\"score\":1.5}\n";
+    let path = write_fixture(&dir, "input.ndjson", ndjson);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "tron"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("class A:"))
+        .stdout(predicate::str::contains("A(0,\"row-0\",true,0.5)"));
+}
+
+#[test]
+fn convert_to_tron_on_jsonl_extension_produces_tron_stream() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n{\"id\":1,\"name\":\"row-1\",\"active\":false,\"score\":1.5}\n";
+    let path = write_fixture(&dir, "input.jsonl", ndjson);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "tron"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("class A:"))
+        .stdout(predicate::str::contains("A(0,\"row-0\",true,0.5)"));
+}
+
+#[test]
+fn convert_to_tron_round_trips_ndjson_via_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n{\"id\":1,\"name\":\"row-1\",\"active\":false,\"score\":1.5}\n";
+    let input_path = write_fixture(&dir, "input.ndjson", ndjson);
+    let tron_path = dir.path().join("output.tron");
+    let json_path = dir.path().join("output.json");
+
+    // Convert NDJSON to TRON
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args([
+            "convert",
+            input_path.to_str().expect("utf8 path"),
+            "--to",
+            "tron",
+            "--out",
+            tron_path.to_str().expect("utf8 path"),
+        ])
+        .assert()
+        .success();
+
+    // Convert TRON back to JSON
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args([
+            "convert",
+            tron_path.to_str().expect("utf8 path"),
+            "--to",
+            "json",
+            "--out",
+            json_path.to_str().expect("utf8 path"),
+        ])
+        .assert()
+        .success();
+
+    // Read and compare
+    let original_json = std::fs::read_to_string(&input_path).expect("read original");
+    let round_trip_json = std::fs::read_to_string(&json_path).expect("read round-trip");
+
+    // Parse both as JSON arrays to compare semantically (whitespace may differ)
+    let original_lines: Vec<&str> = original_json.lines().filter(|l| !l.is_empty()).collect();
+    let original_array_str = format!("[{}]", original_lines.join(","));
+    let original_value: serde_json::Value =
+        serde_json::from_str(&original_array_str).expect("parse original");
+    let round_trip_value: serde_json::Value =
+        serde_json::from_str(&round_trip_json).expect("parse round-trip");
+
+    assert_eq!(original_value, round_trip_value, "round-trip should preserve data");
+}
+
+#[test]
+fn large_ndjson_file_converts_with_to_tron() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut ndjson = String::new();
+    for i in 0..10000 {
+        let _ = writeln!(
+            ndjson,
+            "{{\"id\":{},\"name\":\"row-{}\",\"active\":{},\"score\":{}}}",
+            i,
+            i,
+            i % 2 == 0,
+            f64::from(i) + 0.5
+        );
+    }
+    let path = write_fixture(&dir, "large.ndjson", &ndjson);
+
+    // This file is > 2 MiB (default max_input_bytes), so it should use streaming
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "tron"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("class A:"))
+        .stdout(predicate::str::contains("A(0,\"row-0\",true,0.5)"));
+}
+
+#[test]
+fn adaptive_streaming_chooses_tron_when_smaller() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut ndjson = String::new();
+    for i in 0..1000 {
+        let _ = writeln!(
+            ndjson,
+            "{{\"id\":{},\"name\":\"row-{}\",\"active\":{},\"score\":{}}}",
+            i,
+            i,
+            i % 2 == 0,
+            f64::from(i) + 0.5
+        );
+    }
+    let path = write_fixture(&dir, "input.ndjson", &ndjson);
+
+    // Default adaptive path should choose TRON for this uniform data
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("class A:"));
+}
+
+#[test]
+fn adaptive_streaming_passthrough_when_not_smaller_enough() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Single object - TRON won't be smaller enough with default margin
+    let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n";
+    let path = write_fixture(&dir, "input.ndjson", ndjson);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path")])
+        .assert()
+        .success()
+        // Should passthrough the original NDJSON, not TRON
+        .stdout(predicate::str::contains("{\"id\":0,"));
+}
+
+#[allow(clippy::expect_used)]
+fn write_bytes_fixture(dir: &tempfile::TempDir, name: &str, contents: &[u8]) -> std::path::PathBuf {
+    let path = dir.path().join(name);
+    let mut f = fs::File::create(&path).expect("create fixture file");
+    f.write_all(contents).expect("write fixture file");
+    path
+}
+
+#[test]
+fn convert_to_toon_on_msgpack_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // MessagePack array of two uniform objects: [{"id":1,"name":"x"}, {"id":2,"name":"y"}]
+    let msgpack = [
+        0x92, 0x82, 0xa2, 0x69, 0x64, 0x01, 0xa4, 0x6e, 0x61, 0x6d, 0x65, 0xa1, 0x78, 0x82, 0xa2,
+        0x69, 0x64, 0x02, 0xa4, 0x6e, 0x61, 0x6d, 0x65, 0xa1, 0x79,
+    ];
+    let path = write_bytes_fixture(&dir, "input.msgpack", &msgpack);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{id,name}"))
+        .stdout(predicate::str::contains("1,x"))
+        .stdout(predicate::str::contains("2,y"));
+}
+
+#[test]
+fn convert_to_toon_on_cbor_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // CBOR array of two uniform objects: [{"id":1,"name":"x"}, {"id":2,"name":"y"}]
+    let cbor = [
+        0x82, 0xa2, 0x62, 0x69, 0x64, 0x01, 0x64, 0x6e, 0x61, 0x6d, 0x65, 0x61, 0x78, 0xa2, 0x62,
+        0x69, 0x64, 0x02, 0x64, 0x6e, 0x61, 0x6d, 0x65, 0x61, 0x79,
+    ];
+    let path = write_bytes_fixture(&dir, "input.cbor", &cbor);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{id,name}"))
+        .stdout(predicate::str::contains("1,x"))
+        .stdout(predicate::str::contains("2,y"));
+}
+
+#[test]
+fn convert_to_toon_on_json5_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json5 = "[{a:1,b:2},{a:3,b:4}]";
+    let path = write_fixture(&dir, "input.json5", json5);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{a,b}"))
+        .stdout(predicate::str::contains("1,2"))
+        .stdout(predicate::str::contains("3,4"));
+}
+
+#[test]
+fn convert_config_format_hint_overrides_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Extension would map to JSON, but the configured default should win.
+    write_fixture(&dir, ".tooned.toml", "format_hint = \"json5\"\n");
+    let path = write_fixture(&dir, "input.json", "[{a:1,b:2},{a:3,b:4}]");
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{a,b}"))
+        .stdout(predicate::str::contains("1,2"))
+        .stdout(predicate::str::contains("3,4"));
+}
