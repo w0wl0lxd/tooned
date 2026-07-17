@@ -344,29 +344,47 @@ fn is_json5_identifier_char(b: u8) -> bool {
 /// overlapping byte ranges, so detection attempts a real parse and verifies
 /// the whole input is consumed. Only top-level objects/arrays are treated as
 /// tool-call-shaped data; a bare scalar would otherwise match random bytes.
+///
+/// Because a byte sequence can be valid in both encodings with different
+/// meanings (e.g. CBOR `{"a": true}` and MessagePack `{"a": -11}` can share
+/// the same bytes), we only auto-detect when *exactly one* parser fully
+/// consumes the input. If both parse, the format is ambiguous and we fall
+/// back to `None`, leaving disambiguation to the file extension or an
+/// explicit `--format-hint`.
 fn sniff_binary(input: &[u8]) -> Option<DocType> {
     if input.is_empty() || std::str::from_utf8(input).is_ok() {
         // Valid UTF-8 text is not a MessagePack/CBOR object/array.
         return None;
     }
 
-    let mut cursor = std::io::Cursor::new(input);
-    if let Ok(value) = rmp_serde::from_read::<_, serde_json::Value>(&mut cursor)
-        && cursor.position() == input.len() as u64
-        && is_object_or_array(&value)
-    {
-        return Some(DocType::Msgpack);
-    }
+    let msgpack = parse_full_msgpack_object_or_array(input);
+    let cbor = parse_full_cbor_object_or_array(input);
 
-    let mut cursor = std::io::Cursor::new(input);
-    if let Ok(value) = cbor4ii::serde::from_reader::<serde_json::Value, _>(&mut cursor)
-        && cursor.position() == input.len() as u64
-        && is_object_or_array(&value)
-    {
-        return Some(DocType::Cbor);
+    match (msgpack, cbor) {
+        (Some(_), None) => Some(DocType::Msgpack),
+        (None, Some(_)) => Some(DocType::Cbor),
+        // Ambiguous bytes are not silently classified as one format or the
+        // other; the caller can still resolve them via extension/hint.
+        _ => None,
     }
+}
 
-    None
+fn parse_full_msgpack_object_or_array(input: &[u8]) -> Option<serde_json::Value> {
+    let mut cursor = std::io::Cursor::new(input);
+    let value = rmp_serde::from_read::<_, serde_json::Value>(&mut cursor).ok()?;
+    if cursor.position() != input.len() as u64 || !is_object_or_array(&value) {
+        return None;
+    }
+    Some(value)
+}
+
+fn parse_full_cbor_object_or_array(input: &[u8]) -> Option<serde_json::Value> {
+    let mut cursor = std::io::Cursor::new(input);
+    let value = cbor4ii::serde::from_reader::<serde_json::Value, _>(&mut cursor).ok()?;
+    if cursor.position() != input.len() as u64 || !is_object_or_array(&value) {
+        return None;
+    }
+    Some(value)
 }
 
 fn is_object_or_array(value: &serde_json::Value) -> bool {
@@ -489,6 +507,22 @@ mod tests {
     fn sniffs_cbor() {
         let value = serde_json::json!({"a": 1, "b": [2, 3]});
         let bytes = cbor4ii::serde::to_vec(Vec::new(), &value).unwrap();
+        assert_eq!(detect(&bytes, None), Some(DocType::Cbor));
+    }
+
+    #[test]
+    fn binary_detection_refuses_to_guess_ambiguous_bytes() {
+        // 0x80 is an empty MessagePack map and an empty CBOR array. Without
+        // an explicit format hint or extension it must not be silently
+        // classified as one or the other.
+        assert_eq!(detect(&[0x80], None), None);
+    }
+
+    #[test]
+    fn cbor_bytes_that_partially_parse_as_msgpack_still_select_cbor() {
+        // CBOR { "a": true } -- rmp-serde may parse the first fixstr but does
+        // not consume the whole buffer, so the CBOR parse should win.
+        let bytes = [0xa1, 0x61, 0x61, 0xf5];
         assert_eq!(detect(&bytes, None), Some(DocType::Cbor));
     }
 

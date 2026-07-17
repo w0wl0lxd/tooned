@@ -67,7 +67,8 @@ pub struct ConvertArgs {
 // `std::process::exit` below rather than through the `Err` path.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
-    let format_hint = args.format_hint.or_else(|| {
+    let config = crate::config::Config::load(args.config.as_deref())?;
+    let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
         args.input
             .extension()
             .and_then(|e| e.to_str())
@@ -113,7 +114,6 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     std::process::exit(2);
                 }
             };
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             opts.margin_pct = 0.0;
@@ -137,7 +137,6 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // objects. Like `--to onto`, the margin is forced to 0% but round-trip
         // fidelity is still enforced.
         Some(Direction::Tron) => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             opts.margin_pct = 0.0;
@@ -186,7 +185,6 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // still falls back to passthrough rather than ever emitting a
         // corrupted or larger-than-source encoding.
         Some(Direction::Toon) => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             // `--to toon` forces conversion with no savings margin.
@@ -194,7 +192,6 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             run_adaptive_bounded(args, &opts)?;
         }
         None => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, None);
 
             // Check if we should use streaming for NDJSON input

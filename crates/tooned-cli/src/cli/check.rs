@@ -50,7 +50,7 @@ pub struct CheckArgs {
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let format_hint = args.format_hint.or_else(|| {
+    let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
         args.input
             .extension()
             .and_then(|e| e.to_str())
