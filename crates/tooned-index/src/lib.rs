@@ -13,6 +13,12 @@ mod schema;
 mod sync;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{RecvTimeoutError, channel};
+use std::time::Duration;
+
+use notify::RecursiveMode;
+use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent, new_debouncer};
 
 pub use scan::{ScanSummary, scan_full};
 pub use schema::{ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists};
@@ -30,32 +36,110 @@ pub fn compact(project_root: &Path) -> Result<(), IndexError> {
     Ok(())
 }
 
-/// Poll `tooned index sync` every `interval_secs` seconds.
+/// Watch `project_root` for filesystem changes and run an incremental
+/// `sync` whenever a debounced batch of relevant events arrives.
 ///
-/// This is a minimal, dependency-light watch implementation. A future
-/// iteration should replace the polling loop with a `notify`-based
-/// filesystem watcher with debounce.
-pub fn watch(root: &Path, interval_secs: u64) -> Result<(), IndexError> {
-    if !schema::index_exists(root) {
-        return Err(IndexError::NoIndex(root.to_path_buf()));
+/// `debounce_ms` is the quiet period after the last event before `sync`
+/// is triggered. The loop exits when `stop` is set, returning `Ok(())`.
+/// Changes inside `.tooned/` and `.git/` are ignored to avoid feedback
+/// loops, and the project `.gitignore` is respected where possible.
+pub fn watch_with_stop(
+    project_root: &Path,
+    debounce_ms: u64,
+    stop: &AtomicBool,
+) -> Result<(), IndexError> {
+    if !schema::index_exists(project_root) {
+        return Err(IndexError::NoIndex(project_root.to_path_buf()));
     }
-    let interval = std::time::Duration::from_secs(interval_secs);
+
+    let (tx, rx) = channel::<DebounceEventResult>();
+    let debounce = Duration::from_millis(debounce_ms);
+    let mut debouncer = new_debouncer(debounce, move |res: DebounceEventResult| {
+        // The watcher runs on its own thread; if the receiver has gone
+        // away the process is shutting down and the error can be ignored.
+        let _ = tx.send(res);
+    })?;
+    debouncer.watcher().watch(project_root, RecursiveMode::Recursive)?;
+
+    let filter = build_gitignore_filter(project_root).unwrap_or_else(|_| {
+        // If we cannot read the gitignore file, still fall back to the
+        // hard-coded ignores so `.tooned/` updates don't self-trigger.
+        ignore::gitignore::Gitignore::empty()
+    });
+
     let mut count: u64 = 0;
     loop {
-        count += 1;
-        match sync(root) {
-            Ok(summary) => println!(
-                "[watch #{count}] synced {}: +{} ~{} -{} ({} unchanged)",
-                root.display(),
-                summary.added,
-                summary.updated,
-                summary.removed,
-                summary.unchanged
-            ),
-            Err(err) => eprintln!("tooned index watch: sync failed: {err}"),
+        if stop.load(Ordering::SeqCst) {
+            break;
         }
-        std::thread::sleep(interval);
+
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(events)) => {
+                let relevant = events.iter().any(|event| !is_ignored(event, project_root, &filter));
+                if !relevant {
+                    continue;
+                }
+                count += 1;
+                match sync(project_root) {
+                    Ok(summary) => println!(
+                        "[watch #{count}] synced {}: +{} ~{} -{} ({} unchanged)",
+                        project_root.display(),
+                        summary.added,
+                        summary.updated,
+                        summary.removed,
+                        summary.unchanged
+                    ),
+                    Err(err) => eprintln!("tooned index watch: sync failed: {err}"),
+                }
+            }
+            Ok(Err(err)) => {
+                eprintln!("tooned index watch: watcher error: {err}");
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
     }
+
+    Ok(())
+}
+
+/// Watch `project_root` until the process is interrupted. Backs the
+/// `tooned index watch` CLI; for tests or other callers that need to
+/// stop the loop, use [`watch_with_stop`].
+pub fn watch(project_root: &Path, debounce_ms: u64) -> Result<(), IndexError> {
+    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false))
+}
+
+fn build_gitignore_filter(
+    project_root: &Path,
+) -> Result<ignore::gitignore::Gitignore, ignore::Error> {
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(project_root);
+    let gitignore = project_root.join(".gitignore");
+    if gitignore.is_file() {
+        builder.add(gitignore);
+    }
+    builder.add_line(None, ".tooned/")?;
+    builder.add_line(None, ".git/")?;
+    builder.build()
+}
+
+fn is_ignored(
+    event: &DebouncedEvent,
+    project_root: &Path,
+    filter: &ignore::gitignore::Gitignore,
+) -> bool {
+    let Ok(rel) = event.path.strip_prefix(project_root) else {
+        return true;
+    };
+    let rel_str = rel.to_string_lossy();
+    if rel_str == ".tooned" || rel_str.starts_with(".tooned/") {
+        return true;
+    }
+    if rel_str == ".git" || rel_str.starts_with(".git/") {
+        return true;
+    }
+    let is_dir = std::fs::metadata(&event.path).is_ok_and(|m| m.is_dir());
+    filter.matched(&*rel_str, is_dir).is_ignore()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +148,8 @@ pub enum IndexError {
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("filesystem watcher error: {0}")]
+    Watcher(#[from] notify::Error),
     #[error("no index found at {0}; run `tooned index` first")]
     NoIndex(PathBuf),
     #[error("file not indexed: {0}")]
