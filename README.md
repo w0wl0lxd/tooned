@@ -82,7 +82,7 @@ smaller. tooned measures both and keeps whichever one actually wins.
 ## Install
 
 ```bash
-cargo install tooned-cli
+cargo install tooned
 ```
 
 Or grab a prebuilt binary from the [releases page](https://github.com/w0wl0lxd/tooned/releases)

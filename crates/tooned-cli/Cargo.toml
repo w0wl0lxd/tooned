@@ -1,5 +1,5 @@
 [package]
-name = "tooned-cli"
+name = "tooned"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
