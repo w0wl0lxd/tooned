@@ -499,7 +499,9 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
     {
         let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
         sonic_rs::to_writer(&mut writer, &value).map_err(|e| {
-            ToonedError::DecodeFailed(format!("failed to compute JSON size for TRON comparison: {e}"))
+            ToonedError::DecodeFailed(format!(
+                "failed to compute JSON size for TRON comparison: {e}"
+            ))
         })?;
         writer.flush().map_err(|e| {
             ToonedError::DecodeFailed(format!("failed to flush TRON JSON byte counter: {e}"))
@@ -656,9 +658,9 @@ fn write_stream_value<W: Write>(
     sonic_rs::to_writer(&mut writer, value).map_err(|e| {
         ToonedError::DecodeFailed(format!("failed to serialize TRON fallback value: {e}"))
     })?;
-    writer.flush().map_err(|e| {
-        ToonedError::DecodeFailed(format!("failed to flush TRON fallback value: {e}"))
-    })
+    writer
+        .flush()
+        .map_err(|e| ToonedError::DecodeFailed(format!("failed to flush TRON fallback value: {e}")))
 }
 
 #[cfg(test)]
