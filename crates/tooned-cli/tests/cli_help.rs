@@ -99,22 +99,22 @@ fn hook_help_documents_every_hook_subcommand() {
 
 #[test]
 fn hook_run_help_documents_the_agent_selector_flags() {
-    assert_help(&["hook", "run"], &["--claude-code", "--codex"]);
+    assert_help(&["hook", "run"], &["--claude-code", "--codex", "--devin"]);
 }
 
 #[test]
 fn hook_install_help_documents_agent_scope_and_mcp_flags() {
-    assert_help(&["hook", "install"], &["--claude-code", "--codex", "--scope", "--mcp"]);
+    assert_help(&["hook", "install"], &["--claude-code", "--codex", "--devin", "--scope", "--mcp"]);
 }
 
 #[test]
 fn hook_uninstall_help_documents_agent_and_scope_flags() {
-    assert_help(&["hook", "uninstall"], &["--claude-code", "--codex", "--scope"]);
+    assert_help(&["hook", "uninstall"], &["--claude-code", "--codex", "--devin", "--scope"]);
 }
 
 #[test]
 fn hook_status_help_documents_the_agent_selector_flags() {
-    assert_help(&["hook", "status"], &["--claude-code", "--codex"]);
+    assert_help(&["hook", "status"], &["--claude-code", "--codex", "--devin"]);
 }
 
 #[test]

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! `tooned hook` subcommands: `run`, `install`, `uninstall`, `status`,
-//! `doctor`, for both Claude Code and Codex CLI.
+//! `doctor`, for Claude Code, Codex CLI, and Devin CLI.
 //! See `specs/001-adaptive-toon-conversion/contracts/{claude-code-hook,codex-hook}.md`.
 
 pub mod claude_code;
 pub mod codex;
+pub mod devin;
 pub mod doctor;
 
 use std::path::{Path, PathBuf};
@@ -18,7 +19,7 @@ pub enum Scope {
     Project,
 }
 
-/// Exactly one of `--claude-code` / `--codex` selects the target agent.
+/// Exactly one of `--claude-code` / `--codex` / `--devin` selects the target agent.
 #[derive(Debug, Args)]
 pub struct AgentSelector {
     #[arg(long = "claude-code", group = "agent")]
@@ -26,6 +27,9 @@ pub struct AgentSelector {
 
     #[arg(long = "codex", group = "agent")]
     pub codex: bool,
+
+    #[arg(long = "devin", group = "agent")]
+    pub devin: bool,
 }
 
 #[derive(Debug, Args)]
@@ -76,12 +80,14 @@ pub enum HookCommand {
 enum Agent {
     ClaudeCode,
     Codex,
+    Devin,
 }
 
 fn resolve_agent(agent: &AgentSelector) -> Option<Agent> {
-    match (agent.claude_code, agent.codex) {
-        (true, false) => Some(Agent::ClaudeCode),
-        (false, true) => Some(Agent::Codex),
+    match (agent.claude_code, agent.codex, agent.devin) {
+        (true, false, false) => Some(Agent::ClaudeCode),
+        (false, true, false) => Some(Agent::Codex),
+        (false, false, true) => Some(Agent::Devin),
         _ => None,
     }
 }
@@ -96,6 +102,7 @@ const EXIT_BINARY_NOT_ON_PATH: i32 = 4;
 /// and `contracts/codex-hook.md`).
 pub(crate) const CLAUDE_CODE_MATCHER: &str = "Bash|Read|Grep|WebFetch|^mcp__";
 pub(crate) const CODEX_MATCHER: &str = "Bash";
+pub(crate) const DEVIN_MATCHER: &str = "^exec$|^read$|^edit$|^grep$|^glob$|^mcp__";
 
 /// Upper bound on how many raw stdin bytes a `hook run` invocation will ever
 /// buffer, applied *before* any JSON parsing happens. This sits directly in
@@ -296,6 +303,7 @@ fn entry_command_ends_with(entry: &serde_json::Value, suffix: &str) -> bool {
 /// Installation Record" identity rules (FR-016/FR-018).
 pub(crate) const CLAUDE_CODE_COMMAND_SUFFIX: &str = "hook run --claude-code";
 pub(crate) const CODEX_COMMAND_SUFFIX: &str = "hook run --codex";
+pub(crate) const DEVIN_COMMAND_SUFFIX: &str = "hook run --devin";
 
 /// Removes every `hooks.PostToolUse` entry whose inner command ends with
 /// `suffix` (FR-018); every other entry, including a foreign tool's, is left
@@ -365,45 +373,69 @@ pub(crate) fn collect_post_tool_use_entries(root: &serde_json::Value) -> Vec<(St
 pub(crate) enum HookProtocol {
     ClaudeCode,
     Codex,
+    Devin,
 }
 
 impl HookProtocol {
-    /// The stdin JSON field carrying the tool's raw result text.
-    fn input_field(self) -> &'static str {
+    /// Extracts the raw tool-output bytes from a `PostToolUse` stdin payload.
+    /// Claude Code uses `tool_output`; Codex uses `tool_response` as a raw
+    /// string/object; Devin uses `tool_response.output` (a string inside an
+    /// object that also carries `success`/`error`).
+    fn extract_bytes(self, payload: &serde_json::Value) -> Option<Vec<u8>> {
         match self {
-            HookProtocol::ClaudeCode => "tool_output",
-            HookProtocol::Codex => "tool_response",
+            HookProtocol::ClaudeCode => {
+                let value = payload.get("tool_output")?;
+                Some(match value {
+                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
+                    other => serde_json::to_vec(other).ok()?,
+                })
+            }
+            HookProtocol::Codex => {
+                let value = payload.get("tool_response")?;
+                Some(match value {
+                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
+                    other => serde_json::to_vec(other).ok()?,
+                })
+            }
+            HookProtocol::Devin => {
+                let response = payload.get("tool_response")?;
+                match response {
+                    serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
+                    serde_json::Value::Object(_) => {
+                        let output = response.get("output")?;
+                        match output {
+                            serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
+                            other => serde_json::to_vec(other).ok(),
+                        }
+                    }
+                    other => serde_json::to_vec(other).ok(),
+                }
+            }
         }
     }
 }
 
-/// Reads a `PostToolUse` stdin payload (per `contracts/claude-code-hook.md`
-/// / `contracts/codex-hook.md`), extracts the tool's raw output (stdin field
-/// name depends on `protocol`), and runs it through
-/// [`tooned_core::maybe_tooned`]. Returns the JSON string to print to
-/// stdout on a convert decision, or `None` for passthrough (passthrough
-/// means "print nothing" per both contracts, not echoing the original bytes
-/// back out -- the host platform already preserves the original tool output
-/// whenever the hook prints nothing).
+/// Reads a `PostToolUse` stdin payload (per `contracts/claude-code-hook.md`,
+/// `contracts/codex-hook.md`, and Devin CLI's hook docs), extracts the tool's
+/// raw output, and runs it through [`tooned_core::maybe_tooned`]. Returns the
+/// JSON string to print to stdout on a convert decision, or `None` for
+/// passthrough (passthrough means "print nothing" per the contracts, not
+/// echoing the original bytes back out -- the host platform already preserves
+/// the original tool output whenever the hook prints nothing).
 ///
-/// The emitted `hookSpecificOutput` shape also depends on `protocol`: Claude
-/// Code supports replacing the tool's output in place via
-/// `updatedToolOutput`, but Codex's real output parser has no such field --
-/// it only recognizes `hookSpecificOutput.additionalContext` for surfacing
-/// extra content, so that's what's emitted for `HookProtocol::Codex`.
+/// The emitted `hookSpecificOutput` shape depends on `protocol`: Claude Code
+/// supports replacing the tool's output in place via `updatedToolOutput`;
+/// Codex and Devin only recognize `additionalContext` for surfacing extra
+/// content, so that's emitted for those protocols.
 ///
 /// Never panics for any `stdin` byte slice, including invalid UTF-8 or
 /// malformed/adversarial JSON -- every fallible step folds into `None`
 /// rather than propagating an error or panicking (constitution Principle I).
 /// Callers additionally wrap this in `std::panic::catch_unwind` as
-/// defense-in-depth (see `claude_code::run_hook`/`codex::run_hook`).
+/// defense-in-depth (see `claude_code::run_hook`/`codex::run_hook`/`devin::run_hook`).
 pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option<String> {
     let payload: serde_json::Value = serde_json::from_slice(stdin).ok()?;
-    let tool_output = payload.get(protocol.input_field())?;
-    let bytes: Vec<u8> = match tool_output {
-        serde_json::Value::String(s) => s.as_bytes().to_vec(),
-        other => serde_json::to_vec(other).ok()?,
-    };
+    let bytes = protocol.extract_bytes(&payload)?;
 
     let opts = tooned_core::ConversionOptions::default();
     let conversion = tooned_core::maybe_tooned(&bytes, &opts).ok()?;
@@ -416,7 +448,7 @@ pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option
                         "updatedToolOutput": text,
                     }
                 }),
-                HookProtocol::Codex => serde_json::json!({
+                HookProtocol::Codex | HookProtocol::Devin => serde_json::json!({
                     "hookSpecificOutput": {
                         "hookEventName": "PostToolUse",
                         "additionalContext": text,
@@ -446,6 +478,7 @@ pub fn run(args: &HookArgs) {
             match resolve_agent(agent) {
                 Some(Agent::ClaudeCode) => claude_code::run_hook(),
                 Some(Agent::Codex) => codex::run_hook(),
+                Some(Agent::Devin) => devin::run_hook(),
                 // No/ambiguous agent selection on `hook run` is itself a
                 // form of doubt -- the contract's fail-safe exit-0 guarantee
                 // applies uniformly, not just to payload-driven failure.
@@ -453,8 +486,7 @@ pub fn run(args: &HookArgs) {
             }
             // Contract: `hook run` ALWAYS exits 0, regardless of internal
             // outcome -- a non-zero exit is itself a form of "loud failure"
-            // the fail-safe principle forbids (contracts/claude-code-hook.md,
-            // contracts/codex-hook.md).
+            // the fail-safe principle forbids.
             std::process::exit(0);
         }
         HookCommand::Install { agent, scope, mcp } => match resolve_agent(agent) {
@@ -490,8 +522,16 @@ pub fn run(args: &HookArgs) {
                      it will fire: run `/hooks` inside Codex CLI now to review and trust it."
                 );
             }
+            Some(Agent::Devin) => {
+                if let Err(e) = devin::install(*scope, *mcp) {
+                    eprintln!("tooned hook install --devin: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            }
             None => {
-                eprintln!("tooned hook install: specify exactly one of --claude-code or --codex");
+                eprintln!(
+                    "tooned hook install: specify exactly one of --claude-code, --codex, or --devin"
+                );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },
@@ -525,8 +565,20 @@ pub fn run(args: &HookArgs) {
                     }
                 }
             }
+            Some(Agent::Devin) => match devin::uninstall(*scope) {
+                Ok(true) => println!("tooned: removed the Devin hook entry"),
+                Ok(false) => {
+                    println!("tooned: nothing to remove (Devin hook not installed)");
+                }
+                Err(e) => {
+                    eprintln!("tooned hook uninstall --devin: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            },
             None => {
-                eprintln!("tooned hook uninstall: specify exactly one of --claude-code or --codex");
+                eprintln!(
+                    "tooned hook uninstall: specify exactly one of --claude-code, --codex, or --devin"
+                );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },
@@ -545,8 +597,17 @@ pub fn run(args: &HookArgs) {
                     if installed { "installed" } else { "not installed" }
                 );
             }
+            Some(Agent::Devin) => {
+                let installed = devin::status();
+                println!(
+                    "tooned: Devin hook is {}",
+                    if installed { "installed" } else { "not installed" }
+                );
+            }
             None => {
-                eprintln!("tooned hook status: specify exactly one of --claude-code or --codex");
+                eprintln!(
+                    "tooned hook status: specify exactly one of --claude-code, --codex, or --devin"
+                );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },

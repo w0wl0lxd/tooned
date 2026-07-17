@@ -43,7 +43,7 @@ enum Command {
     Stats(cli::stats::StatsArgs),
     /// Compare the original JSON with the TOON round-trip.
     Diff(cli::diff::DiffArgs),
-    /// Agent hook install/uninstall/status/doctor (Claude Code, Codex).
+    /// Agent hook install/uninstall/status/doctor (Claude Code, Codex, Devin).
     Hook(hooks::HookArgs),
     /// Model Context Protocol server.
     Mcp(mcp::McpArgs),
