@@ -134,6 +134,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `exec`, `read`, `edit`, `grep`, `glob`, and `mcp__` tools. `tooned hook uninstall --devin`,
   `tooned hook status --devin`, and `tooned hook doctor` reporting for Devin entries
   alongside Claude Code and Codex are also supported. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
+- **tooned-cli:** added Droid (Factory AI) hook integration. `tooned hook run --droid`
+  uses Droid's `hooks.PostToolUse` JSON format (`toolName` / `toolInput` / `toolOutput`)
+  and mutates `toolOutput` in place when TOON conversion wins. `tooned hook install --droid`
+  writes `.factory/hooks.json` (project) or `~/.factory/hooks.json` (user), `uninstall --droid`
+  only removes tooned's own entries, and `status`/`doctor` report Droid installations.
+  ([work-log](docs/agents/work-log/2026-07-17-008-droid-and-plugin-hooks.md))
+- **tooned-cli:** added plugin-wrapped agent hooks for OpenCode, Kilo Code, and Pi.
+  `tooned hook install --opencode|--kilo|--pi` writes a TypeScript plugin/extension file
+  that calls `tooned hook run --<flag>` with a Claude-compatible `tool_output` payload,
+  then mutates the agent's tool result only when TOON is smaller. `uninstall`, `status`,
+  and `doctor` are supported for all three agents.
+  ([work-log](docs/agents/work-log/2026-07-17-008-droid-and-plugin-hooks.md))
+- **tooned-metrics** new crate and `tooned metrics`/`tooned heatmap` CLI views for the
+  local-only, opt-out token-savings ledger. Records conversion outcomes from every
+  `tooned` surface and renders a GitHub/Codex-style savings heatmap.
 
 ### Fixed
 
@@ -165,6 +180,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strings/comments and TOML basic strings. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
 - **tooned-cli / tooned-core:** format-hint coverage tests for all CLI/MCP
   `parse_doc_type_hint` mappings (json, ndjson, yaml, toml, csv, tsv, xml). (d014002)
+- **tooned-cli:** Devin CLI hook hardening: `tooned hook install --devin` now
+  writes a 5-second `timeout` on the generated hook command, coerces malformed
+  hooks files to the expected object/array shape instead of silently no-oping,
+  and uses `%APPDATA%\devin\config.json` on Windows without requiring a home
+  directory. Tests now match Devin's real `PostToolUse` payload (no
+  `hook_event_name`) and cover status, doctor, coexistence, and concurrent
+  install atomicity. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
 
 ### Security
 

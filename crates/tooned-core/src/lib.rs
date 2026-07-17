@@ -27,7 +27,9 @@ pub use tooned_convert::onto::decode as decode_onto;
 pub use tooned_convert::tron::{
     StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
 };
-pub use tooned_convert::{encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned};
+pub use tooned_convert::{
+    encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned, parse_to_value,
+};
 
 // Re-export decode_toon from tooned-toon
 pub use tooned_toon::decode_toon;
@@ -38,4 +40,23 @@ pub use tooned_json::{SONIC_RS_THRESHOLD_BYTES, parse_ndjson_stream};
 // Re-export XML module from tooned-xml
 pub mod xml {
     pub use tooned_xml::{XmlParseOptions, parse, sniff};
+}
+
+use std::path::{Path, PathBuf};
+
+/// Nearest ancestor of (or including) `start` that contains a `.tooned/`
+/// directory, used to locate a project-scoped index or metrics ledger.
+/// Falls back to `start` itself when no ancestor qualifies (so callers can
+/// still operate on a cwd that has not been indexed yet).
+pub fn project_root(start: &Path) -> PathBuf {
+    let mut dir = start;
+    loop {
+        if dir.join(".tooned").is_dir() {
+            return dir.to_path_buf();
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return start.to_path_buf(),
+        }
+    }
 }

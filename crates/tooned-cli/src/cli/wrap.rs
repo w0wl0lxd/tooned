@@ -98,8 +98,48 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         // Entire output fits within the cap: run it through the normal
         // adaptive conversion path.
         let converted = match tooned_core::maybe_tooned(&buf, &opts) {
-            Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-            Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+            Ok(Conversion::Toon { text, .. }) => {
+                #[allow(clippy::manual_unwrap_or)]
+                let buf_len = match buf.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                };
+                #[allow(clippy::manual_unwrap_or)]
+                let text_len = match text.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                };
+                crate::metrics_recorder::record_convert_outcome(
+                    crate::metrics_recorder::CliSurface::Wrap,
+                    &crate::metrics_recorder::SourceLabel::None,
+                    None,
+                    true,
+                    buf_len,
+                    text_len,
+                );
+                text.into_bytes()
+            }
+            Ok(Conversion::Passthrough { bytes, .. }) => {
+                #[allow(clippy::manual_unwrap_or)]
+                let buf_len = match buf.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                };
+                #[allow(clippy::manual_unwrap_or)]
+                let bytes_len = match bytes.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                };
+                crate::metrics_recorder::record_convert_outcome(
+                    crate::metrics_recorder::CliSurface::Wrap,
+                    &crate::metrics_recorder::SourceLabel::None,
+                    None,
+                    false,
+                    buf_len,
+                    bytes_len,
+                );
+                bytes
+            }
             Err(_) => buf,
         };
         let _ = out_stdout.lock().write_all(&converted);

@@ -1,0 +1,24 @@
+[package]
+name = "tooned-metrics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Local-only, opt-out token-savings metrics ledger for tooned"
+categories.workspace = true
+readme = "../../README.md"
+keywords = ["toon", "metrics", "sqlite"]
+
+[dependencies]
+blake3 = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
