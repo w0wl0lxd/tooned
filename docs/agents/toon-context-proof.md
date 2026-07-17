@@ -55,7 +55,9 @@ sequenceDiagram
 
 The exact field name in the `PostToolUse` payload depends on the agent. The hook
 implementation reads the tool output from the field the agent provides, whether
-that is a top-level string, an object, or a nested `output` key.
+that is a top-level string, an object, or a nested `output` key. The same flow
+applies to Claude Code, Codex CLI, Devin CLI, and Droid native hooks, as well as
+the OpenCode, Kilo Code, and Pi plugin wrappers.
 
 ### What the user / agent sees
 
