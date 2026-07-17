@@ -568,10 +568,6 @@ impl<W> CountingWriter<W> {
     fn new(inner: W) -> Self {
         Self { inner, count: 0 }
     }
-
-    fn count(&self) -> u64 {
-        self.count
-    }
 }
 
 impl<W: Write> Write for CountingWriter<W> {
@@ -603,42 +599,94 @@ where
     W: Write,
 {
     let mut stream = tooned_json::parse_ndjson_stream(reader);
-    let mut out = CountingWriter::new(writer);
-    let mut first = true;
-    let mut keys: Option<Vec<String>> = None;
-    let mut array_opened = false;
+    // Buffer the encoded body in memory so we can verify its round-trip
+    // fidelity the same way `maybe_tron` does (decode(encode(x)) == x).
+    // Input is still parsed record-by-record from the streaming reader, so a
+    // huge NDJSON source is never fully materialized; only the (typically much
+    // smaller) TRON output is buffered for the verification pass below.
+    let mut encoded: Vec<u8> = Vec::new();
+    let mut values: Vec<Value> = Vec::new();
+    {
+        let mut out = CountingWriter::new(&mut encoded);
+        let mut first = true;
+        let mut keys: Option<Vec<String>> = None;
+        let mut array_opened = false;
 
-    for result in stream.by_ref() {
-        let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        for result in stream.by_ref() {
+            let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
 
-        if first {
-            first = false;
-            if let Value::Object(obj) = &value
-                && let Ok(k) = object_keys(obj, 0)
-                && object_values(obj, &k, 0).is_ok()
-            {
-                out.write_all(class_header("A", &k).as_bytes())
-                    .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-                keys = Some(k);
+            if first {
+                first = false;
+                if let Value::Object(obj) = &value
+                    && let Ok(k) = object_keys(obj, 0)
+                    && object_values(obj, &k, 0).is_ok()
+                {
+                    out.write_all(class_header("A", &k).as_bytes())
+                        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                    keys = Some(k);
+                }
+                out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                array_opened = true;
+                write_stream_value(&mut out, &value, keys.as_ref())?;
+                values.push(value);
+                continue;
             }
-            out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-            array_opened = true;
+
+            out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
             write_stream_value(&mut out, &value, keys.as_ref())?;
-            continue;
+            values.push(value);
         }
 
-        out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        write_stream_value(&mut out, &value, keys.as_ref())?;
+        if array_opened {
+            out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        } else {
+            out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        }
+        out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
     }
 
-    if array_opened {
-        out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let input_bytes = stream.bytes_read();
+
+    // Round-trip fidelity guard (mirrors `maybe_tron`, finding: the streaming
+    // path previously had no decode(encode(x)) == x check and could ship
+    // corrupt data silently). If the emitted TRON does not reconstruct the
+    // original values exactly, fall back to writing the original JSON array
+    // verbatim -- never ship a lossy conversion.
+    let round_trip_ok = decode(std::str::from_utf8(&encoded).map_err(|_| {
+        ToonedError::DecodeFailed("streaming TRON output was not valid UTF-8".to_string())
+    })?)
+    .is_ok_and(|decoded| decoded == Value::Array(values.clone()));
+
+    if round_trip_ok {
+        writer
+            .write_all(&encoded)
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        Ok(StreamStats {
+            input_bytes,
+            output_bytes: encoded.len() as u64,
+        })
     } else {
-        out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        let mut buf = Vec::new();
+        let mut fallback = sonic_rs::writer::BufferedWriter::new(&mut buf);
+        sonic_rs::to_writer(&mut fallback, &Value::Array(values))
+            .map_err(|e| ToonedError::DecodeFailed(format!("failed to serialize TRON fallback: {e}")))?;
+        fallback
+            .flush()
+            .map_err(|e| ToonedError::DecodeFailed(format!("failed to flush TRON fallback: {e}")))?;
+        writer
+            .write_all(&buf)
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        Ok(StreamStats {
+            input_bytes,
+            output_bytes: buf.len() as u64,
+        })
     }
-    out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-
-    Ok(StreamStats { input_bytes: stream.bytes_read(), output_bytes: out.count() })
 }
 
 fn write_stream_value<W: Write>(
@@ -720,5 +768,36 @@ mod tests {
             Conversion::Passthrough { reason: PassthroughReason::NotStructuredData, .. } => {}
             other => panic!("expected Passthrough(NotStructuredData), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn maybe_tron_stream_round_trips_uniform_array() {
+        let input = "{\"id\":0,\"name\":\"row-0\"}\n{\"id\":1,\"name\":\"row-1\"}\n";
+        let mut out: Vec<u8> = Vec::new();
+        maybe_tron_stream(std::io::Cursor::new(input), &mut out).expect("stream");
+        let text = String::from_utf8(out).expect("utf8");
+        // The streamed body must decode back to the original records.
+        let decoded = decode(&text).expect("decodable");
+        assert_eq!(
+            decoded,
+            serde_json::json!([{"id":0,"name":"row-0"},{"id":1,"name":"row-1"}])
+        );
+    }
+
+    #[test]
+    fn maybe_tron_stream_falls_back_on_corrupt_record() {
+        // A record with a non-primitive value for a class column cannot be
+        // faithfully represented as `A(...)`; the streaming path must fall back
+        // to emitting the original JSON array rather than ship a lossy TOON.
+        let input = "{\"id\":1,\"name\":\"a\"}\n{\"id\":2,\"nested\":{\"x\":1}}\n";
+        let mut out: Vec<u8> = Vec::new();
+        maybe_tron_stream(std::io::Cursor::new(input), &mut out).expect("stream");
+        let text = String::from_utf8(out).expect("utf8");
+        let decoded = decode(&text).expect("decodable");
+        // The fallback must still reconstruct the original records exactly.
+        assert_eq!(
+            decoded,
+            serde_json::json!([{"id":1,"name":"a"},{"id":2,"nested":{"x":1}}])
+        );
     }
 }
