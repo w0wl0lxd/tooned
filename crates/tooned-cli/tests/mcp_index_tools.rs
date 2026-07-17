@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Contract tests for `tooned_index_build`/`tooned_index_refresh`/
 //! `tooned_stats` (T074). See
 //! `specs/001-adaptive-toon-conversion/contracts/mcp-tools.md`.

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Integration tests for plugin-wrapped agent installs (OpenCode, Kilo, Pi).
 
 use std::path::PathBuf;
@@ -54,7 +56,7 @@ fn uninstall(args: &[&str], project: &tempfile::TempDir) -> Assert {
 }
 
 fn assert_tooned_plugin(path: &std::path::Path, run_flag: &str) {
-    assert!(path.exists(), "plugin file must be written: {path:?}");
+    assert!(path.exists(), "plugin file must be written: {}", path.display());
     let text = read_plugin(path);
     assert!(text.contains(run_flag), "plugin file must invoke `{run_flag}`, got: {text}");
     assert!(text.contains("tooned"), "plugin file must reference tooned, got: {text}");
