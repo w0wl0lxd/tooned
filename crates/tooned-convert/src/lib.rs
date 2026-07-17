@@ -10,6 +10,7 @@
 //! a convertible y/n verdict) but never returns the TOON text itself.
 
 use serde_json::Value;
+use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
 use tooned_toon::encode_toon;
@@ -65,7 +66,7 @@ struct AttemptToon {
 }
 
 /// A `std::io::Write` sink that only tallies bytes written, never storing
-/// them -- used to get `serde_json::to_writer`'s serialized byte length
+/// them -- used to get `sonic_rs::to_writer`'s serialized byte length
 /// without materializing an owned `String` (see `attempt`'s hot-path
 /// comment).
 pub(crate) struct ByteCountingWriter(usize);
@@ -163,7 +164,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // smuggled in via YAML/TOML's more permissive float literals) -- fail
     // closed, not a panic.
     let (json_bytes, json_text) = if opts.precise_tokens {
-        let Ok(text) = serde_json::to_string(&value) else {
+        let Ok(text) = sonic_rs::to_string(&value) else {
             return Attempt {
                 doc_type: Some(doc_type),
                 shape,
@@ -176,7 +177,20 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (text.len(), Some(text))
     } else {
         let mut counter = ByteCountingWriter(0);
-        let Ok(()) = serde_json::to_writer(&mut counter, &value) else {
+        let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
+        let Ok(()) = sonic_rs::to_writer(&mut writer, &value) else {
+            return Attempt {
+                doc_type: Some(doc_type),
+                shape,
+                json_bytes: None,
+                json_text: None,
+                toon: None,
+                reason: Some(PassthroughReason::ParseFailed),
+            };
+        };
+        // `to_writer` may not flush the `BufferedWriter`'s final buffer; drain
+        // it so every serialized byte is counted by `ByteCountingWriter`.
+        let Ok(()) = writer.flush() else {
             return Attempt {
                 doc_type: Some(doc_type),
                 shape,

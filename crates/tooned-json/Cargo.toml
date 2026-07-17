@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 serde_json = { workspace = true }
-sonic-rs = "0.5"
+sonic-rs = { workspace = true }
 tooned-parse = { workspace = true } #unified
 
 [lints]
