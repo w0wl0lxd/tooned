@@ -12,9 +12,10 @@
 //! values must be primitive for the encoder, but the decoder expands any
 //! class calls found in the body.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::io::{BufRead, Write};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, PassthroughReason, ToonedError,
 };
@@ -22,7 +23,6 @@ use tooned_types::{
 use crate::shape;
 
 const CLASS_PREFIX: &str = "class ";
-const MAX_TRON_DEPTH: usize = 64;
 
 /// Encode a uniform array of flat objects (or a single flat object) as TRON text.
 ///
@@ -36,19 +36,7 @@ pub fn encode(value: &Value) -> Result<String, ToonedError> {
     let keys = rows.0;
     let values = rows.1;
 
-    let mut out = String::new();
-    out.push_str(CLASS_PREFIX);
-    out.push('A');
-    out.push(':');
-    for (i, key) in keys.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push(' ');
-        out.push_str(key);
-    }
-    out.push('\n');
-    out.push('\n');
+    let mut out = class_header("A", &keys);
 
     if let Value::Array(_) = value {
         out.push('[');
@@ -56,7 +44,7 @@ pub fn encode(value: &Value) -> Result<String, ToonedError> {
             if i > 0 {
                 out.push(',');
             }
-            append_instance(&mut out, row);
+            out.push_str(&encode_instance(row));
         }
         out.push(']');
     } else {
@@ -64,7 +52,7 @@ pub fn encode(value: &Value) -> Result<String, ToonedError> {
         let row = values
             .first()
             .ok_or_else(|| ToonedError::DecodeFailed("TRON missing single object row".into()))?;
-        append_instance(&mut out, row);
+        out.push_str(&encode_instance(row));
     }
 
     Ok(out)
@@ -115,36 +103,80 @@ fn rows_for(value: &Value) -> Result<(Vec<String>, Vec<Vec<String>>), ToonedErro
     }
 }
 
-fn object_row(
-    obj: &serde_json::Map<String, Value>,
-    index: usize,
-) -> Result<(Vec<String>, Vec<String>), ToonedError> {
+fn object_keys(obj: &Map<String, Value>, index: usize) -> Result<Vec<String>, ToonedError> {
     if obj.is_empty() {
         return Err(ToonedError::DecodeFailed(format!("TRON object {index} has no keys")));
     }
 
     let mut keys = Vec::with_capacity(obj.len());
-    let mut vals = Vec::with_capacity(obj.len());
-    for (key, value) in obj {
+    for key in obj.keys() {
         if !is_valid_header_key(key) {
             return Err(ToonedError::DecodeFailed(format!(
                 "TRON object key {key:?} is not a valid header identifier"
             )));
         }
+        keys.push(key.clone());
+    }
+    Ok(keys)
+}
+
+fn object_values(
+    obj: &Map<String, Value>,
+    keys: &[String],
+    index: usize,
+) -> Result<Vec<String>, ToonedError> {
+    if obj.len() != keys.len() {
+        return Err(ToonedError::DecodeFailed(format!(
+            "TRON object {index} has a different key set than the first element"
+        )));
+    }
+
+    let mut vals = Vec::with_capacity(keys.len());
+    for key in keys {
+        let value = obj.get(key).ok_or_else(|| {
+            ToonedError::DecodeFailed(format!("TRON object {index} missing key {key}"))
+        })?;
         if !is_primitive(value) {
             return Err(ToonedError::DecodeFailed(format!(
                 "TRON object {index}, key {key} contains a non-primitive value"
             )));
         }
-        keys.push(key.clone());
         vals.push(serde_json::to_string(value).map_err(|e| {
             ToonedError::DecodeFailed(format!("failed to serialize TRON cell: {e}"))
         })?);
     }
+    Ok(vals)
+}
+
+fn object_row(
+    obj: &Map<String, Value>,
+    index: usize,
+) -> Result<(Vec<String>, Vec<String>), ToonedError> {
+    let keys = object_keys(obj, index)?;
+    let vals = object_values(obj, &keys, index)?;
     Ok((keys, vals))
 }
 
-fn append_instance(out: &mut String, values: &[String]) {
+fn class_header(class_name: &str, keys: &[String]) -> String {
+    let mut out = String::with_capacity(CLASS_PREFIX.len() + class_name.len() + 2 + keys.len() * 8);
+    out.push_str(CLASS_PREFIX);
+    out.push_str(class_name);
+    out.push(':');
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push(' ');
+        out.push_str(key);
+    }
+    out.push('\n');
+    out.push('\n');
+    out
+}
+
+fn encode_instance(values: &[String]) -> String {
+    let mut out =
+        String::with_capacity(values.iter().map(String::len).sum::<usize>() + values.len() + 3);
     out.push('A');
     out.push('(');
     for (i, v) in values.iter().enumerate() {
@@ -154,6 +186,7 @@ fn append_instance(out: &mut String, values: &[String]) {
         out.push_str(v);
     }
     out.push(')');
+    out
 }
 
 fn is_primitive(value: &Value) -> bool {
@@ -162,12 +195,6 @@ fn is_primitive(value: &Value) -> bool {
 
 fn is_valid_header_key(key: &str) -> bool {
     !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-fn is_valid_class_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    matches!(chars.next(), Some(c) if c.is_ascii_uppercase())
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Decode TRON text back to a `serde_json::Value`.
@@ -181,7 +208,7 @@ pub fn decode(text: &str) -> Result<Value, ToonedError> {
         serde_json::from_str(body.trim())
             .map_err(|e| ToonedError::DecodeFailed(format!("TRON body is not valid JSON: {e}")))
     } else {
-        let json_text = expand_tron(body, &classes, 0)?;
+        let json_text = expand_tron(body, &classes)?;
         serde_json::from_str(&json_text).map_err(|e| {
             ToonedError::DecodeFailed(format!("expanded TRON body is not valid JSON: {e}"))
         })
@@ -237,40 +264,12 @@ fn parse_header(text: &str) -> Result<(HashMap<String, Vec<String>>, &str), Toon
         if name.is_empty() {
             return Err(ToonedError::DecodeFailed("TRON class name is empty".into()));
         }
-        if !is_valid_class_name(&name) {
-            return Err(ToonedError::DecodeFailed(format!(
-                "TRON class name {name:?} is not a valid identifier"
-            )));
-        }
-        if classes.contains_key(&name) {
-            return Err(ToonedError::DecodeFailed(format!(
-                "TRON class {name} defined more than once"
-            )));
-        }
-
-        let mut seen_fields = HashSet::new();
-        let mut field_list = Vec::new();
-        for field in fields.split(',') {
-            let field = field.trim();
-            if field.is_empty() {
-                continue;
-            }
-            if !is_valid_header_key(field) {
-                return Err(ToonedError::DecodeFailed(format!(
-                    "TRON class {name} field {field:?} is not a valid identifier"
-                )));
-            }
-            if !seen_fields.insert(field.to_string()) {
-                return Err(ToonedError::DecodeFailed(format!(
-                    "TRON class {name} has duplicate field {field:?}"
-                )));
-            }
-            field_list.push(field.to_string());
-        }
-        if field_list.is_empty() {
+        let fields: Vec<String> =
+            fields.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        if fields.is_empty() {
             return Err(ToonedError::DecodeFailed(format!("TRON class {name} has no fields")));
         }
-        classes.insert(name, field_list);
+        classes.insert(name, fields);
         offset += line.len();
     }
 
@@ -279,17 +278,7 @@ fn parse_header(text: &str) -> Result<(HashMap<String, Vec<String>>, &str), Toon
 }
 
 #[allow(clippy::indexing_slicing)]
-fn expand_tron(
-    s: &str,
-    classes: &HashMap<String, Vec<String>>,
-    depth: usize,
-) -> Result<String, ToonedError> {
-    if depth > MAX_TRON_DEPTH {
-        return Err(ToonedError::DecodeFailed(format!(
-            "TRON class nesting exceeds maximum depth of {MAX_TRON_DEPTH}"
-        )));
-    }
-
+fn expand_tron(s: &str, classes: &HashMap<String, Vec<String>>) -> Result<String, ToonedError> {
     let chars: Vec<(usize, char)> = s.char_indices().collect();
     let mut out = String::with_capacity(s.len());
     let mut idx = 0;
@@ -321,8 +310,7 @@ fn expand_tron(
 
         if c.is_ascii_uppercase() {
             let name_start_byte = pos;
-            while idx < chars.len() && (chars[idx].1.is_ascii_alphanumeric() || chars[idx].1 == '_')
-            {
+            while idx < chars.len() && chars[idx].1.is_ascii_uppercase() {
                 idx += 1;
             }
             let name_end_byte = if idx < chars.len() { chars[idx].0 } else { s.len() };
@@ -337,7 +325,7 @@ fn expand_tron(
                 let args = split_args(args_str)?;
                 let mut expanded = Vec::with_capacity(args.len());
                 for arg in args {
-                    expanded.push(expand_tron(arg.trim(), classes, depth + 1)?);
+                    expanded.push(expand_tron(arg.trim(), classes)?);
                 }
                 let fields = classes.get(name).ok_or_else(|| {
                     ToonedError::DecodeFailed(format!("undefined TRON class: {name}"))
@@ -549,6 +537,117 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
             toon_bytes: tron_bytes,
             savings_pct: crate::compute_savings_pct(json_bytes, tron_bytes),
         },
+    })
+}
+
+/// Byte and I/O counters for the streaming TRON encoder.
+#[derive(Debug)]
+pub struct StreamStats {
+    /// Bytes consumed from the input reader (including line delimiters).
+    pub input_bytes: u64,
+    /// Bytes written to the output writer.
+    pub output_bytes: u64,
+}
+
+/// Wraps a [`Write`] sink and counts bytes without materializing the full
+/// output in memory.
+struct CountingWriter<W> {
+    inner: W,
+    count: u64,
+}
+
+impl<W> CountingWriter<W> {
+    fn new(inner: W) -> Self {
+        Self { inner, count: 0 }
+    }
+
+    fn count(&self) -> u64 {
+        self.count
+    }
+}
+
+impl<W: Write> Write for CountingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.count += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// Stream-convert an NDJSON/JSONL reader into a TRON record-stream writer.
+///
+/// The first flat object establishes the class schema; subsequent records that
+/// match it are emitted as `A(...)` instances. Records that do not match
+/// (different keys, non-primitive values, scalars, arrays) are emitted as
+/// ordinary JSON values inside the same top-level array, so the output is
+/// always a valid TRON body and no data is lost. Empty input yields `[]`.
+///
+/// Returns counts of input and output bytes so callers can apply the usual
+/// adaptive size gate. Parse errors are propagated as [`ToonedError`] so the
+/// caller can fall back to a verbatim passthrough.
+pub fn maybe_tron_stream<R, W>(reader: R, writer: &mut W) -> Result<StreamStats, ToonedError>
+where
+    R: BufRead,
+    W: Write,
+{
+    let mut stream = tooned_json::parse_ndjson_stream(reader);
+    let mut out = CountingWriter::new(writer);
+    let mut first = true;
+    let mut keys: Option<Vec<String>> = None;
+    let mut array_opened = false;
+
+    for result in stream.by_ref() {
+        let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+        if first {
+            first = false;
+            if let Value::Object(obj) = &value
+                && let Ok(k) = object_keys(obj, 0)
+                && object_values(obj, &k, 0).is_ok()
+            {
+                out.write_all(class_header("A", &k).as_bytes())
+                    .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                keys = Some(k);
+            }
+            out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            array_opened = true;
+            write_stream_value(&mut out, &value, keys.as_ref())?;
+            continue;
+        }
+
+        out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        write_stream_value(&mut out, &value, keys.as_ref())?;
+    }
+
+    if array_opened {
+        out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    } else {
+        out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+    out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    Ok(StreamStats { input_bytes: stream.bytes_read(), output_bytes: out.count() })
+}
+
+fn write_stream_value<W: Write>(
+    out: &mut CountingWriter<W>,
+    value: &Value,
+    keys: Option<&Vec<String>>,
+) -> Result<(), ToonedError> {
+    if let Some(keys) = keys
+        && let Value::Object(obj) = value
+        && let Ok(vals) = object_values(obj, keys, 0)
+    {
+        out.write_all(encode_instance(&vals).as_bytes())
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        return Ok(());
+    }
+    serde_json::to_writer(out, value).map_err(|e| {
+        ToonedError::DecodeFailed(format!("failed to serialize TRON fallback value: {e}"))
     })
 }
 
