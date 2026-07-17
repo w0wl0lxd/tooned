@@ -1094,8 +1094,9 @@ mod tests {
         };
         let cells = store.heatmap(&opts).expect("heatmap");
         assert_eq!(cells.len(), 1);
-        assert_eq!(cells[0].value, 160);
-        assert_eq!(cells[0].level, 4);
+        let first = cells.first().expect("non-empty cells");
+        assert_eq!(first.value, 160);
+        assert_eq!(first.level, 4);
 
         let s = store.summary(&opts).expect("summary");
         assert_eq!(s.total_saved_bytes, 160);
@@ -1108,7 +1109,7 @@ mod tests {
 
         let top = store.top_files(&opts, 10).expect("top");
         assert_eq!(top.len(), 2);
-        assert_eq!(top[0].label, "b.json");
+        assert_eq!(top.first().expect("non-empty top").label, "b.json");
 
         store.reset().expect("reset");
         assert_eq!(store.count().expect("count"), 0);
