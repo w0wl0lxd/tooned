@@ -76,11 +76,11 @@ jobs:
 
       - name: Run changed tests
         if: github.event_name == 'pull_request'
-        run: cargo rail run --merge-base --surface test -- --all-features
+        run: cargo rail run --merge-base --surface test
 
       - name: Run all tests
         if: github.event_name == 'push'
-        run: cargo rail run --all --surface test -- --all-features
+        run: cargo rail run --all --surface test
 
       - name: Run doc tests
         run: cargo test --doc --all-features
