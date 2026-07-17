@@ -75,11 +75,23 @@ jobs:
           publish_one() {
             local crate="$1"
             for attempt in $(seq 1 20); do
-              if cargo publish -p "$crate" --allow-dirty; then
+              local out status
+              out=$(cargo publish -p "$crate" --allow-dirty 2>&1)
+              status=$?
+              if [ $status -eq 0 ]; then
                 return 0
               fi
-              echo "waiting for crates.io index before publishing $crate (attempt $attempt)..."
-              sleep 15
+              echo "$out" | tail -10
+              if echo "$out" | grep -q "Too Many Requests"; then
+                echo "crates.io new-crate rate limit; sleeping 600s before retry..."
+                sleep 600
+              elif echo "$out" | grep -q "no matching package named"; then
+                echo "dependency not yet in crates.io index; sleeping 60s..."
+                sleep 60
+              else
+                echo "unexpected failure publishing $crate" >&2
+                return 1
+              fi
             done
             echo "failed to publish $crate" >&2
             return 1
@@ -102,6 +114,9 @@ jobs:
           )
           for crate in "${crates[@]}"; do
             publish_one "$crate"
+            # crates.io allows one new crate every 10 minutes; waiting here
+            # avoids 429s and the wasted verification build they cause.
+            sleep 600
           done
 
   # Create GitHub release. Depends only on `verify` (not `publish`) so a
