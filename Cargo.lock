@@ -2306,6 +2306,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "similar",
+ "sonic-rs",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2324,6 +2325,7 @@ dependencies = [
  "json5",
  "rmp-serde",
  "serde_json",
+ "sonic-rs",
  "tiktoken-rs",
  "tooned-csv",
  "tooned-detect",
@@ -2407,6 +2409,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sonic-rs",
  "tempfile",
  "thiserror",
 ]

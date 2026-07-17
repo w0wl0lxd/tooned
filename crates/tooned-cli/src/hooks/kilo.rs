@@ -38,7 +38,7 @@ const AGENT: PluginAgent = PluginAgent {
 };
 
 fn kilo_content(binary: &Path) -> String {
-    let path_json = serde_json::to_string(&binary.display().to_string())
+    let path_json = sonic_rs::to_string(&binary.display().to_string())
         .unwrap_or_else(|_| "\"tooned\"".to_string());
 
     format!(
