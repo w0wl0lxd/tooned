@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Integration tests for `tooned hook install --devin`.
+//! Integration tests for `tooned hook install --droid` and `uninstall --droid`.
 
 use std::path::PathBuf;
 
@@ -15,19 +15,8 @@ fn bin_dir() -> PathBuf {
 }
 
 #[allow(clippy::expect_used)]
-fn read_project_hooks(path: &std::path::Path) -> Vec<serde_json::Value> {
-    let contents = std::fs::read_to_string(path).expect("read hooks.v1.json");
-    let value: serde_json::Value = serde_json::from_str(&contents).expect("valid json");
-    value
-        .get("PostToolUse")
-        .and_then(serde_json::Value::as_array)
-        .expect("top-level PostToolUse array present")
-        .clone()
-}
-
-#[allow(clippy::expect_used)]
-fn read_user_hooks(path: &std::path::Path) -> Vec<serde_json::Value> {
-    let contents = std::fs::read_to_string(path).expect("read config.json");
+fn read_hooks(path: &std::path::Path) -> Vec<serde_json::Value> {
+    let contents = std::fs::read_to_string(path).expect("read hooks.json");
     let value: serde_json::Value = serde_json::from_str(&contents).expect("valid json");
     value
         .get("hooks")
@@ -41,8 +30,8 @@ fn read_user_hooks(path: &std::path::Path) -> Vec<serde_json::Value> {
 fn assert_tooned_entry(entry: &serde_json::Value) {
     assert_eq!(
         entry.get("matcher").and_then(serde_json::Value::as_str),
-        Some("^exec$|^read$|^edit$|^grep$|^glob$|^mcp__"),
-        "matcher must be the Devin contract regex, got {entry}"
+        Some("Execute|Read|Grep|Glob|FetchUrl|WebSearch|^mcp__"),
+        "matcher must be the Droid contract regex, got {entry}"
     );
 
     let inner = entry
@@ -56,8 +45,8 @@ fn assert_tooned_entry(entry: &serde_json::Value) {
         .and_then(serde_json::Value::as_str)
         .expect("hooks[0].command string present");
     assert!(
-        command.ends_with("hook run --devin"),
-        "command must invoke `hook run --devin`, got {command:?}"
+        command.ends_with("hook run --droid"),
+        "command must invoke `hook run --droid`, got {command:?}"
     );
 
     assert_eq!(
@@ -68,43 +57,43 @@ fn assert_tooned_entry(entry: &serde_json::Value) {
 }
 
 #[test]
-fn install_project_scope_writes_devin_hooks_v1_json() {
+fn install_project_scope_writes_factory_hooks_json() {
     let project = tempfile::tempdir().expect("tempdir");
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "install", "--devin"])
+        .args(["hook", "install", "--droid"])
         .env_clear()
         .env("PATH", bin_dir())
         .current_dir(project.path())
         .assert()
         .success();
 
-    let hooks_path = project.path().join(".devin").join("hooks.v1.json");
-    assert!(hooks_path.exists(), ".devin/hooks.v1.json must be written");
+    let hooks_path = project.path().join(".factory").join("hooks.json");
+    assert!(hooks_path.exists(), ".factory/hooks.json must be written");
 
-    let entries = read_project_hooks(&hooks_path);
+    let entries = read_hooks(&hooks_path);
     assert_eq!(entries.len(), 1);
     assert_tooned_entry(entries.first().expect("entry present"));
 }
 
 #[test]
-fn install_user_scope_writes_devin_config_json() {
+fn install_user_scope_writes_factory_hooks_json() {
     let home = tempfile::tempdir().expect("tempdir");
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "install", "--devin", "--scope", "user"])
+        .args(["hook", "install", "--droid", "--scope", "user"])
         .env_clear()
         .env("PATH", bin_dir())
         .env("HOME", home.path())
         .assert()
         .success();
 
-    let config_path = home.path().join(".config").join("devin").join("config.json");
-    assert!(config_path.exists(), "~/.config/devin/config.json must be written");
+    let hooks_path = home.path().join(".factory").join("hooks.json");
+    assert!(hooks_path.exists(), "~/.factory/hooks.json must be written");
 
-    let entries = read_user_hooks(&config_path);
+    let entries = read_hooks(&hooks_path);
     assert_eq!(entries.len(), 1);
     assert_tooned_entry(entries.first().expect("entry present"));
 }
@@ -116,7 +105,7 @@ fn install_run_twice_does_not_duplicate_hook_entry() {
     let run_install = || {
         Command::cargo_bin("tooned")
             .expect("binary exists")
-            .args(["hook", "install", "--devin"])
+            .args(["hook", "install", "--droid"])
             .env_clear()
             .env("PATH", bin_dir())
             .current_dir(project.path())
@@ -126,18 +115,18 @@ fn install_run_twice_does_not_duplicate_hook_entry() {
     run_install();
     run_install();
 
-    let hooks_path = project.path().join(".devin").join("hooks.v1.json");
-    let entries = read_project_hooks(&hooks_path);
+    let hooks_path = project.path().join(".factory").join("hooks.json");
+    let entries = read_hooks(&hooks_path);
     assert_eq!(entries.len(), 1, "installing twice must not duplicate the entry");
 }
 
 #[test]
-fn uninstall_removes_devin_hook_entry() {
+fn uninstall_removes_droid_hook_entry() {
     let project = tempfile::tempdir().expect("tempdir");
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "install", "--devin"])
+        .args(["hook", "install", "--droid"])
         .env_clear()
         .env("PATH", bin_dir())
         .current_dir(project.path())
@@ -146,51 +135,52 @@ fn uninstall_removes_devin_hook_entry() {
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "uninstall", "--devin"])
+        .args(["hook", "uninstall", "--droid"])
         .env_clear()
         .env("PATH", bin_dir())
         .current_dir(project.path())
         .assert()
         .success();
 
-    let hooks_path = project.path().join(".devin").join("hooks.v1.json");
-    let contents = std::fs::read_to_string(&hooks_path).expect("read hooks.v1.json");
+    let hooks_path = project.path().join(".factory").join("hooks.json");
+    let contents = std::fs::read_to_string(&hooks_path).expect("read hooks.json");
     let value: serde_json::Value = serde_json::from_str(&contents).expect("valid json");
     let entries = value
-        .get("PostToolUse")
+        .get("hooks")
+        .and_then(|h| h.get("PostToolUse"))
         .and_then(serde_json::Value::as_array)
-        .expect("PostToolUse array present");
+        .expect("hooks.PostToolUse array present");
     assert!(entries.is_empty(), "uninstall must remove the tooned entry");
 }
 
 #[test]
 fn install_project_scope_preserves_foreign_entry_and_appends_own() {
     let project = tempfile::tempdir().expect("tempdir");
-    let devin_dir = project.path().join(".devin");
-    std::fs::create_dir_all(&devin_dir).expect("mkdir .devin");
+    let factory_dir = project.path().join(".factory");
+    std::fs::create_dir_all(&factory_dir).expect("mkdir .factory");
 
     let foreign_entry = serde_json::json!({
-        "matcher": "exec",
+        "matcher": "Execute",
         "hooks": [ { "type": "command", "command": "/usr/local/bin/rtk hook run" } ],
     });
-    let seeded = serde_json::json!({ "PostToolUse": [ foreign_entry ] });
+    let seeded = serde_json::json!({ "hooks": { "PostToolUse": [ foreign_entry ] } });
     std::fs::write(
-        devin_dir.join("hooks.v1.json"),
+        factory_dir.join("hooks.json"),
         serde_json::to_string_pretty(&seeded).expect("ser"),
     )
-    .expect("write seeded hooks.v1.json");
+    .expect("write seeded hooks.json");
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "install", "--devin"])
+        .args(["hook", "install", "--droid"])
         .env_clear()
         .env("PATH", bin_dir())
         .current_dir(project.path())
         .assert()
         .success();
 
-    let hooks_path = project.path().join(".devin").join("hooks.v1.json");
-    let entries = read_project_hooks(&hooks_path);
+    let hooks_path = project.path().join(".factory").join("hooks.json");
+    let entries = read_hooks(&hooks_path);
     assert_eq!(
         entries.len(),
         2,
@@ -202,7 +192,7 @@ fn install_project_scope_preserves_foreign_entry_and_appends_own() {
             inner.iter().any(|h| {
                 h.get("command")
                     .and_then(serde_json::Value::as_str)
-                    .is_some_and(|c| c.ends_with("hook run --devin"))
+                    .is_some_and(|c| c.ends_with("hook run --droid"))
             })
         })
     }));
@@ -211,22 +201,22 @@ fn install_project_scope_preserves_foreign_entry_and_appends_own() {
 #[test]
 fn install_project_scope_coerces_malformed_root_to_object() {
     let project = tempfile::tempdir().expect("tempdir");
-    let devin_dir = project.path().join(".devin");
-    std::fs::create_dir_all(&devin_dir).expect("mkdir .devin");
+    let factory_dir = project.path().join(".factory");
+    std::fs::create_dir_all(&factory_dir).expect("mkdir .factory");
 
-    std::fs::write(devin_dir.join("hooks.v1.json"), "[]").expect("write malformed hooks.v1.json");
+    std::fs::write(factory_dir.join("hooks.json"), "[]").expect("write malformed hooks.json");
 
     Command::cargo_bin("tooned")
         .expect("binary exists")
-        .args(["hook", "install", "--devin"])
+        .args(["hook", "install", "--droid"])
         .env_clear()
         .env("PATH", bin_dir())
         .current_dir(project.path())
         .assert()
         .success();
 
-    let hooks_path = project.path().join(".devin").join("hooks.v1.json");
-    let entries = read_project_hooks(&hooks_path);
+    let hooks_path = project.path().join(".factory").join("hooks.json");
+    let entries = read_hooks(&hooks_path);
     assert_eq!(entries.len(), 1, "install must replace a malformed root with a valid object");
     assert_tooned_entry(entries.first().expect("entry present"));
 }

@@ -63,11 +63,30 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         BoundedRead::Streamed { .. } => return Ok(()),
     };
 
+    #[allow(clippy::manual_unwrap_or)]
+    let input_len = match bytes.len().try_into() {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
     let output = match tooned_core::maybe_tooned(&bytes, &opts) {
         Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
         Ok(Conversion::Passthrough { bytes, .. }) => bytes,
         Err(_) => bytes,
     };
+    #[allow(clippy::manual_unwrap_or)]
+    let output_len = match output.len().try_into() {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
+    let converted = output_len < input_len;
+    crate::metrics_recorder::record_convert_outcome(
+        crate::metrics_recorder::CliSurface::Pipe,
+        &crate::metrics_recorder::SourceLabel::None,
+        None,
+        converted,
+        input_len,
+        output_len,
+    );
 
     // Best-effort write: a broken pipe on the reader side is not this
     // subcommand's problem to escalate as a CLI error either.
