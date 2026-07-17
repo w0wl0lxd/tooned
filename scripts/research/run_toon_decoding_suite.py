@@ -468,28 +468,38 @@ def test_cases() -> list[TestCase]:
     )
 
     # ---- Mismatch decoding tests across complex structures ----
-    mismatch_fixtures = [
-        "complex/people_addresses.json",
-        "complex/ecommerce_orders.json",
-        "complex/company_org.json",
-        "complex/sensor_readings.ndjson",
-        "complex/inventory.csv",
-        "complex/webhooks.toml",
-        "complex/events_attendees.ndjson",
-        "complex/matrix.json",
-        "complex/mixed_schema.json",
-        "complex/geo_markers.json",
-        "complex/config_nested.yaml",
-        "complex/sample_complex.json5",
+    # Each tuple is (fixture, prompt, expected_substrings, note).
+    # Prompts are chosen so the requested fact is NOT present in the original
+    # file, forcing the model to read the injected TOON additionalContext.
+    mismatch_cases = [
+        ("complex/people_addresses.json", 'read agent-test/complex/people_addresses.json and tell me the SKU of the first product', ["SKU-1001"], ""),
+        # ecommerce_orders.json already contains `sku` fields, so asking for SKU
+        # lets the model answer from the original JSON. Ask for `name`, which
+        # the orders do not contain, so the answer must come from the injected
+        # products TOON.
+        ("complex/ecommerce_orders.json", 'read agent-test/complex/ecommerce_orders.json and tell me the name of the first product', ["Product 1"], "Original orders contain `sku` but not `name`; the mismatch hook injects products_20.json TOON."),
+        ("complex/company_org.json", 'read agent-test/complex/company_org.json and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/sensor_readings.ndjson", 'read agent-test/complex/sensor_readings.ndjson and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/inventory.csv", 'read agent-test/complex/inventory.csv and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/webhooks.toml", 'read agent-test/complex/webhooks.toml and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/events_attendees.ndjson", 'read agent-test/complex/events_attendees.ndjson and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/matrix.json", 'read agent-test/complex/matrix.json and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/mixed_schema.json", 'read agent-test/complex/mixed_schema.json and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/geo_markers.json", 'read agent-test/complex/geo_markers.json and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/config_nested.yaml", 'read agent-test/complex/config_nested.yaml and tell me the SKU of the first product', ["SKU-1001"], ""),
+        ("complex/sample_complex.json5", 'read agent-test/complex/sample_complex.json5 and tell me the SKU of the first product', ["SKU-1001"], ""),
     ]
-    for fixture in mismatch_fixtures:
+    for fixture, prompt, expected, extra_note in mismatch_cases:
+        note = "The mismatch hook injects products_20.json TOON regardless of the file being read."
+        if extra_note:
+            note += " " + extra_note
         cases.append(
             TestCase(
                 mode="mismatch",
                 fixture=fixture,
-                prompt=f'read agent-test/{fixture} and tell me the SKU of the first product',
-                expected=["SKU-1001"],
-                note="The mismatch hook injects products_20.json TOON regardless of the file being read.",
+                prompt=prompt,
+                expected=expected,
+                note=note,
             )
         )
 
