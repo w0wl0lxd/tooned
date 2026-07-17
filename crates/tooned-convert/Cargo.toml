@@ -12,6 +12,9 @@ name = "tooned_convert"
 path = "src/lib.rs"
 
 [dependencies]
+cbor4ii = { workspace = true }       #unified
+json5 = { workspace = true }         #unified
+rmp-serde = { workspace = true }     #unified
 serde_json = { workspace = true }
 tiktoken-rs = "0.12"
 tooned-csv = { workspace = true }    #unified
