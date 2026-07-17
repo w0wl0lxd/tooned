@@ -126,6 +126,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses streaming when the input is large (above `max_input_bytes`) or the user explicitly
   forced `--to tron` with an NDJSON hint/extension. Small NDJSON inputs continue to use
   the bounded path. ([work-log](docs/agents/work-log/2026-07-16-006-streaming-ndjson.md))
+- **tooned-cli:** added Devin CLI hook integration. `tooned hook run --devin` reads
+  Devin's `PostToolUse` stdin shape (`tool_response.output`) and emits
+  `hookSpecificOutput.additionalContext` when TOON conversion wins.
+  `tooned hook install --devin [--scope user|project]` writes `.devin/hooks.v1.json`
+  (project scope) or `~/.config/devin/config.json` (user scope) with a matcher covering
+  `exec`, `read`, `edit`, `grep`, `glob`, and `mcp__` tools. `tooned hook uninstall --devin`,
+  `tooned hook status --devin`, and `tooned hook doctor` reporting for Devin entries
+  alongside Claude Code and Codex are also supported. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
 
 ### Fixed
 
