@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Shared parsing utilities and error type for the tooned workspace"
 categories.workspace = true
 
 [lib]

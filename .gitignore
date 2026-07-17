@@ -16,6 +16,7 @@
 # Claude Code
 .claude/
 CLAUDE.md
+AGENTS.md
 
 # Spec-kit tool-internal state (specs/ itself IS committed — see below)
 .specify/
@@ -30,6 +31,11 @@ CLAUDE.md
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
 
 # Local development
 *.local

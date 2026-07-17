@@ -45,8 +45,9 @@ jobs:
       - name: Run cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
-  # Publish to crates.io. tooned-core first, since tooned-cli and
-  # tooned-index both depend on its published version.
+  # Publish to crates.io in dependency order. The token is stored in the
+  # repository as a SOPS-encrypted file and decrypted at runtime with the
+  # project age key (kept in a GitHub secret).
   publish:
     name: Publish to crates.io
     needs: verify
@@ -57,29 +58,66 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish tooned-core
-        # --allow-dirty: `cargo publish` regenerates Cargo.lock during its
-        # verification build, which would otherwise dirty the tree checked out
-        # from the tag and abort the publish.
-        run: cargo publish -p tooned-core --allow-dirty
+      - name: Install SOPS
+        uses: mdgreenwald/mozilla-sops-action@v2.1.1
+
+      - name: Load crates.io token from SOPS
+        run: |
+          TOKEN=$(sops --extract '["CARGO_REGISTRY_TOKEN"]' --decrypt secrets/cargo-registry-token.sops.yaml)
+          echo "::add-mask::$TOKEN"
+          echo "CARGO_REGISTRY_TOKEN=$TOKEN" >> "$GITHUB_ENV"
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Wait for crates.io propagation
-        run: sleep 30
-
-      - name: Publish tooned-index
-        run: cargo publish -p tooned-index --allow-dirty
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io propagation
-        run: sleep 30
-
-      - name: Publish tooned-cli
-        run: cargo publish -p tooned-cli --allow-dirty
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish workspace crates
+        run: |
+          set -e
+          publish_one() {
+            local crate="$1"
+            for attempt in $(seq 1 20); do
+              local out status
+              out=$(cargo publish -p "$crate" --allow-dirty 2>&1)
+              status=$?
+              if [ $status -eq 0 ]; then
+                return 0
+              fi
+              echo "$out" | tail -10
+              if echo "$out" | grep -q "Too Many Requests"; then
+                echo "crates.io new-crate rate limit; sleeping 600s before retry..."
+                sleep 600
+              elif echo "$out" | grep -q "no matching package named"; then
+                echo "dependency not yet in crates.io index; sleeping 60s..."
+                sleep 60
+              else
+                echo "unexpected failure publishing $crate" >&2
+                return 1
+              fi
+            done
+            echo "failed to publish $crate" >&2
+            return 1
+          }
+          crates=(
+            tooned-parse
+            tooned-types
+            tooned-json
+            tooned-xml
+            tooned-csv
+            tooned-toml
+            tooned-yaml
+            tooned-detect
+            tooned-toon
+            tooned-convert
+            tooned-core
+            tooned-metrics
+            tooned-index
+            tooned
+          )
+          for crate in "${crates[@]}"; do
+            publish_one "$crate"
+            # crates.io allows one new crate every 10 minutes; waiting here
+            # avoids 429s and the wasted verification build they cause.
+            sleep 600
+          done
 
   # Create GitHub release. Depends only on `verify` (not `publish`) so a
   # crates.io credential problem cannot block the GitHub release.
