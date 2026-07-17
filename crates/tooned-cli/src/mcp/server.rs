@@ -52,6 +52,9 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
         "csv" => Some(DocType::Csv),
         "tsv" => Some(DocType::Tsv),
         "xml" => Some(DocType::Xml),
+        "msgpack" | "msg" => Some(DocType::Msgpack),
+        "cbor" => Some(DocType::Cbor),
+        "json5" => Some(DocType::Json5),
         _ => None,
     }
 }
@@ -150,6 +153,9 @@ pub enum DocTypeDto {
     Csv,
     Tsv,
     Xml,
+    Msgpack,
+    Cbor,
+    Json5,
 }
 
 impl From<DocType> for DocTypeDto {
@@ -162,6 +168,9 @@ impl From<DocType> for DocTypeDto {
             DocType::Csv => Self::Csv,
             DocType::Tsv => Self::Tsv,
             DocType::Xml => Self::Xml,
+            DocType::Msgpack => Self::Msgpack,
+            DocType::Cbor => Self::Cbor,
+            DocType::Json5 => Self::Json5,
         }
     }
 }
@@ -527,6 +536,10 @@ mod tests {
             ("tsv", Some(DocType::Tsv)),
             ("xml", Some(DocType::Xml)),
             ("XML", Some(DocType::Xml)),
+            ("msgpack", Some(DocType::Msgpack)),
+            ("msg", Some(DocType::Msgpack)),
+            ("cbor", Some(DocType::Cbor)),
+            ("json5", Some(DocType::Json5)),
             ("unknown", None),
             ("", None),
         ];
