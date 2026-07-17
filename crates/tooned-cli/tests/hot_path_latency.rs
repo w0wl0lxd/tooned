@@ -18,7 +18,7 @@
 //!
 //! `#[ignore]`d by default (like the constitution specifies) because
 //! absolute wall-clock latency is inherently machine/CI-dependent noise;
-//! run explicitly via `cargo test --release -p tooned-cli \
+//! run explicitly via `cargo test --release -p tooned \
 //! --test hot_path_latency -- --ignored`.
 
 use std::fmt::Write as _;
@@ -79,7 +79,7 @@ fn maybe_tooned_completes_in_low_single_digit_milliseconds_at_100kib() {
     // ~10x+ slower in practice), so it gets a much more permissive bound
     // instead of being silently skipped -- still catches a catastrophic
     // regression, just not a modest one. Run with `--release` for the
-    // real guardrail: `cargo test --release -p tooned-cli \
+    // real guardrail: `cargo test --release -p tooned \
     // --test hot_path_latency -- --ignored`.
     let threshold_ms: u128 = if cfg!(debug_assertions) { 200 } else { 10 };
     assert!(
