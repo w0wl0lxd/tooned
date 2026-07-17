@@ -38,7 +38,7 @@ fn summary_records_events() {
     let dir = tmp_metrics_dir();
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
-    cmd.args(["--global", "summary"]);
+    cmd.args(["metrics", "--global", "summary"]);
     let out = cmd.output().expect("run metrics summary");
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("tooned metrics -- summary"), "summary header missing: {s}");
@@ -61,7 +61,7 @@ fn breakdown_lists_surfaces() {
     let dir = tmp_metrics_dir();
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
-    cmd.args(["--global", "breakdown"]);
+    cmd.args(["metrics", "--global", "breakdown"]);
     let out = cmd.output().expect("run breakdown");
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.to_lowercase().contains("surface"), "breakdown missing surface label: {s}");
@@ -72,15 +72,18 @@ fn reset_clears_ledger() {
     let dir = tmp_metrics_dir();
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
-    cmd.args(["--global", "reset", "--yes"]);
+    cmd.args(["metrics", "--global", "reset", "--yes"]);
     let out = cmd.output().expect("run reset");
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("reset ledger"), "reset missing confirmation: {s}");
     let mut cmd2 = cmd_with(&dir);
-    cmd2.args(["--global", "summary"]);
+    cmd2.args(["metrics", "--global", "summary"]);
     let out2 = cmd2.output().expect("run summary after reset");
     let s2 = String::from_utf8_lossy(&out2.stdout);
-    assert!(s2.contains("no metrics recorded yet"), "ledger not cleared: {s2}");
+    assert!(
+        s2.contains("no metrics recorded yet") || s2.contains("total saved:    0 tokens"),
+        "ledger not cleared: {s2}"
+    );
 }
 
 #[test]
