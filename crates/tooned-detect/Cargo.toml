@@ -20,7 +20,7 @@ tooned-types = { workspace = true } #unified
 tooned-xml = { workspace = true }   #unified
 
 [dev-dependencies]
-heapster = "0.8.0"
+heapster = "0.9.0"
 
 [lints]
 workspace = true
