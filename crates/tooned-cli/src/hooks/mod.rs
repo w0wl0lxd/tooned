@@ -235,17 +235,19 @@ pub(crate) fn hook_command_for(binary: &Path, flag: &str) -> String {
     format!("{} hook run --{flag}", quote_binary_for_shell(binary))
 }
 
-/// Parses `path` as a JSON object, tolerating a missing/unreadable/malformed
-/// file by starting fresh (`{}`) rather than erroring -- the installer's own
-/// job is to merge in a hook entry, not to validate the rest of an agent's
-/// config file.
-pub(crate) fn read_json_value(path: &Path) -> serde_json::Value {
+/// Parses `path` as a JSON object. A missing file starts fresh (`{}`);
+/// a malformed file is an error so the installer never silently overwrites
+/// a user's existing agent configuration.
+pub(crate) fn read_json_value(path: &Path) -> Result<serde_json::Value, InstallError> {
     match std::fs::read(path) {
-        Ok(bytes) => match sonic_rs::from_slice::<serde_json::Value>(&bytes) {
-            Ok(value) => value,
-            Err(_) => serde_json::json!({}),
-        },
-        Err(_) => serde_json::json!({}),
+        Ok(bytes) => sonic_rs::from_slice::<serde_json::Value>(&bytes).map_err(|e| {
+            InstallError::Io(std::io::Error::other(format!(
+                "{} is not valid JSON ({e}); fix or remove it before installing the hook",
+                path.display()
+            )))
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(InstallError::Io(e)),
     }
 }
 
