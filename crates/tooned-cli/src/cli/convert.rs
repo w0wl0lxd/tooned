@@ -498,7 +498,7 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
 
 /// Emit `value` as compact JSON, recording the decode outcome for metrics.
 fn finalize_json(value: &serde_json::Value, bytes: &[u8]) -> Vec<u8> {
-    match serde_json::to_vec(value) {
+    match sonic_rs::to_vec(value) {
         Ok(json) => {
             #[allow(clippy::manual_unwrap_or)]
             crate::metrics_recorder::record_convert_outcome(

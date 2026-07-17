@@ -21,10 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against compact JSON and only returns TOON when it beats JSON by the configured margin
   (`ConversionOptions.margin_pct`) *and* survives a round-trip check — otherwise it falls
   back to `Passthrough` with a reason (`InputTooLarge`, `NotSmallerEnough`,
-  `RoundTripMismatch`, and others). `sonic-rs` opportunistically accelerates JSON parsing
-  above a size threshold on x86_64/aarch64 (falls back to `serde_json` elsewhere or below
-  threshold), verified to resolve duplicate object keys identically to the `serde_json`
-  path. An opt-in `precise_tokens` mode (`tiktoken-rs`, `cl100k_base`) computes an exact
+  `RoundTripMismatch`, and others). JSON parsing and serialization route through
+  `sonic-rs` for all JSON/NDJSON input and output; `serde_json::Value` remains the
+  interchange type because `toon_lsp::toon::encode`/`decode` require it. Duplicate
+  object keys are resolved identically to the historical `serde_json` path. An opt-in
+  `precise_tokens` mode (`tiktoken-rs`, `cl100k_base`) computes an exact
   BPE-token savings estimate instead of the default byte-count estimate; never invoked on
   the default hot path. Two safety invariants are enforced by `proptest` across every
   supported doctype: JSON→TOON→JSON round-trip fidelity, and TOON is never returned unless

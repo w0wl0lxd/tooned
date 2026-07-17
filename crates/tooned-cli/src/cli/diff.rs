@@ -45,8 +45,8 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
 
     crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Diff, "diff");
 
-    let left = serde_json::to_string_pretty(&original)?;
-    let right = serde_json::to_string_pretty(&roundtrip)?;
+    let left = sonic_rs::to_string_pretty(&original)?;
+    let right = sonic_rs::to_string_pretty(&roundtrip)?;
 
     if left == right {
         println!("no diff");
