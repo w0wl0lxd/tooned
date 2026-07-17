@@ -5,6 +5,7 @@
 
 pub mod check;
 pub mod convert;
+pub mod dashboard;
 pub mod diff;
 pub mod heatmap;
 pub mod index;
