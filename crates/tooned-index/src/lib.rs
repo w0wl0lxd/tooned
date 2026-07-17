@@ -4,7 +4,7 @@
 //!
 //! The `.tooned/` on-disk SQLite index: directory scanning, content
 //! fingerprinting, and cached shape/conversion reports, invoked on-demand by
-//! `tooned index` / `tooned index sync` / `tooned stats` — never on the
+//! `tooned index` / `tooned index sync` / `tooned stats`: never on the
 //! hot hook path (see `tooned-core` for that).
 
 mod gitignore;
