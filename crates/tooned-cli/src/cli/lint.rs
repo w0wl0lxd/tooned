@@ -31,14 +31,18 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
     let opts = config.conversion_options(None, args.max_bytes, None, None);
 
-    let mut reader = open_input(&args.input)
-        .map_err(|err| anyhow::anyhow!("tooned lint: failed to read {}: {err}", args.input.display()))?;
+    let mut reader = open_input(&args.input).map_err(|err| {
+        anyhow::anyhow!("tooned lint: failed to read {}: {err}", args.input.display())
+    })?;
 
     let mut sink = std::io::sink();
     let bytes = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
         Ok(BoundedRead::Fits(bytes)) => bytes,
         Ok(BoundedRead::Streamed { total_bytes }) => {
-            anyhow::bail!("tooned lint: input is too large ({total_bytes} bytes > {})", opts.max_input_bytes);
+            anyhow::bail!(
+                "tooned lint: input is too large ({total_bytes} bytes > {})",
+                opts.max_input_bytes
+            );
         }
         Err(err) => {
             anyhow::bail!("tooned lint: failed to read {}: {err}", args.input.display());
@@ -68,7 +72,9 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
         .map_err(|err| anyhow::anyhow!("tooned lint: round-trip decode failed: {err:?}"))?;
 
     if round_trip != value {
-        anyhow::bail!("tooned lint: round-trip mismatch -- TOON encoding is not lossless for this value");
+        anyhow::bail!(
+            "tooned lint: round-trip mismatch -- TOON encoding is not lossless for this value"
+        );
     }
 
     let mut warnings = Vec::new();
@@ -80,7 +86,8 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
         } else if let Some(first) = array.first().and_then(serde_json::Value::as_object) {
             let keys: Vec<&str> = first.keys().map(String::as_str).collect();
             let inconsistent = array.iter().skip(1).any(|v| {
-                v.as_object().is_none_or(|obj| obj.keys().map(String::as_str).collect::<Vec<_>>() != keys)
+                v.as_object()
+                    .is_none_or(|obj| obj.keys().map(String::as_str).collect::<Vec<_>>() != keys)
             });
             if inconsistent {
                 warnings.push("top-level array rows have inconsistent key sets");
