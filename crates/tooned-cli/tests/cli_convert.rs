@@ -348,3 +348,85 @@ fn adaptive_streaming_passthrough_when_not_smaller_enough() {
         // Should passthrough the original NDJSON, not TRON
         .stdout(predicate::str::contains("{\"id\":0,"));
 }
+
+#[allow(clippy::expect_used)]
+fn write_bytes_fixture(dir: &tempfile::TempDir, name: &str, contents: &[u8]) -> std::path::PathBuf {
+    let path = dir.path().join(name);
+    let mut f = fs::File::create(&path).expect("create fixture file");
+    f.write_all(contents).expect("write fixture file");
+    path
+}
+
+#[test]
+fn convert_to_toon_on_msgpack_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // MessagePack array of two uniform objects: [{"id":1,"name":"x"}, {"id":2,"name":"y"}]
+    let msgpack = [
+        0x92, 0x82, 0xa2, 0x69, 0x64, 0x01, 0xa4, 0x6e, 0x61, 0x6d, 0x65, 0xa1, 0x78, 0x82, 0xa2,
+        0x69, 0x64, 0x02, 0xa4, 0x6e, 0x61, 0x6d, 0x65, 0xa1, 0x79,
+    ];
+    let path = write_bytes_fixture(&dir, "input.msgpack", &msgpack);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{id,name}"))
+        .stdout(predicate::str::contains("1,x"))
+        .stdout(predicate::str::contains("2,y"));
+}
+
+#[test]
+fn convert_to_toon_on_cbor_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // CBOR array of two uniform objects: [{"id":1,"name":"x"}, {"id":2,"name":"y"}]
+    let cbor = [
+        0x82, 0xa2, 0x62, 0x69, 0x64, 0x01, 0x64, 0x6e, 0x61, 0x6d, 0x65, 0x61, 0x78, 0xa2, 0x62,
+        0x69, 0x64, 0x02, 0x64, 0x6e, 0x61, 0x6d, 0x65, 0x61, 0x79,
+    ];
+    let path = write_bytes_fixture(&dir, "input.cbor", &cbor);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{id,name}"))
+        .stdout(predicate::str::contains("1,x"))
+        .stdout(predicate::str::contains("2,y"));
+}
+
+#[test]
+fn convert_to_toon_on_json5_extension_produces_toon() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let json5 = "[{a:1,b:2},{a:3,b:4}]";
+    let path = write_fixture(&dir, "input.json5", json5);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{a,b}"))
+        .stdout(predicate::str::contains("1,2"))
+        .stdout(predicate::str::contains("3,4"));
+}
+
+#[test]
+fn convert_config_format_hint_overrides_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Extension would map to JSON, but the configured default should win.
+    write_fixture(&dir, ".tooned.toml", "format_hint = \"json5\"\n");
+    let path = write_fixture(&dir, "input.json", "[{a:1,b:2},{a:3,b:4}]");
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{a,b}"))
+        .stdout(predicate::str::contains("1,2"))
+        .stdout(predicate::str::contains("3,4"));
+}
