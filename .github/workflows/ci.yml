@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -30,8 +32,18 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Check
-        run: cargo check --all-features --all-targets
+      - name: Install cargo-rail
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-rail
+
+      - name: Check changed crates
+        if: github.event_name == 'pull_request'
+        run: cargo rail run --merge-base --surface build -- --all-features --all-targets
+
+      - name: Check all crates
+        if: github.event_name == 'push'
+        run: cargo rail run --all --surface build -- --all-features --all-targets
 
   # Required check: stable is the hard merge gate.
   test:
@@ -43,6 +55,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -50,13 +64,23 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-rail
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-rail
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
 
-      - name: Run tests with nextest
-        run: cargo nextest run --all-features
+      - name: Run changed tests
+        if: github.event_name == 'pull_request'
+        run: cargo rail run --merge-base --surface test -- --all-features
+
+      - name: Run all tests
+        if: github.event_name == 'push'
+        run: cargo rail run --all --surface test -- --all-features
 
       - name: Run doc tests
         run: cargo test --doc --all-features
@@ -149,6 +173,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -156,8 +182,18 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build docs
-        run: cargo doc --no-deps --all-features
+      - name: Install cargo-rail
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-rail
+
+      - name: Build changed docs
+        if: github.event_name == 'pull_request'
+        run: cargo rail run --merge-base --surface docs -- --all-features
+
+      - name: Build all docs
+        if: github.event_name == 'push'
+        run: cargo rail run --all --surface docs -- --all-features
 
   benchmark:
     name: Benchmark
