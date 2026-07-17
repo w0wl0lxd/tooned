@@ -166,7 +166,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
     let path = settings_path(scope)?;
     let command = super::hook_command_for(&binary, "devin");
 
-    let mut root = super::read_json_value(&path);
+    let mut root = super::read_json_value(&path)?;
     merge_devin_entry(&mut root, super::DEVIN_MATCHER, &command, is_nested_config(scope));
     super::write_json_pretty(&path, &root)
 }
@@ -180,7 +180,7 @@ pub fn uninstall(scope: Option<Scope>) -> Result<bool, InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let mut root = super::read_json_value(&path);
+    let mut root = super::read_json_value(&path)?;
     let removed =
         remove_devin_entries(&mut root, super::DEVIN_COMMAND_SUFFIX, is_nested_config(scope));
     if removed {
@@ -228,7 +228,7 @@ pub fn status() -> bool {
         let Ok(path) = settings_path(scope) else {
             return false;
         };
-        let root = super::read_json_value(&path);
+        let root = super::read_json_value(&path).unwrap_or_else(|_| serde_json::json!({}));
         has_devin_entry(&root, super::DEVIN_COMMAND_SUFFIX, is_nested_config(scope))
     })
 }

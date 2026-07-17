@@ -68,7 +68,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
     let path = settings_path(scope)?;
     let command = super::hook_command_for(&binary, "claude-code");
 
-    let mut root = super::read_json_value(&path);
+    let mut root = super::read_json_value(&path)?;
     super::merge_post_tool_use_entry(&mut root, super::CLAUDE_CODE_MATCHER, &command);
     super::write_json_pretty(&path, &root)
 }
@@ -85,7 +85,7 @@ pub fn uninstall(scope: Option<Scope>) -> Result<bool, InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let mut root = super::read_json_value(&path);
+    let mut root = super::read_json_value(&path)?;
     let removed =
         super::remove_post_tool_use_entries_by_suffix(&mut root, super::CLAUDE_CODE_COMMAND_SUFFIX);
     if removed {
@@ -104,7 +104,7 @@ pub fn status() -> bool {
         let Ok(path) = settings_path(scope) else {
             return false;
         };
-        let root = super::read_json_value(&path);
+        let root = super::read_json_value(&path).unwrap_or_else(|_| serde_json::json!({}));
         super::has_post_tool_use_entry_by_suffix(&root, super::CLAUDE_CODE_COMMAND_SUFFIX)
     })
 }
