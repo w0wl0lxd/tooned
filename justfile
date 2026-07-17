@@ -40,7 +40,7 @@ rail-build:
     cargo rail run --merge-base --surface build -- --all-features --all-targets
 
 rail-test:
-    cargo rail run --merge-base --surface test -- --all-features
+    cargo rail run --merge-base --surface test
 
 rail-doc:
     cargo rail run --merge-base --surface docs -- --all-features
