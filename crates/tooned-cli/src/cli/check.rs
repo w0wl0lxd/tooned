@@ -134,5 +134,37 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
         }
     }
 
+    #[allow(clippy::manual_unwrap_or)]
+    let (input_bytes, output_bytes) = match (report.json_bytes, report.toon_bytes) {
+        (Some(j), Some(t)) => (
+            match j.try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            },
+            match t.try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            },
+        ),
+        _ => (
+            match report.input_bytes.try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            },
+            match report.input_bytes.try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            },
+        ),
+    };
+    crate::metrics_recorder::record_convert_outcome(
+        crate::metrics_recorder::CliSurface::Check,
+        &crate::metrics_recorder::label_from_path(&args.input),
+        None,
+        report.would_convert,
+        input_bytes,
+        output_bytes,
+    );
+
     Ok(())
 }
