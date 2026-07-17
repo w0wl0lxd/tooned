@@ -316,5 +316,8 @@ fn doc_type_to_str(doc_type: DocType) -> &'static str {
         DocType::Csv => "csv",
         DocType::Tsv => "tsv",
         DocType::Xml => "xml",
+        DocType::Msgpack => "msgpack",
+        DocType::Cbor => "cbor",
+        DocType::Json5 => "json5",
     }
 }
