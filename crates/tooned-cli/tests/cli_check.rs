@@ -116,6 +116,25 @@ fn check_missing_file_still_exits_0_per_contract() {
 }
 
 #[test]
+fn check_config_format_hint_overrides_extension() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Extension would map to JSON, but the configured default should win.
+    write_fixture(&dir, ".tooned.toml", "format_hint = \"json5\"\n");
+    let path = write_fixture(&dir, "input.json", "[{a:1,b:2},{a:3,b:4}]");
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["check", path.to_str().expect("utf8 path")])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("doc type: Json5")
+                .and(predicate::str::contains("convertible: yes")),
+        );
+}
+
+#[test]
 fn check_format_hint_overrides_ambiguous_content_sniffing() {
     // A single-line, single-row delimited file has no second line for
     // `sniff_delimited` to confirm a consistent comma count against, so
