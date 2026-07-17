@@ -17,6 +17,12 @@ pub enum ParseError {
     Csv(String),
     #[error("invalid XML: {0}")]
     Xml(String),
+    #[error("invalid MessagePack: {0}")]
+    Msgpack(String),
+    #[error("invalid CBOR: {0}")]
+    Cbor(String),
+    #[error("invalid JSON5: {0}")]
+    Json5(String),
     #[error("input is not valid UTF-8")]
     Utf8,
     #[error("input nesting exceeds the safe structural-depth limit")]
