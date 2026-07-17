@@ -24,7 +24,7 @@ const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(3);
 /// the worker finishes or `WATCHDOG_TIMEOUT` elapses, whichever comes first.
 /// The caller (`hooks::run`) always exits 0 for `hook run` immediately
 /// afterwards, so a worker thread that is still running at that point is
-/// simply abandoned (terminated by the process exit) rather than blocking
+/// abandoned (terminated by the process exit) rather than blocking
 /// the hook.
 ///
 /// The stdin read deliberately happens *inside* the watchdog-guarded worker

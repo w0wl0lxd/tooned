@@ -1,9 +1,9 @@
 # TOON Model-Side Decoding — A Live Cross-Format Test
 
-This document records the finding that a Large Language Model, when presented
-with a TOON-encoded `additionalContext` from a `PostToolUse` hook, can decode
-the TOON into the underlying structured data model and answer as if it had read
-the original JSON — without any external decoder being invoked.
+This document shows that a Large Language Model, given a TOON-encoded
+`additionalContext` from a `PostToolUse` hook, can decode the TOON into the
+underlying structured data model and answer as if it had read the original
+JSON, with no external decoder involved.
 
 ## The core observation
 
@@ -50,7 +50,7 @@ Recent arXiv work supports this:
   and TRON inside end-to-end agentic loops, separating input compression
   (comprehension) from output compression (generation). TOON cuts tokens up to
   18% with accuracy within 9pp of JSON, and the largest savings accrue on tool
-  schemas and tool results — exactly where `tooned` injects TOON.
+  schemas and tool results, exactly where `tooned` injects TOON.
 - **Matveev, 2026** — *Token-Oriented Object Notation vs JSON: A Benchmark of
   Plain and Constrained Decoding Generation*
   ([arXiv:2603.03306v1](https://arxiv.org/abs/2603.03306v1)): describes TOON as
@@ -124,14 +124,14 @@ in context and reasoning about which one answers the prompt.
 
 ## Is this a big thing?
 
-It is a **big practical result**, not a new fundamental finding.
+It is a useful result in practice, but it is not a new discovery about how models work.
 
-The fundamental capability — LLMs can read and reason over alternative
-structured-data serializations as long as the logical structure is preserved —
-is already documented in the literature above. The specific demonstration here
+LLMs can already read and reason over alternative structured-data
+serializations as long as the logical structure is preserved, and the
+literature above documents exactly that. The specific demonstration here
 is valuable because it shows that:
 
-1. A transparent `PostToolUse` hook can feed TOON to the model without breaking
+1. A `PostToolUse` hook can feed TOON to the model without breaking
    normal behavior.
 2. The model can use that TOON context to answer questions exactly as it would
    from JSON.
@@ -141,13 +141,13 @@ is valuable because it shows that:
 In other words, `tooned` does not have to ship a decoder or teach the model
 TOON. The model already knows how to read it from its pretraining.
 
-## Important caveat: reading is easier than writing
+## Reading is easier than writing
 
 These tests measure **comprehension** (reading TOON and answering). Getting a
 model to **generate** valid TOON accurately is harder, because generation
 requires strict syntax adherence (counts, indentation, quoting). The arXiv
-papers note the same asymmetry: TOON as input context is robust; TOON as model
-output is more error-prone. `tooned` is designed around this asymmetry — it
+papers note the same asymmetry: TOON as input context holds up; TOON as model
+output is more error-prone. `tooned` is designed around this asymmetry, so it
 only asks the model to *read* TOON, never to *write* it.
 
 ## Reproducing the cross-format test

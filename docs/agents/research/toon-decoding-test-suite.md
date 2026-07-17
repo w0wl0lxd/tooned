@@ -393,8 +393,8 @@ does not win). A high pass rate on mismatch tests shows that the model
 specifically decodes the TOON `additionalContext` rather than merely
 repeating the original tool output.
 
-Hedged responses — where the model notes the original file does not
-contain the requested field but the 'pasted' product list does — still
+Hedged responses, where the model notes the original file does not
+contain the requested field but the 'pasted' product list does, still
 demonstrate TOON decoding, because the model extracted `SKU-1001` from
 the TOON context while keeping the original output in mind.
 

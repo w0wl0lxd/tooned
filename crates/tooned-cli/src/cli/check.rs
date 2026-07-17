@@ -69,7 +69,7 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     };
 
     // Bounded read: `check` never writes converted bytes anywhere, so an
-    // oversized input's excess is simply discarded (`io::sink()`) rather
+    // oversized input's excess is discarded (`io::sink()`) rather
     // than ever being buffered in full -- `inspect`'s own `max_input_bytes`
     // gate makes "larger than cap" and "guaranteed InputTooLarge" equivalent
     // regardless of content (finding: unbounded `read_input` previously ran
