@@ -87,7 +87,7 @@ pub fn install(mcp: bool) -> Result<(), InstallError> {
     let plugin_json_path = plugin_dir.join("plugin.json");
     let mcp_json_path = plugin_dir.join(".mcp.json");
 
-    let command = format!("{} hook run --codex", binary.display());
+    let command = super::hook_command_for(&binary, "codex");
 
     let mut hooks_root = super::read_json_value(&hooks_json_path);
     super::merge_post_tool_use_entry(&mut hooks_root, super::CODEX_MATCHER, &command);

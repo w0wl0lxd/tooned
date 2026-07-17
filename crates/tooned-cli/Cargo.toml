@@ -1,5 +1,5 @@
 [package]
-name = "tooned-cli"
+name = "tooned"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -24,11 +24,17 @@ same-file = "1"
 similar = "2.7"
 serde = { workspace = true }
 serde_json = { workspace = true }
+sonic-rs = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 tooned-core = { workspace = true }                                            #unified
 tooned-index = { workspace = true }                                           #unified
+tooned-metrics = { workspace = true } #unified
+shlex = "2.0.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2"

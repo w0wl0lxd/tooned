@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Format sniffing (JSON/NDJSON/YAML/TOML/CSV/TSV), hint-first, for the tooned workspace"
 categories.workspace = true
 
 [lib]

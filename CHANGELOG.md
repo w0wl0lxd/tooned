@@ -21,10 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against compact JSON and only returns TOON when it beats JSON by the configured margin
   (`ConversionOptions.margin_pct`) *and* survives a round-trip check — otherwise it falls
   back to `Passthrough` with a reason (`InputTooLarge`, `NotSmallerEnough`,
-  `RoundTripMismatch`, and others). `sonic-rs` opportunistically accelerates JSON parsing
-  above a size threshold on x86_64/aarch64 (falls back to `serde_json` elsewhere or below
-  threshold), verified to resolve duplicate object keys identically to the `serde_json`
-  path. An opt-in `precise_tokens` mode (`tiktoken-rs`, `cl100k_base`) computes an exact
+  `RoundTripMismatch`, and others). JSON parsing and serialization route through
+  `sonic-rs` for all JSON/NDJSON input and output; `serde_json::Value` remains the
+  interchange type because `toon_lsp::toon::encode`/`decode` require it. Duplicate
+  object keys are resolved identically to the historical `serde_json` path. An opt-in
+  `precise_tokens` mode (`tiktoken-rs`, `cl100k_base`) computes an exact
   BPE-token savings estimate instead of the default byte-count estimate; never invoked on
   the default hot path. Two safety invariants are enforced by `proptest` across every
   supported doctype: JSON→TOON→JSON round-trip fidelity, and TOON is never returned unless
@@ -126,6 +127,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses streaming when the input is large (above `max_input_bytes`) or the user explicitly
   forced `--to tron` with an NDJSON hint/extension. Small NDJSON inputs continue to use
   the bounded path. ([work-log](docs/agents/work-log/2026-07-16-006-streaming-ndjson.md))
+- **tooned-cli:** added Devin CLI hook integration. `tooned hook run --devin` reads
+  Devin's `PostToolUse` stdin shape (`tool_response.output`) and emits
+  `hookSpecificOutput.additionalContext` when TOON conversion wins.
+  `tooned hook install --devin [--scope user|project]` writes `.devin/hooks.v1.json`
+  (project scope) or `~/.config/devin/config.json` (user scope) with a matcher covering
+  `exec`, `read`, `edit`, `grep`, `glob`, and `mcp__` tools. `tooned hook uninstall --devin`,
+  `tooned hook status --devin`, and `tooned hook doctor` reporting for Devin entries
+  alongside Claude Code and Codex are also supported. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
+- **tooned-cli:** added Droid (Factory AI) hook integration. `tooned hook run --droid`
+  uses Droid's `hooks.PostToolUse` JSON format (`toolName` / `toolInput` / `toolOutput`)
+  and mutates `toolOutput` in place when TOON conversion wins. `tooned hook install --droid`
+  writes `.factory/hooks.json` (project) or `~/.factory/hooks.json` (user), `uninstall --droid`
+  only removes tooned's own entries, and `status`/`doctor` report Droid installations.
+  ([work-log](docs/agents/work-log/2026-07-17-008-droid-and-plugin-hooks.md))
+- **tooned-cli:** added plugin-wrapped agent hooks for OpenCode, Kilo Code, and Pi.
+  `tooned hook install --opencode|--kilo|--pi` writes a TypeScript plugin/extension file
+  that calls `tooned hook run --<flag>` with a Claude-compatible `tool_output` payload,
+  then mutates the agent's tool result only when TOON is smaller. `uninstall`, `status`,
+  and `doctor` are supported for all three agents.
+  ([work-log](docs/agents/work-log/2026-07-17-008-droid-and-plugin-hooks.md))
+- **tooned-metrics** new crate and `tooned metrics`/`tooned heatmap` CLI views for the
+  local-only, opt-out token-savings ledger. Records conversion outcomes from every
+  `tooned` surface and renders a GitHub/Codex-style savings heatmap.
 
 ### Fixed
 
@@ -157,6 +181,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strings/comments and TOML basic strings. (see [work-log](docs/agents/work-log/2026-07-15-001-convergence-and-wrap-hardening.md))
 - **tooned-cli / tooned-core:** format-hint coverage tests for all CLI/MCP
   `parse_doc_type_hint` mappings (json, ndjson, yaml, toml, csv, tsv, xml). (d014002)
+- **tooned-cli:** Devin CLI hook hardening: `tooned hook install --devin` now
+  writes a 5-second `timeout` on the generated hook command, coerces malformed
+  hooks files to the expected object/array shape instead of silently no-oping,
+  and uses `%APPDATA%\devin\config.json` on Windows without requiring a home
+  directory. Tests now match Devin's real `PostToolUse` payload (no
+  `hook_event_name`) and cover status, doctor, coexistence, and concurrent
+  install atomicity. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
 
 ### Security
 
