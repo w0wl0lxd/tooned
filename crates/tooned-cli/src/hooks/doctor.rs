@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `tooned hook doctor`: read-only report across both agents' configs,
+//! `tooned hook doctor`: read-only report across all agents' configs,
 //! listing every detected hook entry -- tooned's own and any foreign one
-//! (e.g. rtk's) -- by `command`/`matcher`. Never writes to either config
+//! (e.g. rtk's) -- by `command`/`matcher`. Never writes to any config
 //! file (data-model.md: "`tooned hook doctor` reads (never writes)...").
 
 use super::Scope;
@@ -26,6 +26,13 @@ pub fn run() {
             "user": devin_entries_report(super::devin::settings_path(Scope::User).ok(), super::DEVIN_COMMAND_SUFFIX, true),
             "project": devin_entries_report(super::devin::settings_path(Scope::Project).ok(), super::DEVIN_COMMAND_SUFFIX, false),
         },
+        "droid": {
+            "user": entries_report(super::droid::settings_path(Scope::User).ok(), super::DROID_COMMAND_SUFFIX),
+            "project": entries_report(super::droid::settings_path(Scope::Project).ok(), super::DROID_COMMAND_SUFFIX),
+        },
+        "opencode": super::opencode::doctor_report(),
+        "kilo": super::kilo::doctor_report(),
+        "pi": super::pi::doctor_report(),
     });
 
     // `serde_json::to_string_pretty` on a `Value` we just built from known

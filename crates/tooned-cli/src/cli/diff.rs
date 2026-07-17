@@ -35,12 +35,15 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
         Err(err) => return Err(err.into()),
     };
 
-    // `diff` is most useful for JSON today: the original is parsed so the
-    // comparison is structural, not textual. Support for YAML/TOML/XML/CSV
-    // originals can be added once `tooned-core` exposes a shared parser.
-    let original: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|e| anyhow::anyhow!("tooned diff currently supports JSON inputs: {e}"))?;
+    // Parse the original as a structured value via the same detect+parse step
+    // the conversion pipeline uses, so the comparison is structural rather
+    // than textual and works for JSON, NDJSON, YAML, TOML, CSV, TSV, and XML
+    // originals (not binary MessagePack/CBOR/JSON5).
+    let original: serde_json::Value = tooned_core::parse_to_value(&bytes, None)
+        .map_err(|e| anyhow::anyhow!("tooned diff: cannot parse input as structured data: {e}"))?;
     let roundtrip = tooned_core::decode_toon(&toon_text)?;
+
+    crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Diff, "diff");
 
     let left = serde_json::to_string_pretty(&original)?;
     let right = serde_json::to_string_pretty(&roundtrip)?;

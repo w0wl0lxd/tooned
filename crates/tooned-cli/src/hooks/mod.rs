@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! `tooned hook` subcommands: `run`, `install`, `uninstall`, `status`,
-//! `doctor`, for Claude Code, Codex CLI, and Devin CLI.
-//! See `specs/001-adaptive-toon-conversion/contracts/{claude-code-hook,codex-hook}.md`.
+//! `doctor`, for Claude Code, Codex CLI, Devin CLI, Droid, OpenCode, Kilo, and Pi.
+//! See `specs/001-adaptive-toon-conversion/contracts/{claude-code-hook,codex-hook,devin-hook,droid-hook,opencode-hook,kilo-hook,pi-hook}.md`.
 
 pub mod claude_code;
 pub mod codex;
 pub mod devin;
 pub mod doctor;
+pub mod droid;
+pub mod kilo;
+pub mod opencode;
+pub mod pi;
+pub mod plugin;
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
@@ -20,6 +26,8 @@ pub enum Scope {
 }
 
 /// Exactly one of `--claude-code` / `--codex` / `--devin` selects the target agent.
+// CLI arg struct with clap-generated bool flags; not a state machine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args)]
 pub struct AgentSelector {
     #[arg(long = "claude-code", group = "agent")]
@@ -30,6 +38,18 @@ pub struct AgentSelector {
 
     #[arg(long = "devin", group = "agent")]
     pub devin: bool,
+
+    #[arg(long = "droid", group = "agent")]
+    pub droid: bool,
+
+    #[arg(long = "opencode", group = "agent")]
+    pub opencode: bool,
+
+    #[arg(long = "kilo", group = "agent")]
+    pub kilo: bool,
+
+    #[arg(long = "pi", group = "agent")]
+    pub pi: bool,
 }
 
 #[derive(Debug, Args)]
@@ -69,7 +89,7 @@ pub enum HookCommand {
         #[command(flatten)]
         agent: AgentSelector,
     },
-    /// Reports all detected hook installations (tooned's and others') for both agents.
+    /// Reports all detected hook installations (tooned's and others') for all agents.
     Doctor,
 }
 
@@ -81,13 +101,29 @@ enum Agent {
     ClaudeCode,
     Codex,
     Devin,
+    Droid,
+    OpenCode,
+    Kilo,
+    Pi,
 }
 
 fn resolve_agent(agent: &AgentSelector) -> Option<Agent> {
-    match (agent.claude_code, agent.codex, agent.devin) {
-        (true, false, false) => Some(Agent::ClaudeCode),
-        (false, true, false) => Some(Agent::Codex),
-        (false, false, true) => Some(Agent::Devin),
+    match (
+        agent.claude_code,
+        agent.codex,
+        agent.devin,
+        agent.droid,
+        agent.opencode,
+        agent.kilo,
+        agent.pi,
+    ) {
+        (true, false, false, false, false, false, false) => Some(Agent::ClaudeCode),
+        (false, true, false, false, false, false, false) => Some(Agent::Codex),
+        (false, false, true, false, false, false, false) => Some(Agent::Devin),
+        (false, false, false, true, false, false, false) => Some(Agent::Droid),
+        (false, false, false, false, true, false, false) => Some(Agent::OpenCode),
+        (false, false, false, false, false, true, false) => Some(Agent::Kilo),
+        (false, false, false, false, false, false, true) => Some(Agent::Pi),
         _ => None,
     }
 }
@@ -98,17 +134,17 @@ const EXIT_USAGE_ERROR: i32 = 2;
 const EXIT_BINARY_NOT_ON_PATH: i32 = 4;
 
 /// Matchers exactly as specified by the contracts (verified, not guessed --
-/// see `specs/001-adaptive-toon-conversion/contracts/claude-code-hook.md`
-/// and `contracts/codex-hook.md`).
+/// see `specs/001-adaptive-toon-conversion/contracts/{claude-code-hook,codex-hook,devin-hook}.md`).
 pub(crate) const CLAUDE_CODE_MATCHER: &str = "Bash|Read|Grep|WebFetch|^mcp__";
 pub(crate) const CODEX_MATCHER: &str = "Bash";
 pub(crate) const DEVIN_MATCHER: &str = "^exec$|^read$|^edit$|^grep$|^glob$|^mcp__";
+pub(crate) const DROID_MATCHER: &str = "Execute|Read|Grep|Glob|FetchUrl|WebSearch|^mcp__";
 
 /// Upper bound on how many raw stdin bytes a `hook run` invocation will ever
 /// buffer, applied *before* any JSON parsing happens. This sits directly in
-/// an agent's tool-call path (Claude Code/Codex CLI serialize the wrapped
-/// tool's entire result -- which can be multi-GB for e.g. `cat` on a huge
-/// file, or a large `WebFetch`/`mcp__*` result -- straight onto this
+/// an agent's tool-call path (Claude Code/Codex CLI/Devin CLI serialize the
+/// wrapped tool's entire result -- which can be multi-GB for e.g. `cat` on a
+/// huge file, or a large `WebFetch`/`mcp__*` result -- straight onto this
 /// process's stdin), so an unbounded `read_to_end` here can OOM or badly
 /// stall the hook well before `ConversionOptions::default().max_input_bytes`
 /// (2 MiB) is ever consulted downstream.
@@ -135,8 +171,8 @@ pub(crate) enum InstallError {
     )]
     BinaryNotOnPath,
     #[error(
-        "could not determine a home directory for --scope user \
-         (neither $HOME nor %USERPROFILE% is set)"
+        "could not determine a user-level config directory for --scope user \
+         (no $HOME/%USERPROFILE% or, on Windows, %APPDATA% is set)"
     )]
     NoHomeDirectory,
     #[error("failed to determine the current directory: {0}")]
@@ -304,6 +340,7 @@ fn entry_command_ends_with(entry: &serde_json::Value, suffix: &str) -> bool {
 pub(crate) const CLAUDE_CODE_COMMAND_SUFFIX: &str = "hook run --claude-code";
 pub(crate) const CODEX_COMMAND_SUFFIX: &str = "hook run --codex";
 pub(crate) const DEVIN_COMMAND_SUFFIX: &str = "hook run --devin";
+pub(crate) const DROID_COMMAND_SUFFIX: &str = "hook run --droid";
 
 /// Removes every `hooks.PostToolUse` entry whose inner command ends with
 /// `suffix` (FR-018); every other entry, including a foreign tool's, is left
@@ -374,6 +411,10 @@ pub(crate) enum HookProtocol {
     ClaudeCode,
     Codex,
     Devin,
+    Droid,
+    OpenCode,
+    Kilo,
+    Pi,
 }
 
 impl HookProtocol {
@@ -383,7 +424,10 @@ impl HookProtocol {
     /// object that also carries `success`/`error`).
     fn extract_bytes(self, payload: &serde_json::Value) -> Option<Vec<u8>> {
         match self {
-            HookProtocol::ClaudeCode => {
+            HookProtocol::ClaudeCode
+            | HookProtocol::OpenCode
+            | HookProtocol::Kilo
+            | HookProtocol::Pi => {
                 let value = payload.get("tool_output")?;
                 Some(match value {
                     serde_json::Value::String(s) => s.as_bytes().to_vec(),
@@ -410,6 +454,58 @@ impl HookProtocol {
                     }
                     other => serde_json::to_vec(other).ok(),
                 }
+            }
+            HookProtocol::Droid => {
+                let value = payload.get("tool_response")?;
+                Some(match value {
+                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
+                    serde_json::Value::Object(obj) => {
+                        // Droid tool_response schemas are tool-specific. Try the
+                        // common string-valued output fields first, then MCP-style
+                        // content arrays, then arrays/objects that are themselves
+                        // the payload to encode. Fall back to the full object JSON.
+                        if let Some(s) = obj.get("output").and_then(serde_json::Value::as_str) {
+                            s.as_bytes().to_vec()
+                        } else if let Some(s) =
+                            obj.get("content").and_then(serde_json::Value::as_str)
+                        {
+                            s.as_bytes().to_vec()
+                        } else if let Some(s) =
+                            obj.get("stdout").and_then(serde_json::Value::as_str)
+                        {
+                            s.as_bytes().to_vec()
+                        } else if let Some(s) =
+                            obj.get("result").and_then(serde_json::Value::as_str)
+                        {
+                            s.as_bytes().to_vec()
+                        } else if let Some(s) = obj.get("text").and_then(serde_json::Value::as_str)
+                        {
+                            s.as_bytes().to_vec()
+                        } else if let Some(arr) =
+                            obj.get("content").and_then(serde_json::Value::as_array)
+                        {
+                            let mut text = String::new();
+                            for item in arr {
+                                if let Some(t) =
+                                    item.get("text").and_then(serde_json::Value::as_str)
+                                {
+                                    if !text.is_empty() {
+                                        text.push('\n');
+                                    }
+                                    text.push_str(t);
+                                }
+                            }
+                            if text.is_empty() {
+                                serde_json::to_vec(value).ok()?
+                            } else {
+                                text.into_bytes()
+                            }
+                        } else {
+                            serde_json::to_vec(value).ok()?
+                        }
+                    }
+                    other => serde_json::to_vec(other).ok()?,
+                })
             }
         }
     }
@@ -439,25 +535,90 @@ pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option
 
     let opts = tooned_core::ConversionOptions::default();
     let conversion = tooned_core::maybe_tooned(&bytes, &opts).ok()?;
-    match conversion {
+    let result = match conversion {
         tooned_core::Conversion::Toon { text, .. } => {
             let out = match protocol {
-                HookProtocol::ClaudeCode => serde_json::json!({
+                HookProtocol::ClaudeCode
+                | HookProtocol::OpenCode
+                | HookProtocol::Kilo
+                | HookProtocol::Pi => serde_json::json!({
                     "hookSpecificOutput": {
                         "hookEventName": "PostToolUse",
                         "updatedToolOutput": text,
                     }
                 }),
-                HookProtocol::Codex | HookProtocol::Devin => serde_json::json!({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PostToolUse",
-                        "additionalContext": text,
-                    }
-                }),
+                HookProtocol::Codex | HookProtocol::Devin | HookProtocol::Droid => {
+                    serde_json::json!({
+                        "hookSpecificOutput": {
+                            "hookEventName": "PostToolUse",
+                            "additionalContext": text,
+                        }
+                    })
+                }
             };
             serde_json::to_string(&out).ok()
         }
         tooned_core::Conversion::Passthrough { .. } => None,
+    };
+    {
+        #[allow(clippy::single_match_else, clippy::manual_unwrap_or)]
+        let (converted, output_len) = if let Some(s) = &result {
+            let len = match s.len().try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            };
+            (true, len)
+        } else {
+            let len = match bytes.len().try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            };
+            (false, len)
+        };
+        let scope = match protocol {
+            HookProtocol::ClaudeCode => crate::metrics_recorder::CliSurface::HookClaude,
+            HookProtocol::Codex => crate::metrics_recorder::CliSurface::HookCodex,
+            HookProtocol::Devin => crate::metrics_recorder::CliSurface::HookDevin,
+            HookProtocol::Droid => crate::metrics_recorder::CliSurface::HookDroid,
+            HookProtocol::OpenCode => crate::metrics_recorder::CliSurface::HookOpenCode,
+            HookProtocol::Kilo => crate::metrics_recorder::CliSurface::HookKilo,
+            HookProtocol::Pi => crate::metrics_recorder::CliSurface::HookPi,
+        };
+        #[allow(clippy::manual_unwrap_or)]
+        let input_len = match bytes.len().try_into() {
+            Ok(v) => v,
+            Err(_) => i64::MAX,
+        };
+        crate::metrics_recorder::record_convert_outcome(
+            scope,
+            &crate::metrics_recorder::SourceLabel::None,
+            None,
+            converted,
+            input_len,
+            output_len,
+        );
+    }
+    result
+}
+
+/// Reads stdin up to [`MAX_HOOK_STDIN_BYTES`], runs it through
+/// [`process_hook_stdin`] with the given protocol, and prints any hook
+/// decision to stdout. This is the shared runtime body for all agents whose
+/// hook execution model is a simple synchronous command (Claude Code, Devin,
+/// Droid, OpenCode, Kilo, Pi). Codex keeps its own watchdog path.
+///
+/// The caller (`hooks::run`) always exits 0 for `hook run`, so a failure here
+/// simply prints nothing and lets the agent fall back to the original output.
+pub(crate) fn run_hook_protocol(protocol: HookProtocol) {
+    let mut buf = Vec::new();
+    let read_result = std::io::stdin().take(MAX_HOOK_STDIN_BYTES).read_to_end(&mut buf);
+    if read_result.is_err() {
+        return;
+    }
+
+    let outcome = std::panic::catch_unwind(|| process_hook_stdin(&buf, protocol));
+    if let Ok(Some(output)) = outcome {
+        println!("{output}");
     }
 }
 
@@ -479,6 +640,10 @@ pub fn run(args: &HookArgs) {
                 Some(Agent::ClaudeCode) => claude_code::run_hook(),
                 Some(Agent::Codex) => codex::run_hook(),
                 Some(Agent::Devin) => devin::run_hook(),
+                Some(Agent::Droid) => droid::run_hook(),
+                Some(Agent::OpenCode) => opencode::run_hook(),
+                Some(Agent::Kilo) => kilo::run_hook(),
+                Some(Agent::Pi) => pi::run_hook(),
                 // No/ambiguous agent selection on `hook run` is itself a
                 // form of doubt -- the contract's fail-safe exit-0 guarantee
                 // applies uniformly, not just to payload-driven failure.
@@ -528,9 +693,33 @@ pub fn run(args: &HookArgs) {
                     std::process::exit(install_exit_code(&e));
                 }
             }
+            Some(Agent::Droid) => {
+                if let Err(e) = droid::install(*scope, *mcp) {
+                    eprintln!("tooned hook install --droid: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            }
+            Some(Agent::OpenCode) => {
+                if let Err(e) = opencode::install(*scope, *mcp) {
+                    eprintln!("tooned hook install --opencode: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            }
+            Some(Agent::Kilo) => {
+                if let Err(e) = kilo::install(*scope, *mcp) {
+                    eprintln!("tooned hook install --kilo: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            }
+            Some(Agent::Pi) => {
+                if let Err(e) = pi::install(*scope, *mcp) {
+                    eprintln!("tooned hook install --pi: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            }
             None => {
                 eprintln!(
-                    "tooned hook install: specify exactly one of --claude-code, --codex, or --devin"
+                    "tooned hook install: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
@@ -575,9 +764,49 @@ pub fn run(args: &HookArgs) {
                     std::process::exit(install_exit_code(&e));
                 }
             },
+            Some(Agent::Droid) => match droid::uninstall(*scope) {
+                Ok(true) => println!("tooned: removed the Droid hook entry"),
+                Ok(false) => {
+                    println!("tooned: nothing to remove (Droid hook not installed)");
+                }
+                Err(e) => {
+                    eprintln!("tooned hook uninstall --droid: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            },
+            Some(Agent::OpenCode) => match opencode::uninstall(*scope) {
+                Ok(true) => println!("tooned: removed the OpenCode plugin"),
+                Ok(false) => {
+                    println!("tooned: nothing to remove (OpenCode plugin not installed)");
+                }
+                Err(e) => {
+                    eprintln!("tooned hook uninstall --opencode: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            },
+            Some(Agent::Kilo) => match kilo::uninstall(*scope) {
+                Ok(true) => println!("tooned: removed the Kilo plugin"),
+                Ok(false) => {
+                    println!("tooned: nothing to remove (Kilo plugin not installed)");
+                }
+                Err(e) => {
+                    eprintln!("tooned hook uninstall --kilo: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            },
+            Some(Agent::Pi) => match pi::uninstall(*scope) {
+                Ok(true) => println!("tooned: removed the Pi extension"),
+                Ok(false) => {
+                    println!("tooned: nothing to remove (Pi extension not installed)");
+                }
+                Err(e) => {
+                    eprintln!("tooned hook uninstall --pi: {e}");
+                    std::process::exit(install_exit_code(&e));
+                }
+            },
             None => {
                 eprintln!(
-                    "tooned hook uninstall: specify exactly one of --claude-code, --codex, or --devin"
+                    "tooned hook uninstall: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
@@ -604,9 +833,37 @@ pub fn run(args: &HookArgs) {
                     if installed { "installed" } else { "not installed" }
                 );
             }
+            Some(Agent::Droid) => {
+                let installed = droid::status();
+                println!(
+                    "tooned: Droid hook is {}",
+                    if installed { "installed" } else { "not installed" }
+                );
+            }
+            Some(Agent::OpenCode) => {
+                let installed = opencode::status();
+                println!(
+                    "tooned: OpenCode plugin is {}",
+                    if installed { "installed" } else { "not installed" }
+                );
+            }
+            Some(Agent::Kilo) => {
+                let installed = kilo::status();
+                println!(
+                    "tooned: Kilo plugin is {}",
+                    if installed { "installed" } else { "not installed" }
+                );
+            }
+            Some(Agent::Pi) => {
+                let installed = pi::status();
+                println!(
+                    "tooned: Pi extension is {}",
+                    if installed { "installed" } else { "not installed" }
+                );
+            }
             None => {
                 eprintln!(
-                    "tooned hook status: specify exactly one of --claude-code, --codex, or --devin"
+                    "tooned hook status: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }

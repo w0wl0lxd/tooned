@@ -12,8 +12,8 @@ smaller. Nothing to configure, nothing to opt into per call, no source file
 ever touched. When TOON doesn't win, the agent sees the original JSON,
 unchanged.
 
-It runs as a Claude Code hook, a Codex CLI hook, an MCP server, or a plain
-CLI you can pipe things through. It is not a replacement for
+It runs as a Claude Code hook, a Codex CLI hook, a Devin CLI hook, an MCP
+server, or a plain CLI you can pipe things through. It is not a replacement for
 [rtk](https://github.com/rtk-ai/rtk) — rtk rewrites and compresses command
 output in general; tooned does one thing, re-encoding structured data, and
 is built to sit alongside rtk in the same agent session without either tool
@@ -119,14 +119,31 @@ tooned hook install --claude-code --scope project
 
 # Codex CLI — writes a .codex-plugin/ bundle (hook + MCP server registration)
 tooned hook install --codex --mcp
+
+# Devin CLI — writes .devin/hooks.v1.json (project scope) or ~/.config/devin/config.json (user scope)
+tooned hook install --devin --scope project
+
+# Droid (Factory AI) — writes .factory/hooks.json (project) or ~/.factory/hooks.json (user)
+tooned hook install --droid --scope project
+
+# OpenCode — writes .opencode/plugins/tooned.ts (project) or ~/.config/opencode/plugins/tooned.ts (user)
+tooned hook install --opencode --scope project
+
+# Kilo Code — writes .kilo/plugin/tooned.ts (project) or ~/.config/kilo/plugin/tooned.ts (user)
+tooned hook install --kilo --scope project
+
+# Pi — writes .pi/extensions/tooned.ts (project) or ~/.pi/agent/extensions/tooned.ts (user)
+tooned hook install --pi --scope project
 ```
 
 Codex requires an explicit trust step before a newly installed hook runs —
 `tooned hook install --codex` tells you to run `/hooks` inside Codex CLI
-after it finishes.
+after it finishes. Devin CLI loads hooks from `.devin/hooks.v1.json`
+automatically; use `/hooks` to verify the loaded entries.
 
-From here, a `Bash`, `Read`, `Grep`, `WebFetch`, or MCP tool call that
-returns JSON-shaped output gets inspected after it completes. If TOON wins,
+From here, an agent tool call (`Bash`/`exec`/`Execute`, `Read`/`read`, `Grep`/`grep`,
+`WebFetch`, or any MCP tool) that returns JSON-shaped output gets inspected
+after it completes. If TOON wins,
 the agent sees the TOON version. If anything about the payload is
 ambiguous — not JSON, too large, doesn't round-trip cleanly back to the
 original — the agent sees exactly what the tool call actually returned.
@@ -192,7 +209,7 @@ that project's `.gitignore` the first time it's created.
 | `tooned wrap -- <command>` | Runs `<command>`, adaptively converts its captured stdout. |
 | `tooned index [path]` / `index sync` / `index status` / `index show <file>` | The `.tooned/` project index. |
 | `tooned stats [path] [--top N] [--json]` | Ranked savings report from the index. `--json` emits machine-readable JSON. |
-| `tooned hook install (--claude-code\|--codex) [--scope user\|project] [--mcp]` | Installs the agent hook, idempotently. |
+| `tooned hook install (--claude-code\|--codex\|--devin\|--droid\|--opencode\|--kilo\|--pi) [--scope user\|project] [--mcp]` | Installs the agent hook or plugin wrapper, idempotently. |
 | `tooned hook uninstall / status / doctor` | Removes, checks, or audits hook installations — never touches another tool's entries. |
 | `tooned mcp serve` | Runs the MCP server over stdio. |
 
@@ -202,7 +219,8 @@ that project's `.gitignore` the first time it's created.
 crates/
 ├── tooned-core/    lib — detection + adaptive conversion, no I/O, no SQLite
 ├── tooned-index/   lib — the .tooned/ SQLite project index
-└── tooned-cli/     bin "tooned" — CLI, hook installers, MCP server
+├── tooned-metrics/ lib — local-only token-savings metrics ledger
+└── tooned-cli/     bin "tooned" — CLI, hook installers, MCP server, metrics views
 ```
 
 `tooned-core` is kept dependency-minimal on purpose: it's what gets loaded
@@ -241,8 +259,8 @@ Contribution guidelines, DCO sign-off, and commit conventions are in
 ## Status
 
 v2 adds XML input support to the existing v1 surface: adaptive JSON/NDJSON/
-YAML/TOML/CSV/TSV/XML conversion; the Claude Code and Codex CLI hooks
-(install/uninstall/status/doctor, idempotent and safe alongside another
+YAML/TOML/CSV/TSV/XML conversion; the Claude Code, Codex CLI, and Devin CLI
+hooks (install/uninstall/status/doctor, idempotent and safe alongside another
 tool's hook entries); the standalone `convert`/`check`/`pipe`/`wrap` CLI;
 the `.tooned/` project index (`index`/`index sync`/`stats`); and an
 agent-agnostic MCP server (`tooned_convert`/`tooned_detect`/

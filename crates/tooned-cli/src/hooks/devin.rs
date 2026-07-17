@@ -9,7 +9,6 @@
 //! config nests hooks under a `"hooks"` key like Claude Code's settings.json.
 //! See <https://docs.devin.ai/cli/extensibility/hooks/overview>.
 
-use std::io::Read as _;
 use std::path::PathBuf;
 
 use super::{InstallError, Scope};
@@ -18,6 +17,12 @@ use super::{InstallError, Scope};
 /// never touches a developer's global Devin settings without being asked.
 const DEFAULT_SCOPE: Scope = Scope::Project;
 
+/// Devin CLI `timeout` in seconds for the generated hook command. Chosen
+/// well under any plausible Devin-side default while still generous for the
+/// sub-5 ms conversion hot path plus a large stdin read.
+const HOOK_TIMEOUT_SECONDS: u64 = 5;
+
+#[cfg(not(windows))]
 fn home_dir() -> Option<PathBuf> {
     for var in ["HOME", "USERPROFILE"] {
         if let Some(v) = std::env::var_os(var)
@@ -35,7 +40,6 @@ fn project_hooks_path() -> Result<PathBuf, InstallError> {
 }
 
 fn user_config_path() -> Result<PathBuf, InstallError> {
-    let home = home_dir().ok_or(InstallError::NoHomeDirectory)?;
     #[cfg(windows)]
     {
         let appdata = std::env::var_os("APPDATA").ok_or(InstallError::NoHomeDirectory)?;
@@ -43,6 +47,7 @@ fn user_config_path() -> Result<PathBuf, InstallError> {
     }
     #[cfg(not(windows))]
     {
+        let home = home_dir().ok_or(InstallError::NoHomeDirectory)?;
         Ok(home.join(".config").join("devin").join("config.json"))
     }
 }
@@ -58,19 +63,37 @@ fn is_nested_config(scope: Scope) -> bool {
     matches!(scope, Scope::User)
 }
 
+/// Returns the mutable `PostToolUse` array for the Devin config at `root`.
+/// Coerces `root` to an object and `PostToolUse` to an array when they exist
+/// but are the wrong JSON type, so `install` cannot silently no-op against a
+/// malformed hooks file.
 fn post_tool_use_array(
     root: &mut serde_json::Value,
     nested: bool,
 ) -> Option<&mut Vec<serde_json::Value>> {
+    if !root.is_object() {
+        *root = serde_json::json!({});
+    }
+    let root_obj = root.as_object_mut()?;
+
     if nested {
-        let hooks = root.as_object_mut()?.entry("hooks").or_insert_with(|| serde_json::json!({}));
-        let arr =
-            hooks.as_object_mut()?.entry("PostToolUse").or_insert_with(|| serde_json::json!([]));
-        arr.as_array_mut()
+        let hooks_val = root_obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
+        if !hooks_val.is_object() {
+            *hooks_val = serde_json::json!({});
+        }
+        let hooks_obj = hooks_val.as_object_mut()?;
+
+        let arr_val = hooks_obj.entry("PostToolUse").or_insert_with(|| serde_json::json!([]));
+        if !arr_val.is_array() {
+            *arr_val = serde_json::json!([]);
+        }
+        arr_val.as_array_mut()
     } else {
-        let arr =
-            root.as_object_mut()?.entry("PostToolUse").or_insert_with(|| serde_json::json!([]));
-        arr.as_array_mut()
+        let arr_val = root_obj.entry("PostToolUse").or_insert_with(|| serde_json::json!([]));
+        if !arr_val.is_array() {
+            *arr_val = serde_json::json!([]);
+        }
+        arr_val.as_array_mut()
     }
 }
 
@@ -88,7 +111,11 @@ fn merge_devin_entry(
     }
     arr.push(serde_json::json!({
         "matcher": matcher,
-        "hooks": [ { "type": "command", "command": command } ],
+        "hooks": [ {
+            "type": "command",
+            "command": command,
+            "timeout": HOOK_TIMEOUT_SECONDS,
+        } ],
     }));
     true
 }
@@ -117,22 +144,17 @@ fn has_devin_entry(root: &serde_json::Value, suffix: &str, nested: bool) -> bool
 /// -- the caller (`hooks::run`) always exits 0 for `hook run`, matching the
 /// fail-safe behavior expected by Devin CLI command hooks.
 pub fn run_hook() {
-    let mut buf = Vec::new();
-    let read_result = std::io::stdin().take(super::MAX_HOOK_STDIN_BYTES).read_to_end(&mut buf);
-    if read_result.is_err() {
-        return;
-    }
-
-    let outcome =
-        std::panic::catch_unwind(|| super::process_hook_stdin(&buf, super::HookProtocol::Devin));
-    if let Ok(Some(output)) = outcome {
-        println!("{output}");
-    }
+    super::run_hook_protocol(super::HookProtocol::Devin);
 }
 
 /// Idempotently installs the `PostToolUse` hook entry into the Devin hooks
 /// file for the requested scope. Verifies `tooned` resolves on `PATH` first,
 /// then merges by exact `command` string, leaving every other entry untouched.
+///
+/// The generated hook entry includes a `timeout` of 5 seconds so Devin CLI
+/// kills a hung hook long before any agent-side default would fire.
+/// `mcp` is currently unused for the Devin target; it is accepted so the
+/// top-level `tooned hook install` surface stays uniform across agents.
 pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
     let Some(binary) = super::resolve_tooned_on_path() else {
         return Err(InstallError::BinaryNotOnPath);
