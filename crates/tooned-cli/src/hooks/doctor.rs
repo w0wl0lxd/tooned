@@ -48,7 +48,16 @@ fn entries_report(path: Option<std::path::PathBuf>, own_suffix: &str) -> serde_j
     let Some(path) = path else {
         return serde_json::json!({ "path": null, "entries": [] });
     };
-    let root = super::read_json_value(&path);
+    let root = match super::read_json_value(&path) {
+        Ok(value) => value,
+        Err(e) => {
+            return serde_json::json!({
+                "path": path.display().to_string(),
+                "entries": [],
+                "error": e.to_string(),
+            });
+        }
+    };
     let entries: Vec<serde_json::Value> = super::collect_post_tool_use_entries(&root)
         .into_iter()
         .map(|(matcher, command)| {
@@ -70,7 +79,16 @@ fn devin_entries_report(
     let Some(path) = path else {
         return serde_json::json!({ "path": null, "entries": [] });
     };
-    let root = super::read_json_value(&path);
+    let root = match super::read_json_value(&path) {
+        Ok(value) => value,
+        Err(e) => {
+            return serde_json::json!({
+                "path": path.display().to_string(),
+                "entries": [],
+                "error": e.to_string(),
+            });
+        }
+    };
     let entries: Vec<serde_json::Value> = super::devin::collect_entries(&root, nested)
         .into_iter()
         .map(|(matcher, command)| {
