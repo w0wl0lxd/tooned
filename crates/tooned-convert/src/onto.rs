@@ -17,6 +17,7 @@
 //! passthrough for everything else.
 
 use serde_json::Value;
+use std::io::Write;
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, PassthroughReason, ToonedError,
 };
@@ -36,7 +37,7 @@ fn sorted_keys(obj: &serde_json::Map<String, Value>) -> Vec<&str> {
 }
 
 fn quote_json(value: &Value) -> Result<String, ToonedError> {
-    serde_json::to_string(value)
+    sonic_rs::to_string(value)
         .map_err(|e| ToonedError::DecodeFailed(format!("failed to serialize ONTO cell: {e}")))
 }
 
@@ -159,7 +160,7 @@ pub fn decode(text: &str) -> Result<Value, ToonedError> {
     let keys: Vec<String> = key_cells
         .iter()
         .map(|c| {
-            serde_json::from_str::<String>(c).map_err(|e| {
+            sonic_rs::from_str::<String>(c).map_err(|e| {
                 ToonedError::DecodeFailed(format!("invalid ONTO schema key {c:?}: {e}"))
             })
         })
@@ -185,7 +186,7 @@ pub fn decode(text: &str) -> Result<Value, ToonedError> {
 
         let mut obj = serde_json::Map::new();
         for (key, cell) in keys.iter().zip(cells.iter()) {
-            let value: Value = serde_json::from_str(cell).map_err(|e| {
+            let value: Value = sonic_rs::from_str(cell).map_err(|e| {
                 ToonedError::DecodeFailed(format!("invalid ONTO cell {cell:?}: {e}"))
             })?;
             obj.insert(key.clone(), value);
@@ -240,9 +241,15 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
     let shape = shape::classify(&value);
 
     let mut counter = ByteCountingWriter(0);
-    serde_json::to_writer(&mut counter, &value).map_err(|e| {
-        ToonedError::DecodeFailed(format!("failed to compute JSON size for ONTO comparison: {e}"))
-    })?;
+    {
+        let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
+        sonic_rs::to_writer(&mut writer, &value).map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to compute JSON size for ONTO comparison: {e}"))
+        })?;
+        writer.flush().map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to flush ONTO JSON byte counter: {e}"))
+        })?;
+    }
     let json_bytes = counter.0;
 
     let Ok(encoded) = encode(&value) else {
