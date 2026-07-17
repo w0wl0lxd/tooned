@@ -55,11 +55,13 @@ enum Command {
     Metrics(cli::metrics::MetricsArgs),
     /// Interactive ratatui metrics dashboard.
     Dashboard(cli::dashboard::DashboardArgs),
-    /// Generate shell completion scripts (release/packaging helper).
-    #[command(hide = true)]
-    Completions { shell: Shell },
-    /// Generate the man page (release/packaging helper).
-    #[command(hide = true)]
+    /// Generate shell completion scripts (bash, zsh, fish, nushell, elvish, powershell).
+    Completions {
+        /// Target shell.
+        #[arg(long, value_name = "SHELL")]
+        shell: Shell,
+    },
+    /// Generate the man page (roff).
     Man,
 }
 
