@@ -29,4 +29,26 @@ build:
 build-release:
     cargo build --release --all-features
 
-validate: fmt-check check clippy test
+# cargo-rail helpers for monorepo plan/run/unify workflows
+rail-plan:
+    cargo rail plan --merge-base --explain
+
+rail-run:
+    cargo rail run --merge-base --profile ci
+
+rail-build:
+    cargo rail run --merge-base --surface build -- --all-features --all-targets
+
+rail-test:
+    cargo rail run --merge-base --surface test -- --all-features
+
+rail-doc:
+    cargo rail run --merge-base --surface docs -- --all-features
+
+rail-unify-check:
+    cargo rail unify --check
+
+rail-unify:
+    cargo rail unify
+
+validate: fmt-check check clippy test rail-unify-check
