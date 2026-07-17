@@ -67,6 +67,27 @@ fn convert_to_json_decodes_a_toon_file_back_to_compact_json() {
 }
 
 #[test]
+fn convert_to_json_decodes_toon_whose_first_key_is_class() {
+    // Regression for the `class `/`!schema ` prefix ambiguity: a plain TOON
+    // document whose first key is `class` must decode as TOON (not be
+    // mistaken for a TRON record header and fail with exit 3).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let toon = "class: \"user\"\nid: 7\nname: \"Ada\"\n";
+    let path = write_fixture(&dir, "input.toon", toon);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "json"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(r#""class":"user""#)
+                .and(predicate::str::contains(r#""id":7"#))
+                .and(predicate::str::contains(r#""name":"Ada""#)),
+        );
+}
+
+#[test]
 fn convert_never_mutates_the_source_file() {
     let dir = tempfile::tempdir().expect("tempdir");
     let json = uniform_array_json(20);
@@ -309,7 +330,7 @@ fn large_ndjson_file_converts_with_to_tron() {
 }
 
 #[test]
-fn adaptive_streaming_chooses_tron_when_smaller() {
+fn adaptive_bounded_chooses_toon_for_small_ndjson() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut ndjson = String::new();
     for i in 0..1000 {
@@ -324,19 +345,20 @@ fn adaptive_streaming_chooses_tron_when_smaller() {
     }
     let path = write_fixture(&dir, "input.ndjson", &ndjson);
 
-    // Default adaptive path should choose TRON for this uniform data
+    // Small NDJSON fits in memory, so the default adaptive path routes through
+    // maybe_tooned and picks TOON when it beats compact JSON.
     Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["convert", path.to_str().expect("utf8 path")])
         .assert()
         .success()
-        .stdout(predicate::str::contains("class A:"));
+        .stdout(predicate::str::contains("[1000]{"));
 }
 
 #[test]
-fn adaptive_streaming_passthrough_when_not_smaller_enough() {
+fn adaptive_bounded_chooses_toon_for_single_row_ndjson() {
     let dir = tempfile::tempdir().expect("tempdir");
-    // Single object - TRON won't be smaller enough with default margin
+    // Single object - TOON still wins for a uniform flat object.
     let ndjson = "{\"id\":0,\"name\":\"row-0\",\"active\":true,\"score\":0.5}\n";
     let path = write_fixture(&dir, "input.ndjson", ndjson);
 
@@ -345,8 +367,7 @@ fn adaptive_streaming_passthrough_when_not_smaller_enough() {
         .args(["convert", path.to_str().expect("utf8 path")])
         .assert()
         .success()
-        // Should passthrough the original NDJSON, not TRON
-        .stdout(predicate::str::contains("{\"id\":0,"));
+        .stdout(predicate::str::contains("[1]{"));
 }
 
 #[allow(clippy::expect_used)]

@@ -30,6 +30,9 @@ pub struct Config {
     pub precise_tokens: Option<bool>,
     /// `tooned index watch` defaults.
     pub watch: Option<WatchConfig>,
+    /// Disable local metrics recording (mirrors the
+    /// environment variable). When true, surfaces skip recording.
+    pub metrics_disabled: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -63,6 +66,18 @@ impl Config {
         let config: Self = toml::from_str(&text)
             .map_err(|e| anyhow::anyhow!("failed to parse config file {}: {e}", path.display()))?;
         Ok(config)
+    }
+
+    /// True when the user has opted out of metrics recording via the config
+    /// file (). The environment variable is consulted
+    /// by the recorder directly; this accessor lets the CLI honor the file.
+    #[allow(dead_code)]
+    pub fn metrics_disabled(&self) -> bool {
+        let default = false;
+        match self.metrics_disabled {
+            Some(v) => v,
+            None => default,
+        }
     }
 
     fn discover_path() -> Option<PathBuf> {

@@ -36,7 +36,7 @@ exceptions = [
   ], crate = "tooned-index" },
   { allow = [
     "AGPL-3.0-only",
-  ], crate = "tooned-cli" },
+  ], crate = "tooned" },
   { allow = [
     "AGPL-3.0-only",
   ], crate = "tooned-types" },
@@ -67,6 +67,9 @@ exceptions = [
   { allow = [
     "AGPL-3.0-only",
   ], crate = "tooned-convert" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-metrics" },
 ]
 
 [bans]

@@ -4,7 +4,6 @@
 //! `hook install --claude-code`.
 //! See `specs/001-adaptive-toon-conversion/contracts/claude-code-hook.md`.
 
-use std::io::Read as _;
 use std::path::PathBuf;
 
 use super::{InstallError, Scope};
@@ -16,26 +15,7 @@ use super::{InstallError, Scope};
 /// Claude Code's own platform-level fail-open guarantee plus tooned's own
 /// independent no-panic guarantee (constitution Principle I).
 pub fn run_hook() {
-    // Bounded read: this sits directly in an agent's tool-call path, and the
-    // wrapped tool's output can be arbitrarily large (see
-    // `super::MAX_HOOK_STDIN_BYTES`'s doc comment) -- an unbounded
-    // `read_to_end` here would fully materialize a multi-GB payload before
-    // `ConversionOptions::max_input_bytes` is ever consulted downstream.
-    let mut buf = Vec::new();
-    let read_result = std::io::stdin().take(super::MAX_HOOK_STDIN_BYTES).read_to_end(&mut buf);
-    if read_result.is_err() {
-        return;
-    }
-
-    // Defense-in-depth: `process_hook_stdin` is designed to never panic, but
-    // this hook sits directly in an agent's tool-call path, so a slip in
-    // that guarantee must still fail safe rather than propagate.
-    let outcome = std::panic::catch_unwind(|| {
-        super::process_hook_stdin(&buf, super::HookProtocol::ClaudeCode)
-    });
-    if let Ok(Some(output)) = outcome {
-        println!("{output}");
-    }
+    super::run_hook_protocol(super::HookProtocol::ClaudeCode);
 }
 
 /// Default scope when `--scope` is not passed. Documented explicitly here
@@ -86,7 +66,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let command = format!("{} hook run --claude-code", binary.display());
+    let command = super::hook_command_for(&binary, "claude-code");
 
     let mut root = super::read_json_value(&path);
     super::merge_post_tool_use_entry(&mut root, super::CLAUDE_CODE_MATCHER, &command);
