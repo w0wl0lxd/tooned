@@ -172,7 +172,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Criterion benchmarks
-        run: cargo bench --all-features -p tooned-cli
+        run: cargo bench --all-features -p tooned
 
       - name: Upload benchmark report
         uses: actions/upload-artifact@v7
@@ -196,4 +196,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run ignored latency guardrail
-        run: cargo test --release -p tooned-cli --test hot_path_latency -- --ignored
+        run: cargo test --release -p tooned --test hot_path_latency -- --ignored

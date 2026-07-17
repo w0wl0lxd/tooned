@@ -3,7 +3,7 @@
 //! tooned CLI entrypoint.
 //!
 //! Scaffold only: subcommands (`convert`, `check`, `pipe`, `wrap`, `index`,
-//! `stats`, `hook`, `mcp`) are implemented following the spec-kit pipeline
+//! `stats`, `diff`, `hook`, `heatmap`, `metrics`, `mcp`) are implemented following the spec-kit pipeline
 //! (`specs/`), not directly in this initial commit. See
 //! `specs/001-adaptive-toon-conversion/contracts/cli.md` for the exact
 //! command surface every variant below mirrors.
@@ -12,6 +12,7 @@ mod cli;
 mod config;
 mod hooks;
 mod mcp;
+mod metrics_recorder;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
@@ -43,10 +44,14 @@ enum Command {
     Stats(cli::stats::StatsArgs),
     /// Compare the original JSON with the TOON round-trip.
     Diff(cli::diff::DiffArgs),
-    /// Agent hook install/uninstall/status/doctor (Claude Code, Codex).
+    /// Agent hook install/uninstall/status/doctor (Claude Code, Codex, Devin, Droid, OpenCode, Kilo, Pi).
     Hook(hooks::HookArgs),
     /// Model Context Protocol server.
     Mcp(mcp::McpArgs),
+    /// GitHub/Codex-style token-savings heatmap.
+    Heatmap(cli::heatmap::HeatmapArgs),
+    /// Inspect the local token-savings metrics ledger.
+    Metrics(cli::metrics::MetricsArgs),
     /// Generate shell completion scripts (release/packaging helper).
     #[command(hide = true)]
     Completions { shell: Shell },
@@ -70,6 +75,8 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Mcp(args) => mcp::run(args),
+        Command::Heatmap(args) => cli::heatmap::run(args),
+        Command::Metrics(args) => cli::metrics::run(args),
         Command::Completions { shell } => {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();

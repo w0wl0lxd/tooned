@@ -90,6 +90,7 @@ fn run_scan(root: &Path) -> anyhow::Result<()> {
         summary.files_classified,
         tooned_index::index_db_path(root).display()
     );
+    crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Index, "scan");
     Ok(())
 }
 
@@ -103,6 +104,10 @@ fn run_sync(root: &Path) -> anyhow::Result<()> {
                 summary.updated,
                 summary.unchanged,
                 summary.removed
+            );
+            crate::metrics_recorder::record_activity(
+                crate::metrics_recorder::CliSurface::Index,
+                "sync",
             );
             Ok(())
         }

@@ -1,0 +1,160 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Shared helpers for plugin-based agent hook wrappers (OpenCode, Kilo, Pi).
+//!
+//! These agents do not expose a native shell-hook protocol; `tooned hook install`
+//! writes a TypeScript plugin file that the agent loads. The plugin translates
+//! the agent's tool-result event into a Claude-compatible `tool_output` payload,
+//! calls `tooned hook run --<flag>`, and mutates the result only when TOON is
+//! smaller. See the per-agent contracts for the exact plugin shape and the
+//! `tool.execute.after` / `tool_result` semantics.
+
+use std::path::{Path, PathBuf};
+
+use super::{InstallError, Scope};
+
+/// A plugin-wrapped agent. `tooned` writes a single TypeScript file at the
+/// project/user plugin directory; the file's content is generated from the
+/// resolved `tooned` binary path.
+pub(crate) struct PluginAgent {
+    /// Exact marker string inside the generated plugin that `status` and
+    /// `doctor` search for (e.g. `"hook run --opencode"`).
+    pub run_flag: &'static str,
+    /// Project-level plugin directory (relative to the current directory).
+    pub project_dir: &'static str,
+    /// Plugin file name (same for project and user scopes).
+    pub project_file: &'static str,
+    /// Resolves the user-level root directory (e.g. `~/.config` or `~/.pi`).
+    pub user_root: fn() -> Option<PathBuf>,
+    /// Path under `user_root` where the plugin directory lives.
+    pub user_dir: &'static str,
+    /// Plugin file name under `user_dir`.
+    pub user_file: &'static str,
+    /// Generates the full TypeScript source for the plugin.
+    pub content: fn(&Path) -> String,
+}
+
+fn default_scope(scope: Option<Scope>) -> Scope {
+    match scope {
+        Some(v) => v,
+        None => Scope::Project,
+    }
+}
+
+/// Resolves the plugin file path for the requested scope.
+pub(crate) fn settings_path(agent: &PluginAgent, scope: Scope) -> Result<PathBuf, InstallError> {
+    match scope {
+        Scope::Project => {
+            let cwd = std::env::current_dir().map_err(InstallError::CurrentDir)?;
+            Ok(cwd.join(agent.project_dir).join(agent.project_file))
+        }
+        Scope::User => {
+            let root = (agent.user_root)().ok_or(InstallError::NoHomeDirectory)?;
+            Ok(root.join(agent.user_dir).join(agent.user_file))
+        }
+    }
+}
+
+/// Writes `content` to `path` atomically using a temp file in the same directory.
+fn write_text_atomic(path: &Path, content: &str) -> Result<(), InstallError> {
+    let parent = path.parent().ok_or_else(|| {
+        InstallError::Io(std::io::Error::other("target path has no parent directory"))
+    })?;
+    std::fs::create_dir_all(parent)?;
+
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| InstallError::Io(std::io::Error::other("target path has no file name")))?
+        .to_string_lossy();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let tmp_name = format!(".{file_name}.tmp.{}.{nanos}", std::process::id());
+    let tmp_path = parent.join(tmp_name);
+
+    std::fs::write(&tmp_path, content.as_bytes())?;
+    let rename_result = std::fs::rename(&tmp_path, path);
+    if rename_result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+    rename_result?;
+    Ok(())
+}
+
+/// The unique marker inside a generated plugin file. Derived from the
+/// `run_flag` command suffix (e.g. `"hook run --opencode"` -> `"--opencode"`).
+fn marker(agent: &PluginAgent) -> &str {
+    match agent.run_flag.split_whitespace().next_back() {
+        Some(v) => v,
+        None => agent.run_flag,
+    }
+}
+
+/// Verifies `tooned` resolves on `PATH` and writes the generated plugin file.
+pub(crate) fn install(agent: &PluginAgent, scope: Option<Scope>) -> Result<(), InstallError> {
+    let Some(binary) = super::resolve_tooned_on_path() else {
+        return Err(InstallError::BinaryNotOnPath);
+    };
+    let path = settings_path(agent, default_scope(scope))?;
+    let content = (agent.content)(&binary);
+    write_text_atomic(&path, &content)
+}
+
+/// Removes the plugin file only if it exists and contains `tooned`'s own marker.
+/// Returns `true` if a file was removed.
+pub(crate) fn uninstall(agent: &PluginAgent, scope: Option<Scope>) -> Result<bool, InstallError> {
+    let path = settings_path(agent, default_scope(scope))?;
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|_| String::new());
+    if !text.contains(marker(agent)) {
+        return Ok(false);
+    }
+    std::fs::remove_file(&path)?;
+    Ok(true)
+}
+
+/// Read-only: is `tooned`'s plugin currently installed in either scope?
+pub(crate) fn status(agent: &PluginAgent) -> bool {
+    [Scope::User, Scope::Project].into_iter().any(|scope| {
+        let Ok(path) = settings_path(agent, scope) else {
+            return false;
+        };
+        path.is_file() && std::fs::read_to_string(&path).is_ok_and(|s| s.contains(marker(agent)))
+    })
+}
+
+/// Builds a JSON report entry for `hook doctor` covering both scopes.
+pub(crate) fn doctor_report(agent: &PluginAgent) -> serde_json::Value {
+    let mut out = serde_json::json!({});
+    let flag = marker(agent);
+    for scope in [Scope::User, Scope::Project] {
+        let report = match settings_path(agent, scope) {
+            Ok(path) => {
+                let installed = path.is_file()
+                    && std::fs::read_to_string(&path).is_ok_and(|s| s.contains(flag));
+                let command =
+                    if installed { format!("tooned {}", agent.run_flag) } else { String::new() };
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "installed": installed,
+                    "command": command,
+                })
+            }
+            Err(_) => serde_json::json!({
+                "path": null,
+                "installed": false,
+                "command": "",
+            }),
+        };
+        let key = match scope {
+            Scope::User => "user",
+            Scope::Project => "project",
+        };
+        if let Some(obj) = out.as_object_mut() {
+            let _ = obj.insert(key.to_string(), report);
+        }
+    }
+    out
+}

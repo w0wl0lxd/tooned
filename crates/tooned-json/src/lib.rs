@@ -7,25 +7,18 @@ use std::io::BufRead;
 use serde_json::Value;
 use tooned_parse::{ParseError, exceeds_max_structural_depth};
 
-/// Threshold (bytes) above which JSON parsing prefers the SIMD-accelerated
-/// `sonic-rs` fast path over `serde_json`, on x86_64/aarch64. Chosen as a
-/// conservative starting point per research.md #4 ("exact threshold to be
-/// tuned during implementation via benchmarking, not fixed at planning
-/// time"): below this, `serde_json`'s lower setup overhead tends to win;
-/// above it, SIMD parsing has enough bytes to pay for itself. Revisit with
-/// `criterion` benchmarks before v1 ships (Polish phase, T077).
+/// Historical threshold used by tests and benchmarks to bracket small vs.
+/// large JSON inputs. `parse_json`/`parse_ndjson` now route every JSON byte
+/// through `sonic-rs`; this constant is retained for the test fixtures that
+/// exercise both sides of the old boundary.
 pub const SONIC_RS_THRESHOLD_BYTES: usize = 8 * 1024;
 
-/// Parses JSON input into a `serde_json::Value`.
+/// Parses JSON input into a `serde_json::Value` using `sonic-rs`.
 pub fn parse_json(input: &[u8]) -> Result<Value, ParseError> {
     if exceeds_max_structural_depth(input) {
         return Err(ParseError::TooDeep);
     }
-    if use_simd_json(input.len()) {
-        sonic_rs::from_slice::<Value>(input).map_err(|e| ParseError::Json(e.to_string()))
-    } else {
-        serde_json::from_slice::<Value>(input).map_err(|e| ParseError::Json(e.to_string()))
-    }
+    sonic_rs::from_slice::<Value>(input).map_err(|e| ParseError::Json(e.to_string()))
 }
 
 /// Parses NDJSON input into a `serde_json::Value` (as an array).
@@ -41,7 +34,7 @@ pub fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
         if exceeds_max_structural_depth(trimmed) {
             return Err(ParseError::TooDeep);
         }
-        let value = serde_json::from_slice::<Value>(trimmed)
+        let value = sonic_rs::from_slice::<Value>(trimmed)
             .map_err(|e| ParseError::Json(e.to_string()))?;
         items.push(value);
     }
@@ -88,7 +81,7 @@ impl<R: BufRead> Iterator for NdJsonStream<R> {
                         return Some(Err(ParseError::TooDeep));
                     }
                     return Some(
-                        serde_json::from_str::<Value>(trimmed)
+                        sonic_rs::from_str::<Value>(trimmed)
                             .map_err(|e| ParseError::Json(e.to_string())),
                     );
                 }
@@ -99,16 +92,6 @@ impl<R: BufRead> Iterator for NdJsonStream<R> {
             }
         }
     }
-}
-
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-fn use_simd_json(len: usize) -> bool {
-    len >= SONIC_RS_THRESHOLD_BYTES
-}
-
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-fn use_simd_json(_len: usize) -> bool {
-    false
 }
 
 #[cfg(test)]
