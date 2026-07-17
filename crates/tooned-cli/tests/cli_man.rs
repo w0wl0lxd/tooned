@@ -8,11 +8,7 @@ use assert_cmd::Command;
 
 #[test]
 fn man_emits_roff_page() {
-    let output = Command::cargo_bin("tooned")
-        .unwrap()
-        .arg("man")
-        .output()
-        .unwrap();
+    let output = Command::cargo_bin("tooned").unwrap().arg("man").output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(".TH tooned"));
