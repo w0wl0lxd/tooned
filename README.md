@@ -5,16 +5,15 @@
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 
-tooned watches the JSON-shaped data flowing through an AI coding agent's tool
-calls — API responses, database rows, config files read off disk — and swaps
-it for [TOON](https://github.com/w0wl0lxd/toon-lsp) whenever TOON is actually
-smaller. Nothing to configure, nothing to opt into per call, no source file
-ever touched. When TOON doesn't win, the agent sees the original JSON,
-unchanged.
+tooned watches the JSON-shaped data moving through an AI coding agent's tool
+calls: API responses, database rows, config files read from disk. When TOON is
+smaller, tooned swaps it in. There's nothing to configure or opt into per call,
+and tooned never touches a source file. When TOON doesn't win, the agent sees
+the original JSON, unchanged.
 
 It runs as a Claude Code hook, a Codex CLI hook, a Devin CLI hook, an MCP
 server, or a plain CLI you can pipe things through. It is not a replacement for
-[rtk](https://github.com/rtk-ai/rtk) — rtk rewrites and compresses command
+[rtk](https://github.com/rtk-ai/rtk). rtk rewrites and compresses command
 output in general; tooned does one thing, re-encoding structured data, and
 is built to sit alongside rtk in the same agent session without either tool
 stepping on the other's configuration.
@@ -30,7 +29,6 @@ stepping on the other's configuration.
 - [Command-line interface](#command-line-interface)
 - [Workspace layout](#workspace-layout)
 - [Development](#development)
-- [Status](#status)
 - [License](#license)
 
 ## Why
@@ -53,7 +51,7 @@ users[4]{id,name,role,active}:
   4,"Dev Patel",editor,true
 ```
 
-145 bytes for the same data — 41% smaller, and it decodes back to the exact
+145 bytes for the same data, 41% smaller, and it decodes back to the exact
 same JSON. The same logic applies to XML record lists:
 
 ```xml
@@ -74,23 +72,22 @@ users[4]{@id,@name,@role,@active}:
 ```
 
 XML attributes map to `@`-prefixed keys in the JSONified intermediate, then
-to the same TOON header format. That's the whole trade tooned is watching for,
-on every tool call, automatically. A one-off scalar value or a deeply nested,
-irregular object usually doesn't compress this way, and JSON — often — stays
-smaller. tooned measures both and keeps whichever one actually wins.
+to the same TOON header format. tooned checks this on every tool call. A lone
+scalar or a ragged, deeply nested object usually won't compress, so JSON stays
+smaller. tooned tries both and ships the shorter one.
 
-In testing, I found that agents using `tooned` still interpret and reason with
-the response as if it were the original JSON structure, even though the literal
-JSON bytes have been rewritten into TOON. The model does not need the original
-syntax to stay intact to understand the data.
+I tested this by having agents use `tooned` and then reason about the response.
+Even though the JSON bytes had been rewritten into TOON, the model still read
+and reasoned about the data as if it were the original JSON. It doesn't need
+the original syntax to understand what the data means.
 
 Example:
 
 - A `read` of a JSON array of user objects produced a natural-language summary
   of the users, reasoning entirely over the TOON `additionalContext`.
-- When the hook was configured to inject the TOON encoding of a *products* file
+- When the hook was set up to inject the TOON encoding of a *products* file
   as `additionalContext` while the agent `read` a *users* file, asking "what is
-  the SKU of the first product?" returned `SKU-1001` — a value that only existed
+  the SKU of the first product?" returned `SKU-1001`, a value that existed only
   in the TOON context, not in the original `read` output.
 - Exact-raw-output prompts ("print the file unchanged") still returned the
   original JSON, because the hook preserves the original tool output alongside
@@ -103,7 +100,7 @@ cargo install tooned
 ```
 
 Or grab a prebuilt binary from the [releases page](https://github.com/w0wl0lxd/tooned/releases)
-once one exists — v1 isn't tagged yet, see [Status](#status).
+once one exists. v1 isn't tagged yet; see [Status](#status).
 
 ## Quick start
 
@@ -125,46 +122,44 @@ tooned check data.json
 # json, uniform array (4/4 rows), 246 -> 145 bytes (41% smaller), convertible: yes
 ```
 
-`convert` never writes back to the source file — it only ever reads it and
+`convert` never writes back to the source file. It only reads it and
 prints somewhere else.
 
 ## Wiring it into an agent
 
 ```bash
-# Claude Code — merges into settings.json, doesn't touch existing hook entries
+# Claude Code: merges into settings.json, doesn't touch existing hook entries
 tooned hook install --claude-code --scope project
 
-# Codex CLI — writes a .codex-plugin/ bundle (hook + MCP server registration)
+# Codex CLI: writes a .codex-plugin/ bundle (hook + MCP server registration)
 tooned hook install --codex --mcp
 
-# Devin CLI — writes .devin/hooks.v1.json (project scope) or ~/.config/devin/config.json (user scope)
+# Devin CLI: writes .devin/hooks.v1.json (project scope) or ~/.config/devin/config.json (user scope)
 tooned hook install --devin --scope project
 
-# Droid (Factory AI) — writes .factory/hooks.json (project) or ~/.factory/hooks.json (user)
+# Droid (Factory AI): writes .factory/hooks.json (project) or ~/.factory/hooks.json (user)
 tooned hook install --droid --scope project
 
-# OpenCode — writes .opencode/plugins/tooned.ts (project) or ~/.config/opencode/plugins/tooned.ts (user)
+# OpenCode: writes .opencode/plugins/tooned.ts (project) or ~/.config/opencode/plugins/tooned.ts (user)
 tooned hook install --opencode --scope project
 
-# Kilo Code — writes .kilo/plugin/tooned.ts (project) or ~/.config/kilo/plugin/tooned.ts (user)
+# Kilo Code: writes .kilo/plugin/tooned.ts (project) or ~/.config/kilo/plugin/tooned.ts (user)
 tooned hook install --kilo --scope project
 
-# Pi — writes .pi/extensions/tooned.ts (project) or ~/.pi/agent/extensions/tooned.ts (user)
+# Pi: writes .pi/extensions/tooned.ts (project) or ~/.pi/agent/extensions/tooned.ts (user)
 tooned hook install --pi --scope project
 ```
 
-Codex requires an explicit trust step before a newly installed hook runs —
+Codex requires an explicit trust step before a newly installed hook runs.
 `tooned hook install --codex` tells you to run `/hooks` inside Codex CLI
 after it finishes. Devin CLI loads hooks from `.devin/hooks.v1.json`
 automatically; use `/hooks` to verify the loaded entries.
 
-From here, an agent tool call (`Bash`/`exec`/`Execute`, `Read`/`read`, `Grep`/`grep`,
-`WebFetch`, or any MCP tool) that returns JSON-shaped output gets inspected
-after it completes. If TOON wins,
-the agent sees the TOON version. If anything about the payload is
-ambiguous — not JSON, too large, doesn't round-trip cleanly back to the
-original — the agent sees exactly what the tool call actually returned.
-tooned never surfaces a guess.
+From here, an agent tool call (Bash/exec/Execute, Read/read, Grep/grep,
+WebFetch, or any MCP tool) that returns JSON-shaped output gets inspected once
+it finishes. If TOON wins, the agent sees the TOON version. If the payload is
+ambiguous in any way (not JSON, too large, or it doesn't round-trip back to the
+original), the agent sees exactly what the tool call returned. tooned never guesses.
 
 Check what's installed, including hooks belonging to other tools, or back out:
 
@@ -188,7 +183,7 @@ tools below over stdio.
 
 For every payload tooned sees, it:
 
-1. Sniffs the format — JSON, NDJSON/JSONL, YAML, TOML, CSV/TSV, or XML — from an
+1. Sniffs the format (JSON, NDJSON/JSONL, YAML, TOML, CSV/TSV, or XML) from an
    explicit hint if one exists, otherwise from the content itself.
 2. Parses it into a structured value.
 3. Encodes that value as TOON and as compact (non-pretty) JSON, and compares
@@ -197,11 +192,9 @@ For every payload tooned sees, it:
    default, so near-identical sizes don't flap back and forth between runs),
    *and* decoding that TOON back reproduces the original value exactly.
 
-Any failure in that pipeline — a parse error, a payload past the size cap
-(2 MiB by default), a round-trip that doesn't match — falls through to the
-original bytes, untouched. No panics, no partial output, no telemetry: the
-whole decision runs locally and nothing about the payload leaves the
-machine.
+If a payload fails any check (a parse error, something past the 2 MiB cap, or a
+round-trip that doesn't match), tooned returns the original bytes untouched.
+It can't panic and makes no network calls, so the payload stays on your machine.
 
 ## The project index
 
@@ -221,13 +214,13 @@ that project's `.gitignore` the first time it's created.
 | Command | What it does |
 |---|---|
 | `tooned convert <file\|-> [--to toon\|json]` | One-shot conversion. Stdout by default, source untouched. |
-| `tooned check <file\|-> [--precise]` | Reports format, shape, and savings — no output produced. `--precise` measures against real LLM tokenization instead of byte count. |
+| `tooned check <file\|-> [--precise]` | Reports format, shape, and savings. No output is produced; `--precise` measures against real LLM tokenization instead of byte count. |
 | `tooned pipe` | stdin → adaptive conversion → stdout. |
 | `tooned wrap -- <command>` | Runs `<command>`, adaptively converts its captured stdout. |
 | `tooned index [path]` / `index sync` / `index status` / `index show <file>` | The `.tooned/` project index. |
 | `tooned stats [path] [--top N] [--json]` | Ranked savings report from the index. `--json` emits machine-readable JSON. |
 | `tooned hook install (--claude-code\|--codex\|--devin\|--droid\|--opencode\|--kilo\|--pi) [--scope user\|project] [--mcp]` | Installs the agent hook or plugin wrapper, idempotently. |
-| `tooned hook uninstall / status / doctor` | Removes, checks, or audits hook installations — never touches another tool's entries. |
+| `tooned hook uninstall / status / doctor` | Removes, checks, or audits hook installations. It never touches another tool's entries. |
 | `tooned mcp serve` | Runs the MCP server over stdio. |
 
 ## Architecture
@@ -296,17 +289,15 @@ sequenceDiagram
 
 ```
 crates/
-├── tooned-core/    lib — detection + adaptive conversion, no I/O, no SQLite
-├── tooned-index/   lib — the .tooned/ SQLite project index
-├── tooned-metrics/ lib — local-only token-savings metrics ledger
-└── tooned-cli/     bin "tooned" — CLI, hook installers, MCP server, metrics views
+├── tooned-core/    lib: detection + adaptive conversion, no I/O, no SQLite
+├── tooned-index/   lib: the .tooned/ SQLite project index
+├── tooned-metrics/ lib: local-only token-savings metrics ledger
+└── tooned-cli/     bin "tooned": CLI, hook installers, MCP server, metrics views
 ```
 
-`tooned-core` is kept dependency-minimal on purpose: it's what gets loaded
-into a hook subprocess on every qualifying tool call, so it can't afford to
-drag in a SQLite driver or a directory walker. Every integration surface —
-the CLI, the hooks, the MCP server — calls into the same
-`tooned_core::maybe_tooned`; none of them re-implement the decision.
+`tooned-core` stays dependency-minimal because the hook loads it on every
+qualifying tool call. The CLI, the hooks, and the MCP server all call the same
+`tooned_core::maybe_tooned`, so the decision lives in one place.
 
 ## Development
 
@@ -320,13 +311,13 @@ cargo deny check
 
 Stable Rust is the required toolchain and the hard CI/release gate; nightly
 runs as a non-blocking canary. `unwrap`/`expect`/`panic!`/`todo!` are denied
-workspace-wide — see [`Cargo.toml`](Cargo.toml) and [`clippy.toml`](clippy.toml).
+workspace-wide. See [`Cargo.toml`](Cargo.toml) and [`clippy.toml`](clippy.toml).
 
 With [Nix](https://nixos.org) and [direnv](https://direnv.net) installed,
 `direnv allow` in the repo root gets you a shell with
 [`mise`](https://mise.jdx.dev) and `rustup` on `PATH`, `cargo-nextest`/
 `cargo-deny`/`cargo-audit` installed via mise, and `rustup` reading
-`rust-toolchain.toml` for the Rust version — one command, nothing installed
+`rust-toolchain.toml` for the Rust version. One command, nothing installed
 outside the Nix store. `nix develop` works the same way without direnv.
 `rust-toolchain.toml` stays the single source of truth for the Rust version
 either way; `flake.nix` and `.mise.toml` both defer to it rather than pinning
@@ -334,46 +325,6 @@ their own.
 
 Contribution guidelines, DCO sign-off, and commit conventions are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Status
-
-`tooned` is a single workspace that reads structured agent tool-call output,
-re-encodes it as TOON when TOON is smaller, and leaves the original bytes
-untouched otherwise. It handles JSON, NDJSON/JSONL, YAML, TOML, CSV, TSV,
-XML, MessagePack, CBOR, and JSON5 inputs, converts them through the same
-`tooned_core::maybe_tooned` path, and surfaces the result through whichever
-interface the agent or user chose.
-
-Agent integrations: Claude Code, Codex CLI, Devin CLI, Droid (Factory AI),
-OpenCode, Kilo Code, and Pi. Each supports `tooned hook install/run/uninstall/
-status/doctor`, idempotent and safe alongside another tool's hook entries.
-Codex and the plugin-wrapped agents (OpenCode, Kilo, Pi) use a TypeScript
-plugin that calls back into the `tooned` binary; Claude Code, Devin CLI, and
-Droid write native `PostToolUse` hook entries.
-
-Standalone CLI: `convert` (file/stdin → TOON/JSON/ONTO/TRON), `check`
-(format/shape/savings), `pipe` (stdin→stdout), `wrap` (run a command and
-adaptively convert its stdout), `index`/`index sync`/`index compact`/
-`index watch` (`.tooned/` SQLite project index), `stats`/`heatmap`, and
-`diff` (original vs. TOON round-trip). The MCP server exposes the same
-surface over stdio (`rmcp`): `tooned_convert`, `tooned_detect`,
-`tooned_decode`, and the index tools.
-
-`tooned-metrics` is a separate crate that records conversion outcomes locally
-(no network) and powers the `stats`/`heatmap` views.
-
-JSON parsing and serialization now route through `sonic-rs`; `serde_json::Value`
-remains the interchange type because `toon-lsp::toon::encode`/`decode` depend on
-it. The two safety invariants — round-trip fidelity and never-a-regression —
-are covered by `proptest` property tests across every supported doctype,
-alongside a no-panic property test over adversarial input and a latency
-guardrail for the hot conversion path.
-
-It is not yet published to crates.io or tagged as a release — see
-[`specs/001-adaptive-toon-conversion/`](specs/001-adaptive-toon-conversion/)
-and [`specs/002-xml-conversion/`](specs/002-xml-conversion/)
-for the spec/plan/task breakdown this was built from, which remains the
-source of truth over this README if the two ever disagree.
 
 ## License
 

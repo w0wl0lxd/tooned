@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Property test (T027): `tooned hook run` (both `--claude-code` and
-//! `--codex`) never panics/crashes for adversarial or malformed stdin —
+//! `--codex`) never panics/crashes for adversarial or malformed stdin.
 //! it must always exit 0 (constitution Principle I; contracts/*-hook.md).
 
 use assert_cmd::Command;

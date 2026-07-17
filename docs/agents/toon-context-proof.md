@@ -65,7 +65,7 @@ the OpenCode, Kilo Code, and Pi plugin wrappers.
   uses the original tool output, so the user gets the raw JSON.
 - **Analysis / extraction prompts** ("how many active users?", "what is the SKU
   of the first product?"): the model can answer from the TOON `additionalContext`
-  just as accurately as from the JSON, because the data is identical — only the
+  just as accurately as from the JSON, because the data is identical. Only the
   token count changes.
 
 ## Proof that the model reads TOON
@@ -169,7 +169,7 @@ serializations for LLMs:
   token reductions of up to 18% for TOON with accuracy within 9 percentage
   points of JSON, and note that prior work found "LLMs can read TOON with
   minimal accuracy loss on isolated generation tasks." The paper also shows
-  that the largest token savings accrue on tool schemas and tool results — the
+  that the largest token savings accrue on tool schemas and tool results, the
   exact point where `tooned` injects TOON.
 - **Matveev, 2026** — *Token-Oriented Object Notation vs JSON: A Benchmark of
   Plain and Constrained Decoding Generation* (arXiv:2603.03306v1) states that
@@ -184,21 +184,21 @@ serializations for LLMs:
 
 ### Is this a novel finding?
 
-The underlying capability — LLMs can answer structured questions from a
-losslessly compressed, tabular encoding of the same data — is no longer
-surprising. The TOON format itself, and several independent benchmarks, already
-show that models parse header/row-style formats without needing the original
-JSON syntax. What is specific to `tooned` is the **mechanism and proof**: a
-transparent `PostToolUse` hook that leaves the original tool output intact,
-injecting a smaller TOON view as `additionalContext`, and a mismatch experiment
-that isolates the model's reliance on that TOON view. The model is not
-"knowing it is JSON"; it is reasoning over the same JSON data model, encoded
-more compactly. TOON is a lossless representation of JSON, so the semantics are
-identical — only the token surface changes.
+LLMs can already answer structured questions from a losslessly compressed,
+tabular encoding of the same data, and that is no longer surprising. The TOON
+format itself, and several independent benchmarks, already show that models
+parse header/row-style formats without needing the original JSON syntax.
+tooned's real contribution is the mechanism and the proof: a `PostToolUse` hook
+that leaves the original tool output intact, injecting a smaller TOON view as
+`additionalContext`, and a mismatch experiment that isolates the model's
+reliance on that TOON view. The model doesn't need to know the data was JSON.
+It reasons over the same JSON data model, just encoded more compactly. TOON is
+a lossless representation of JSON, so the semantics are identical. Only the
+token surface changes.
 
 ## Implications
 
-- The model does **not** require raw JSON in context to answer structured
+- The model does not need raw JSON in context to answer structured
   questions.
 - TOON reduces context size for convertible payloads while preserving the
   model's ability to reason about the data.
