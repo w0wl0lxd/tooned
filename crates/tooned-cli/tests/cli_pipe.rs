@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract test for `tooned pipe` (T042).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Integration tests for the local metrics ledger and the tooned heatmap /
 //! tooned metrics views. All reads/writes are scoped to a unique temp dir via
 //! TOONED_METRICS_DIR (see store::user_global_db_path), so tests never touch a

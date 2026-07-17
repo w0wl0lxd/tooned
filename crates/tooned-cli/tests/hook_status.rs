@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract test (T067): `tooned hook status (--claude-code|--codex)`
 //! correctly reports installed vs. not-installed.
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md` ("0 always").

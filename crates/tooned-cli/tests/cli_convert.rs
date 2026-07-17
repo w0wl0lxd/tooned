@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract tests for `tooned convert` (T038-T040).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! `--ignored` latency guardrail test (T077, companion to
 //! `crates/tooned-cli/benches/hot_path.rs`'s criterion benchmark).
 //!

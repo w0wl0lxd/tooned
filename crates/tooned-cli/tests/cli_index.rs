@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract test for `tooned index` / `index sync` / `index status` /
 //! `index show <file>` (T054).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.

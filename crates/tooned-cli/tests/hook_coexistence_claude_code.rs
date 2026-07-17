@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Coexistence test (T062): installing tooned's Claude Code hook alongside
 //! a pre-existing foreign `PostToolUse` entry must leave the foreign entry
 //! byte-for-byte (structurally) unchanged and simply append tooned's own.

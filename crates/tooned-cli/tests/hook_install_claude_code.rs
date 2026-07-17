@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Integration tests for `tooned hook install --claude-code` (T028, T029).
 //! See `specs/001-adaptive-toon-conversion/contracts/claude-code-hook.md`.
 

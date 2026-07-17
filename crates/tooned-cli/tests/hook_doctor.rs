@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract test (T066): `tooned hook doctor` reports both tooned's own
 //! and a foreign tool's hook entries correctly, across all agents' configs,
 //! and performs no writes to any config file.

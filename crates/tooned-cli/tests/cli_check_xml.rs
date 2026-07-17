@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract tests for `tooned check` with XML input.
 //! See `specs/002-xml-conversion/contracts/cli.md`.
 

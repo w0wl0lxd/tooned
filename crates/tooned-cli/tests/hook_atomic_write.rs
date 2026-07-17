@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! T071: config writes for `hook install`/`hook uninstall` must go through a
 //! temp-file-then-rename (atomic) path in the target directory, never a
 //! direct in-place write -- guards against concurrent-writer corruption

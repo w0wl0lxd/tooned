@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Integration tests for `tooned hook run --droid`.
 //! Droid `PostToolUse` stdin carries `tool_response` as either a raw string
 //! or an object whose schema is tool-specific; `hooks/mod.rs` extracts

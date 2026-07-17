@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Contract test for `tooned_detect` with XML format hint.
 //! See `specs/002-xml-conversion/contracts/mcp-tools.md`.
 

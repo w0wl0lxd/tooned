@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Coexistence test (T063): installing tooned's Codex hook alongside a
 //! pre-existing foreign `hooks/hooks.json` entry must leave the foreign
 //! entry structurally unchanged and simply append tooned's own.

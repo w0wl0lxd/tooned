@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Integration tests for plugin-wrapped agent installs (OpenCode, Kilo, Pi).
 
 use std::path::PathBuf;

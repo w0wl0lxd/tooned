@@ -2,7 +2,6 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-
 //! Property test (T027): `tooned hook run` (both `--claude-code` and
 //! `--codex`) never panics/crashes for adversarial or malformed stdin.
 //! it must always exit 0 (constitution Principle I; contracts/*-hook.md).
