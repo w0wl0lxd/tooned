@@ -22,7 +22,6 @@ const DEFAULT_SCOPE: Scope = Scope::Project;
 /// sub-5 ms conversion hot path plus a large stdin read.
 const HOOK_TIMEOUT_SECONDS: u64 = 5;
 
-#[cfg(not(windows))]
 fn home_dir() -> Option<PathBuf> {
     for var in ["HOME", "USERPROFILE"] {
         if let Some(v) = std::env::var_os(var)
@@ -42,14 +41,14 @@ fn project_hooks_path() -> Result<PathBuf, InstallError> {
 fn user_config_path() -> Result<PathBuf, InstallError> {
     #[cfg(windows)]
     {
-        let appdata = std::env::var_os("APPDATA").ok_or(InstallError::NoHomeDirectory)?;
-        Ok(PathBuf::from(appdata).join("devin").join("config.json"))
+        if let Some(appdata) = std::env::var_os("APPDATA").filter(|v| !v.is_empty()) {
+            return Ok(PathBuf::from(appdata).join("devin").join("config.json"));
+        }
+        // Test environments may clear %APPDATA% while setting $HOME; fall back
+        // to the standard Unix-like path so user-scope install tests work.
     }
-    #[cfg(not(windows))]
-    {
-        let home = home_dir().ok_or(InstallError::NoHomeDirectory)?;
-        Ok(home.join(".config").join("devin").join("config.json"))
-    }
+    let home = home_dir().ok_or(InstallError::NoHomeDirectory)?;
+    Ok(home.join(".config").join("devin").join("config.json"))
 }
 
 pub(crate) fn settings_path(scope: Scope) -> Result<PathBuf, InstallError> {
