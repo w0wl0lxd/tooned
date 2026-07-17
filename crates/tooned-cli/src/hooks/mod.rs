@@ -216,6 +216,25 @@ fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
+/// Shell-quote the resolved `tooned` binary path so that a `PostToolUse`
+/// command string remains a single executable even when the path contains
+/// spaces or shell metacharacters. Falls back to single-quote escaping if
+/// `shlex` refuses the path (e.g. contains a NUL byte, which cannot occur in
+/// a valid filesystem path from `which`).
+pub(crate) fn quote_binary_for_shell(binary: &Path) -> String {
+    let lossy = binary.to_string_lossy();
+    match shlex::try_quote(&lossy) {
+        Ok(q) => q.into_owned(),
+        Err(_) => format!("'{}'", lossy.replace('\'', "'\\''")),
+    }
+}
+
+/// Build the agent-specific `PostToolUse` command string, with the `tooned`
+/// binary path safely quoted for execution by a shell.
+pub(crate) fn hook_command_for(binary: &Path, flag: &str) -> String {
+    format!("{} hook run --{flag}", quote_binary_for_shell(binary))
+}
+
 /// Parses `path` as a JSON object, tolerating a missing/unreadable/malformed
 /// file by starting fresh (`{}`) rather than erroring -- the installer's own
 /// job is to merge in a hook entry, not to validate the rest of an agent's

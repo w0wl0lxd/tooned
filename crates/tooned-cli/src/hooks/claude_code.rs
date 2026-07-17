@@ -66,7 +66,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let command = format!("{} hook run --claude-code", binary.display());
+    let command = super::hook_command_for(&binary, "claude-code");
 
     let mut root = super::read_json_value(&path);
     super::merge_post_tool_use_entry(&mut root, super::CLAUDE_CODE_MATCHER, &command);
