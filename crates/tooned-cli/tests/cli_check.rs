@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+
 //! Contract test for `tooned check` (T041).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 

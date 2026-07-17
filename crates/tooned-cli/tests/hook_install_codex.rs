@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+
 //! Integration tests for `tooned hook install --codex [--mcp]`
 //! (T031, T031b). See
 //! `specs/001-adaptive-toon-conversion/contracts/codex-hook.md`.

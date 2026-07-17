@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+
 //! T078b: network-call guard (FR-025 -- v1 has zero telemetry/external
 //! calls). Asserts no network-capable crate appears in `cargo tree` for the
 //! default (non-dev) build of any of the 3 workspace crates. Makes that a
