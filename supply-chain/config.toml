@@ -10,6 +10,45 @@ url = "https://raw.githubusercontent.com/google/supply-chain/main/audits.toml"
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
+[policy.tooned-cli]
+audit-as-crates-io = false
+
+[policy.tooned-convert]
+audit-as-crates-io = false
+
+[policy.tooned-core]
+audit-as-crates-io = false
+
+[policy.tooned-csv]
+audit-as-crates-io = false
+
+[policy.tooned-detect]
+audit-as-crates-io = false
+
+[policy.tooned-index]
+audit-as-crates-io = false
+
+[policy.tooned-json]
+audit-as-crates-io = false
+
+[policy.tooned-parse]
+audit-as-crates-io = false
+
+[policy.tooned-toml]
+audit-as-crates-io = false
+
+[policy.tooned-toon]
+audit-as-crates-io = false
+
+[policy.tooned-types]
+audit-as-crates-io = false
+
+[policy.tooned-xml]
+audit-as-crates-io = false
+
+[policy.tooned-yaml]
+audit-as-crates-io = false
+
 [[exemptions.ahash]]
 version = "0.8.12"
 criteria = "safe-to-deploy"
