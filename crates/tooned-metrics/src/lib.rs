@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `tooned-metrics` — the local-only, off-machine, opt-out metrics ledger for
+//! `tooned-metrics`: the local-only, off-machine, opt-out metrics ledger for
 //! tooned.
 //!
 //! Every conversion/outcome across all tooned surfaces is recorded here so the
