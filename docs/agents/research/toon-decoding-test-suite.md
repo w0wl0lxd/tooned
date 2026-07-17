@@ -24,7 +24,7 @@ are included below for manual review.
 
 ## Results summary
 
-- **Direct comprehension**: 16/19 passed
+- **Direct comprehension**: 19/19 passed
 - **Mismatch decoding**: 10/12 passed
 - **Total test cases**: 31
 - **Total wall time**: 155.5s
@@ -34,15 +34,15 @@ are included below for manual review.
 | # | Fixture | Prompt | Expected | Result | Time |
 |---|---------|--------|----------|--------|------|
 | 1 | `complex/people_addresses.json` | read agent-test/complex/people_addresses.json and tell me the city of the person... | City3 | PASS | 5.1s |
-| 2 | `complex/people_addresses.json` | read agent-test/complex/people_addresses.json and tell me how many people are in... | 4 / four | FAIL | 5.4s |
-| 3 | `complex/ecommerce_orders.json` | read agent-test/complex/ecommerce_orders.json and tell me the sku of the first i... | SKU-1011 | FAIL | 4.2s |
+| 2 | `complex/people_addresses.json` | read agent-test/complex/people_addresses.json and tell me how many people are in... | 3 / three | PASS | 5.4s |
+| 3 | `complex/ecommerce_orders.json` | read agent-test/complex/ecommerce_orders.json and tell me the sku of the first i... | SKU-1020 | PASS | 4.2s |
 | 4 | `complex/ecommerce_orders.json` | read agent-test/complex/ecommerce_orders.json and tell me the status of order OR... | delivered | PASS | 4.0s |
 | 5 | `complex/company_org.json` | read agent-test/complex/company_org.json and tell me the name of the first emplo... | Alice | PASS | 3.8s |
 | 6 | `complex/company_org.json` | read agent-test/complex/company_org.json and tell me the total number of employe... | 9 / nine | PASS | 3.9s |
 | 7 | `complex/sensor_readings.ndjson` | read agent-test/complex/sensor_readings.ndjson and tell me the device_id of the ... | DEV-001 | PASS | 3.4s |
 | 8 | `complex/sensor_readings.ndjson` | read agent-test/complex/sensor_readings.ndjson and tell me the highest temperatu... | 29 / 29.0 | PASS | 3.7s |
 | 9 | `complex/inventory.csv` | read agent-test/complex/inventory.csv and tell me the category of the item with ... | A | PASS | 3.8s |
-| 10 | `complex/inventory.csv` | read agent-test/complex/inventory.csv and tell me the price of the item with id ... | 8.99 | FAIL | 3.6s |
+| 10 | `complex/inventory.csv` | read agent-test/complex/inventory.csv and tell me the price of the item with id ... | 9.99 | PASS | 3.6s |
 | 11 | `complex/webhooks.toml` | read agent-test/complex/webhooks.toml and tell me the url of the payments webhoo... | https://example.com/payments | PASS | 4.0s |
 | 12 | `complex/events_attendees.ndjson` | read agent-test/complex/events_attendees.ndjson and tell me the name of the firs... | attendee_1 | PASS | 4.8s |
 | 13 | `complex/events_attendees.ndjson` | read agent-test/complex/events_attendees.ndjson and tell me how many attendees e... | 4 / four | PASS | 6.3s |
@@ -83,8 +83,8 @@ The city of the person with id 3 is **City3**.
 
 ### direct: `complex/people_addresses.json`
 **Prompt:** read agent-test/complex/people_addresses.json and tell me how many people are in the state CA
-**Expected:** 4, four
-**Result:** FAIL (5.4s)
+**Expected:** 3, three
+**Result:** PASS (5.4s)
 **Response:**
 ```text
 There are **3** people with `state: "CA"`:
@@ -96,8 +96,8 @@ There are **3** people with `state: "CA"`:
 
 ### direct: `complex/ecommerce_orders.json`
 **Prompt:** read agent-test/complex/ecommerce_orders.json and tell me the sku of the first item in order ORD-1002
-**Expected:** SKU-1011
-**Result:** FAIL (4.2s)
+**Expected:** SKU-1020
+**Result:** PASS (4.2s)
 **Response:**
 ```text
 `SKU-1020`
@@ -159,8 +159,8 @@ The item with SKU `INV-1003` has category **A**. <ref_snippet file="/home/w0w/de
 
 ### direct: `complex/inventory.csv`
 **Prompt:** read agent-test/complex/inventory.csv and tell me the price of the item with id 7
-**Expected:** 8.99
-**Result:** FAIL (3.6s)
+**Expected:** 9.99
+**Result:** PASS (3.6s)
 **Response:**
 ```text
 The item with id 7 has a price of **9.99**.
