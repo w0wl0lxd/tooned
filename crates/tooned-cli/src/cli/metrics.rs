@@ -22,11 +22,11 @@ use tooned_metrics::{
 /// `tooned metrics <subcommand>`
 #[derive(Debug, Args)]
 pub struct MetricsArgs {
-    /// Read the project-scoped ledger (`<root>/.tooned/metrics.db`) instead
-    /// of the user-global one. Auto-detects the project root (cwd, or the
-    /// nearest ancestor with a `.tooned/` directory).
+    /// Read the user-global ledger instead of the project-scoped one
+    /// (`<root>/.tooned/metrics.db`). Auto-detects the project root (cwd, or
+    /// the nearest ancestor with a `.tooned/` directory).
     #[arg(long)]
-    pub project: bool,
+    pub global: bool,
 
     #[command(subcommand)]
     pub command: MetricsCommand,
@@ -139,12 +139,12 @@ pub struct ResetArgs {
 }
 
 /// Resolve the ledger path for the chosen scope (global or project).
-fn ledger_path(project: bool) -> anyhow::Result<PathBuf> {
-    if project {
+fn ledger_path(global: bool) -> anyhow::Result<PathBuf> {
+    if global {
+        Ok(user_global_db_path())
+    } else {
         let root = project_root()?;
         Ok(tooned_metrics::project_db_path(&root))
-    } else {
-        Ok(user_global_db_path())
     }
 }
 
@@ -177,7 +177,7 @@ fn opts_from(w: &MetricsWindow) -> QueryOpts<'_> {
 }
 
 pub fn run(args: &MetricsArgs) -> anyhow::Result<()> {
-    let path = ledger_path(args.project)?;
+    let path = ledger_path(args.global)?;
     let store = match Store::open(&path) {
         Ok(s) => s,
         Err(e) => bail!("tooned metrics: cannot open ledger {}: {e}", path.display()),
