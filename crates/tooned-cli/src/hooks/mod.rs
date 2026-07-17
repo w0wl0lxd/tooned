@@ -241,7 +241,7 @@ pub(crate) fn hook_command_for(binary: &Path, flag: &str) -> String {
 /// config file.
 pub(crate) fn read_json_value(path: &Path) -> serde_json::Value {
     match std::fs::read(path) {
-        Ok(bytes) => match serde_json::from_slice(&bytes) {
+        Ok(bytes) => match sonic_rs::from_slice::<serde_json::Value>(&bytes) {
             Ok(value) => value,
             Err(_) => serde_json::json!({}),
         },
@@ -267,7 +267,7 @@ pub(crate) fn write_json_pretty(
         InstallError::Io(std::io::Error::other("target path has no parent directory"))
     })?;
     std::fs::create_dir_all(parent)?;
-    let text = serde_json::to_string_pretty(value).map_err(|e| {
+    let text = sonic_rs::to_string_pretty(value).map_err(|e| {
         InstallError::Io(std::io::Error::other(format!("failed to serialize hook config: {e}")))
     })?;
 
@@ -450,14 +450,14 @@ impl HookProtocol {
                 let value = payload.get("tool_output")?;
                 Some(match value {
                     serde_json::Value::String(s) => s.as_bytes().to_vec(),
-                    other => serde_json::to_vec(other).ok()?,
+                    other => sonic_rs::to_vec(other).ok()?,
                 })
             }
             HookProtocol::Codex => {
                 let value = payload.get("tool_response")?;
                 Some(match value {
                     serde_json::Value::String(s) => s.as_bytes().to_vec(),
-                    other => serde_json::to_vec(other).ok()?,
+                    other => sonic_rs::to_vec(other).ok()?,
                 })
             }
             HookProtocol::Devin => {
@@ -468,10 +468,10 @@ impl HookProtocol {
                         let output = response.get("output")?;
                         match output {
                             serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
-                            other => serde_json::to_vec(other).ok(),
+                            other => sonic_rs::to_vec(other).ok(),
                         }
                     }
-                    other => serde_json::to_vec(other).ok(),
+                    other => sonic_rs::to_vec(other).ok(),
                 }
             }
             HookProtocol::Droid => {
@@ -515,15 +515,15 @@ impl HookProtocol {
                                 }
                             }
                             if text.is_empty() {
-                                serde_json::to_vec(value).ok()?
+                                sonic_rs::to_vec(value).ok()?
                             } else {
                                 text.into_bytes()
                             }
                         } else {
-                            serde_json::to_vec(value).ok()?
+                            sonic_rs::to_vec(value).ok()?
                         }
                     }
-                    other => serde_json::to_vec(other).ok()?,
+                    other => sonic_rs::to_vec(other).ok()?,
                 })
             }
         }
@@ -549,7 +549,7 @@ impl HookProtocol {
 /// Callers additionally wrap this in `std::panic::catch_unwind` as
 /// defense-in-depth (see `claude_code::run_hook`/`codex::run_hook`/`devin::run_hook`).
 pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option<String> {
-    let payload: serde_json::Value = serde_json::from_slice(stdin).ok()?;
+    let payload: serde_json::Value = sonic_rs::from_slice::<serde_json::Value>(stdin).ok()?;
     let bytes = protocol.extract_bytes(&payload)?;
 
     let opts = tooned_core::ConversionOptions::default();
@@ -575,7 +575,7 @@ pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option
                     })
                 }
             };
-            serde_json::to_string(&out).ok()
+            sonic_rs::to_string(&out).ok()
         }
         tooned_core::Conversion::Passthrough { .. } => None,
     };
