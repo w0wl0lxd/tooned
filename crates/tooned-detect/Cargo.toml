@@ -18,5 +18,8 @@ serde_json = { workspace = true }   #unified
 tooned-types = { workspace = true } #unified
 tooned-xml = { workspace = true }   #unified
 
+[dev-dependencies]
+heapster = "0.8.0"
+
 [lints]
 workspace = true
