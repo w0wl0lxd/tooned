@@ -51,7 +51,7 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build
-        run: cargo build --release -p tooned-cli --target ${{ matrix.target }}
+        run: cargo build --release -p tooned --target ${{ matrix.target }}
 
       - name: Package (unix)
         if: runner.os != 'Windows'
@@ -92,7 +92,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build native tooned
-        run: cargo build --release -p tooned-cli
+        run: cargo build --release -p tooned
 
       - name: Generate shell completions and man page
         run: |

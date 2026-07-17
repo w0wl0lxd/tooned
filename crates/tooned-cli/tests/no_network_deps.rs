@@ -83,5 +83,5 @@ fn tooned_index_default_build_has_no_network_capable_crate() {
 
 #[test]
 fn tooned_cli_default_build_has_no_network_capable_crate() {
-    assert_no_network_capable_crate("tooned-cli");
+    assert_no_network_capable_crate("tooned");
 }

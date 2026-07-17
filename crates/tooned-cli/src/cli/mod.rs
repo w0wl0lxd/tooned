@@ -6,8 +6,10 @@
 pub mod check;
 pub mod convert;
 pub mod diff;
+pub mod heatmap;
 pub mod index;
 mod io;
+pub mod metrics;
 pub mod pipe;
 pub mod stats;
 pub mod wrap;

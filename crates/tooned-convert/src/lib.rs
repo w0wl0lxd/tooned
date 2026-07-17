@@ -10,6 +10,7 @@
 //! a convertible y/n verdict) but never returns the TOON text itself.
 
 use serde_json::Value;
+use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
 use tooned_toon::encode_toon;
@@ -32,6 +33,31 @@ pub use tron::{
     StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
 };
 
+/// Parse `input` into a `serde_json::Value` via the detected (or hinted)
+/// doctype. This is the same detection+parse step the conversion pipeline
+/// uses, exposed so tools like `tooned diff` can read the *original* as a
+/// structured value regardless of source format (JSON, NDJSON, YAML, TOML,
+/// CSV, TSV, XML). Binary doctypes (MessagePack, CBOR) and JSON5 are not
+/// handled here; callers should surface a clear "unsupported" message for
+/// those rather than guessing.
+pub fn parse_to_value(input: &[u8], format_hint: Option<DocType>) -> Result<Value, ParseError> {
+    let doc_type = detect(input, format_hint).ok_or_else(|| {
+        ParseError::Json("tooned: could not detect a supported structured doctype".into())
+    })?;
+    match doc_type {
+        DocType::Json => tooned_json::parse_json(input),
+        DocType::NdJson => tooned_json::parse_ndjson(input),
+        DocType::Yaml => tooned_yaml::parse_yaml(input),
+        DocType::Toml => tooned_toml::parse_toml(input),
+        DocType::Csv => tooned_csv::parse_csv(input),
+        DocType::Tsv => tooned_csv::parse_tsv(input),
+        DocType::Xml => tooned_xml::parse(input),
+        DocType::Msgpack | DocType::Cbor | DocType::Json5 => Err(ParseError::Json(
+            "tooned: binary/JSON5 doctypes are not supported by parse_to_value".into(),
+        )),
+    }
+}
+
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
 struct AttemptToon {
@@ -40,7 +66,7 @@ struct AttemptToon {
 }
 
 /// A `std::io::Write` sink that only tallies bytes written, never storing
-/// them -- used to get `serde_json::to_writer`'s serialized byte length
+/// them -- used to get `sonic_rs::to_writer`'s serialized byte length
 /// without materializing an owned `String` (see `attempt`'s hot-path
 /// comment).
 pub(crate) struct ByteCountingWriter(usize);
@@ -138,7 +164,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // smuggled in via YAML/TOML's more permissive float literals) -- fail
     // closed, not a panic.
     let (json_bytes, json_text) = if opts.precise_tokens {
-        let Ok(text) = serde_json::to_string(&value) else {
+        let Ok(text) = sonic_rs::to_string(&value) else {
             return Attempt {
                 doc_type: Some(doc_type),
                 shape,
@@ -151,7 +177,20 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (text.len(), Some(text))
     } else {
         let mut counter = ByteCountingWriter(0);
-        let Ok(()) = serde_json::to_writer(&mut counter, &value) else {
+        let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
+        let Ok(()) = sonic_rs::to_writer(&mut writer, &value) else {
+            return Attempt {
+                doc_type: Some(doc_type),
+                shape,
+                json_bytes: None,
+                json_text: None,
+                toon: None,
+                reason: Some(PassthroughReason::ParseFailed),
+            };
+        };
+        // `to_writer` may not flush the `BufferedWriter`'s final buffer; drain
+        // it so every serialized byte is counted by `ByteCountingWriter`.
+        let Ok(()) = writer.flush() else {
             return Attempt {
                 doc_type: Some(doc_type),
                 shape,

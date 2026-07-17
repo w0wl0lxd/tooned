@@ -117,11 +117,28 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let mut opts =
                 config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             opts.margin_pct = 0.0;
-            let output = match tooned_core::maybe_onto(&bytes, &opts) {
+            let onto_outcome = tooned_core::maybe_onto(&bytes, &opts);
+            let converted = matches!(onto_outcome, Ok(Conversion::Toon { .. }));
+            let output = match onto_outcome {
                 Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
                 Ok(Conversion::Passthrough { bytes, .. }) => bytes,
                 Err(_) => bytes.clone(),
             };
+            #[allow(clippy::manual_unwrap_or)]
+            crate::metrics_recorder::record_convert_outcome(
+                crate::metrics_recorder::CliSurface::Onto,
+                &crate::metrics_recorder::label_from_path(&args.input),
+                format_hint.map(std::convert::Into::into),
+                converted,
+                match bytes.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                },
+                match output.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                },
+            );
             let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
                 write_in_place(&args.input, &output)
             } else {
@@ -162,11 +179,28 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                         std::process::exit(2);
                     }
                 };
-                let output = match maybe_tron(&bytes, &opts) {
+                let tron_outcome = maybe_tron(&bytes, &opts);
+                let converted = matches!(tron_outcome, Ok(Conversion::Toon { .. }));
+                let output = match tron_outcome {
                     Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
                     Ok(Conversion::Passthrough { bytes, .. }) => bytes,
                     Err(_) => bytes.clone(),
                 };
+                #[allow(clippy::manual_unwrap_or)]
+                crate::metrics_recorder::record_convert_outcome(
+                    crate::metrics_recorder::CliSurface::Tron,
+                    &crate::metrics_recorder::label_from_path(&args.input),
+                    format_hint.map(std::convert::Into::into),
+                    converted,
+                    match bytes.len().try_into() {
+                        Ok(v) => v,
+                        Err(_) => i64::MAX,
+                    },
+                    match output.len().try_into() {
+                        Ok(v) => v,
+                        Err(_) => i64::MAX,
+                    },
+                );
                 let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
                     write_in_place(&args.input, &output)
                 } else {
@@ -194,10 +228,17 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         None => {
             let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, None);
 
-            // Check if we should use streaming for NDJSON input
+            // Stream only when the input is genuinely too large to buffer:
+            // `maybe_tooned` (via `run_adaptive_bounded`) is the single,
+            // correct adaptive decision for any input that fits in memory,
+            // picking TOON when it beats compact JSON by the margin and
+            // otherwise passing through. Routing bounded NDJSON through it
+            // (rather than the streaming TRON-only path) avoids a savings
+            // regression where TOON would have won. Streaming TRON remains
+            // the fallback for inputs that exceed `max_input_bytes`.
             let input_size = get_input_size(&args.input);
             let is_ndjson = format_hint == Some(FormatHint::Ndjson);
-            let use_streaming = is_ndjson || input_size > opts.max_input_bytes as u64;
+            let use_streaming = is_ndjson && input_size > opts.max_input_bytes as u64;
 
             if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON with adaptive size check
@@ -402,6 +443,11 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
 /// here is a genuine contract-level failure (not payload-driven ambiguity in
 /// the adaptive sense), so it exits 3 rather than silently passing through
 /// (`contracts/cli.md`).
+///
+/// TOON is tried first because a plain TOON document can itself begin with a
+/// `class ` key (e.g. `class Foo { ... }`), which would otherwise be mistaken
+/// for a TRON record header. ONTO/TRON are only attempted once their explicit
+/// schema prefix is present.
 fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
     const ONTO_SCHEMA_PREFIX: &str = "!schema ";
     const TRON_CLASS_PREFIX: &str = "class ";
@@ -410,6 +456,16 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
         eprintln!("tooned convert: input is not valid UTF-8 text");
         std::process::exit(3);
     };
+
+    // Try TOON first: it is the most general encoding and never collides with
+    // a `class `/`!schema ` prefix (those are ONTO/TRON markers, not valid
+    // TOON headers).
+    if !text.starts_with(ONTO_SCHEMA_PREFIX)
+        && !text.trim_start().starts_with(TRON_CLASS_PREFIX)
+        && let Ok(value) = decode_toon(text)
+    {
+        return finalize_json(&value, bytes);
+    }
 
     let value = if text.starts_with(ONTO_SCHEMA_PREFIX) {
         match decode_onto(text) {
@@ -437,8 +493,30 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
         }
     };
 
-    match serde_json::to_vec(&value) {
-        Ok(json) => json,
+    finalize_json(&value, bytes)
+}
+
+/// Emit `value` as compact JSON, recording the decode outcome for metrics.
+fn finalize_json(value: &serde_json::Value, bytes: &[u8]) -> Vec<u8> {
+    match sonic_rs::to_vec(value) {
+        Ok(json) => {
+            #[allow(clippy::manual_unwrap_or)]
+            crate::metrics_recorder::record_convert_outcome(
+                crate::metrics_recorder::CliSurface::Decode,
+                &crate::metrics_recorder::SourceLabel::None,
+                None,
+                true,
+                match bytes.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                },
+                match json.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                },
+            );
+            json
+        }
         Err(err) => {
             eprintln!("tooned convert: decoded text has no JSON representation: {err}");
             std::process::exit(3);
@@ -451,13 +529,33 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
 /// passthrough outcome (constitution Principle I -- never an error for
 /// payload-driven ambiguity).
 fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
-    match maybe_tooned(bytes, opts) {
+    #[allow(clippy::manual_unwrap_or)]
+    let input_len = match bytes.len().try_into() {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
+    let output = match maybe_tooned(bytes, opts) {
         Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
         Ok(Conversion::Passthrough { bytes, .. }) => bytes,
         // Infallible in practice (see maybe_tooned's doc comment); fail
         // safe to the original bytes rather than panicking or erroring.
         Err(_) => bytes.to_vec(),
-    }
+    };
+    #[allow(clippy::manual_unwrap_or)]
+    let output_len = match output.len().try_into() {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
+    let converted = output_len != input_len;
+    crate::metrics_recorder::record_convert_outcome(
+        crate::metrics_recorder::CliSurface::Convert,
+        &crate::metrics_recorder::SourceLabel::None,
+        opts.format_hint,
+        converted,
+        input_len,
+        output_len,
+    );
+    output
 }
 
 /// Returns the size of the input in bytes, or 0 for stdin (unknown size).
