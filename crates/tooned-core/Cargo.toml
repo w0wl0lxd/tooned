@@ -27,7 +27,7 @@ criterion = { workspace = true }  #unified
 csv = { workspace = true }        #unified
 proptest = { workspace = true }   #unified
 serde_yaml = { workspace = true } #unified
-sonic-rs = "0.5"
+sonic-rs = { workspace = true }
 toml = { workspace = true }       #unified
 
 [package.metadata.cargo-machete]

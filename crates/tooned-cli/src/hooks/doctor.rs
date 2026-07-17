@@ -35,10 +35,10 @@ pub fn run() {
         "pi": super::pi::doctor_report(),
     });
 
-    // `serde_json::to_string_pretty` on a `Value` we just built from known
+    // `sonic_rs::to_string_pretty` on a `Value` we just built from known
     // scalar/array/object pieces cannot fail; propagate as best-effort text
     // rather than panicking if it somehow did.
-    match serde_json::to_string_pretty(&report) {
+    match sonic_rs::to_string_pretty(&report) {
         Ok(text) => println!("{text}"),
         Err(_) => println!("{report}"),
     }
