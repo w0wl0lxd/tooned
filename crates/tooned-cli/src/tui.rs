@@ -6,6 +6,7 @@
 //! with KPI big-text, trend charts, top-file/agent leaderboards, recent
 //! events, and the GitHub-style savings heatmap.
 
+use std::io::{self, IsTerminal as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -685,6 +686,9 @@ fn format_count(n: u64) -> String {
 }
 
 pub fn run(path: &Path, window: &MetricsWindow, global: bool) -> anyhow::Result<()> {
+    if !io::stdout().is_terminal() {
+        anyhow::bail!("tooned dashboard: a terminal is required; run from an interactive tty");
+    }
     let store = Store::open(path).map_err(|e| {
         anyhow::anyhow!("tooned dashboard: cannot open ledger {}: {e}", path.display())
     })?;
