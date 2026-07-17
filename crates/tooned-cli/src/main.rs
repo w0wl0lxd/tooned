@@ -13,6 +13,7 @@ mod config;
 mod hooks;
 mod mcp;
 mod metrics_recorder;
+mod tui;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
@@ -52,6 +53,8 @@ enum Command {
     Heatmap(cli::heatmap::HeatmapArgs),
     /// Inspect the local token-savings metrics ledger.
     Metrics(cli::metrics::MetricsArgs),
+    /// Interactive ratatui metrics dashboard.
+    Dashboard(cli::dashboard::DashboardArgs),
     /// Generate shell completion scripts (release/packaging helper).
     #[command(hide = true)]
     Completions { shell: Shell },
@@ -77,6 +80,7 @@ fn main() -> anyhow::Result<()> {
         Command::Mcp(args) => mcp::run(args),
         Command::Heatmap(args) => cli::heatmap::run(args),
         Command::Metrics(args) => cli::metrics::run(args),
+        Command::Dashboard(args) => cli::dashboard::run(args),
         Command::Completions { shell } => {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
