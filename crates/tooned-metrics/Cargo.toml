@@ -11,8 +11,8 @@ readme = "../../README.md"
 keywords = ["toon", "metrics", "sqlite"]
 
 [dependencies]
-blake3 = "1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+blake3 = { workspace = true }     #unified
+rusqlite = { workspace = true }   #unified
 serde = { workspace = true }
 serde_json = { workspace = true }
 sonic-rs = { workspace = true }
