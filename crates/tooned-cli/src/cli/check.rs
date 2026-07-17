@@ -50,8 +50,14 @@ pub struct CheckArgs {
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
+    let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
+        args.input
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(crate::cli::format_hint_from_extension)
+    });
     let precise = Some(args.precise || matches!(config.precise_tokens, Some(true)));
-    let opts = config.conversion_options(args.margin, args.max_bytes, args.format_hint, precise);
+    let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, precise);
 
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,

@@ -12,6 +12,13 @@ pub enum DocType {
     Csv,
     Tsv,
     Xml,
+    /// MessagePack (binary, JSON-shaped documents and arrays).
+    Msgpack,
+    /// CBOR (Concise Binary Object Representation; binary JSON).
+    Cbor,
+    /// JSON5 (human-readable JSON superset with comments, trailing commas,
+    /// unquoted keys, and single-quoted strings).
+    Json5,
 }
 
 /// Tunables for conversion functions. See [`ConversionOptions::default`]
