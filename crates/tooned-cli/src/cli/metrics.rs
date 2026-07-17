@@ -48,7 +48,7 @@ pub enum MetricsCommand {
     Reset(ResetArgs),
 }
 
-#[derive(Debug, Args)]
+#[derive(Clone, Debug, Args)]
 pub struct MetricsWindow {
     /// Inclusive lower bound, `YYYY-MM-DD` (default: 365 days before `--until`).
     #[arg(long)]
@@ -74,7 +74,7 @@ pub enum MetricArg {
 }
 
 impl MetricArg {
-    fn to_metric(self) -> Metric {
+    pub(crate) fn to_metric(self) -> Metric {
         match self {
             MetricArg::Tokens => Metric::Tokens,
             MetricArg::Bytes => Metric::Bytes,
@@ -139,7 +139,7 @@ pub struct ResetArgs {
 }
 
 /// Resolve the ledger path for the chosen scope (global or project).
-fn ledger_path(global: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn ledger_path(global: bool) -> anyhow::Result<PathBuf> {
     if global {
         Ok(user_global_db_path())
     } else {
@@ -149,7 +149,7 @@ fn ledger_path(global: bool) -> anyhow::Result<PathBuf> {
 }
 
 /// Nearest ancestor (or cwd) that contains a `.tooned/` directory.
-fn project_root() -> anyhow::Result<PathBuf> {
+pub(crate) fn project_root() -> anyhow::Result<PathBuf> {
     let cwd = std::env::current_dir()?;
     let mut dir = cwd.as_path();
     loop {
@@ -164,7 +164,7 @@ fn project_root() -> anyhow::Result<PathBuf> {
 }
 
 /// Build [`QueryOpts`] from a [`MetricsWindow`].
-fn opts_from(w: &MetricsWindow) -> QueryOpts<'_> {
+pub(crate) fn opts_from(w: &MetricsWindow) -> QueryOpts<'_> {
     let since_day = w.since.as_deref().and_then(ymd_to_day);
     let until_day = w.until.as_deref().and_then(ymd_to_day);
     QueryOpts {
@@ -255,7 +255,7 @@ fn count_lines(text: &str) -> usize {
     text.trim_end().split('\n').filter(|l| !l.is_empty()).count()
 }
 
-fn metric_word(m: Metric) -> &'static str {
+pub(crate) fn metric_word(m: Metric) -> &'static str {
     match m {
         Metric::Tokens => "tokens",
         Metric::Bytes => "bytes",
@@ -264,6 +264,11 @@ fn metric_word(m: Metric) -> &'static str {
 
 fn print_summary(s: &Summary, m: Metric) {
     let unit = metric_word(m);
+    if s.total_events == 0 {
+        println!("tooned metrics -- summary");
+        println!("  no metrics recorded yet");
+        return;
+    }
     println!("tooned metrics -- summary");
     println!("  total saved:    {} {unit}", s.total_saved_bytes);
     println!("  total tokens:  {}", s.total_tokens_saved);
