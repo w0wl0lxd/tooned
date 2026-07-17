@@ -90,7 +90,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let command = format!("{} hook run --droid", binary.display());
+    let command = super::hook_command_for(&binary, "droid");
 
     let mut root = super::read_json_value(&path);
     merge_droid_entry(&mut root, super::DROID_MATCHER, &command);
