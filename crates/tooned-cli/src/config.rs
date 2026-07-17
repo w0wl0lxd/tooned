@@ -98,6 +98,9 @@ impl Config {
             "csv" => Some(FormatHint::Csv),
             "tsv" => Some(FormatHint::Tsv),
             "xml" => Some(FormatHint::Xml),
+            "msgpack" => Some(FormatHint::Msgpack),
+            "cbor" => Some(FormatHint::Cbor),
+            "json5" => Some(FormatHint::Json5),
             _ => None,
         })
     }
