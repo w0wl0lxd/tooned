@@ -34,8 +34,8 @@ pub fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
         if exceeds_max_structural_depth(trimmed) {
             return Err(ParseError::TooDeep);
         }
-        let value = sonic_rs::from_slice::<Value>(trimmed)
-            .map_err(|e| ParseError::Json(e.to_string()))?;
+        let value =
+            sonic_rs::from_slice::<Value>(trimmed).map_err(|e| ParseError::Json(e.to_string()))?;
         items.push(value);
     }
     Ok(Value::Array(items))
