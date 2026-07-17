@@ -141,7 +141,7 @@ fn object_values(
                 "TRON object {index}, key {key} contains a non-primitive value"
             )));
         }
-        vals.push(serde_json::to_string(value).map_err(|e| {
+        vals.push(sonic_rs::to_string(value).map_err(|e| {
             ToonedError::DecodeFailed(format!("failed to serialize TRON cell: {e}"))
         })?);
     }
@@ -205,11 +205,11 @@ fn is_valid_header_key(key: &str) -> bool {
 pub fn decode(text: &str) -> Result<Value, ToonedError> {
     let (classes, body) = parse_header(text)?;
     if classes.is_empty() {
-        serde_json::from_str(body.trim())
+        sonic_rs::from_str(body.trim())
             .map_err(|e| ToonedError::DecodeFailed(format!("TRON body is not valid JSON: {e}")))
     } else {
         let json_text = expand_tron(body, &classes)?;
-        serde_json::from_str(&json_text).map_err(|e| {
+        sonic_rs::from_str(&json_text).map_err(|e| {
             ToonedError::DecodeFailed(format!("expanded TRON body is not valid JSON: {e}"))
         })
     }
@@ -496,9 +496,15 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
     let shape = shape::classify(&value);
 
     let mut counter = ByteCountingWriter(0);
-    serde_json::to_writer(&mut counter, &value).map_err(|e| {
-        ToonedError::DecodeFailed(format!("failed to compute JSON size for TRON comparison: {e}"))
-    })?;
+    {
+        let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
+        sonic_rs::to_writer(&mut writer, &value).map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to compute JSON size for TRON comparison: {e}"))
+        })?;
+        writer.flush().map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to flush TRON JSON byte counter: {e}"))
+        })?;
+    }
     let json_bytes = counter.0;
 
     let Ok(encoded) = encode(&value) else {
@@ -646,8 +652,12 @@ fn write_stream_value<W: Write>(
             .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
         return Ok(());
     }
-    serde_json::to_writer(out, value).map_err(|e| {
+    let mut writer = sonic_rs::writer::BufferedWriter::new(&mut *out);
+    sonic_rs::to_writer(&mut writer, value).map_err(|e| {
         ToonedError::DecodeFailed(format!("failed to serialize TRON fallback value: {e}"))
+    })?;
+    writer.flush().map_err(|e| {
+        ToonedError::DecodeFailed(format!("failed to flush TRON fallback value: {e}"))
     })
 }
 
