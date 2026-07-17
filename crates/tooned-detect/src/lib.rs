@@ -533,5 +533,4 @@ mod tests {
         // Random non-UTF8 bytes should not parse as a whole object/array.
         assert_eq!(detect(&[0xff, 0xfe, 0xfd], None), None);
     }
-
 }
