@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "tooned CLI: convert/check/pipe/wrap, the .tooned/ index, agent hook installers, and the MCP server"
+description = "tooned rewrites JSON-shaped tool output as the denser TOON format whenever TOON is smaller, and works as a Claude Code, Codex, Devin, or MCP server integration"
 categories.workspace = true
 readme = "../../README.md"
 keywords = ["toon", "cli", "mcp", "ai-agent", "llm"]
@@ -19,6 +19,9 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 clap_complete = "4.6"
 clap_mangen = "0.2"
+colorgrad = "0.8"
+crossterm = "0.29"
+ratatui = "0.30.2"
 rmcp = { version = "2", features = ["transport-io"] }
 same-file = "1"
 serde = { workspace = true }
@@ -32,6 +35,8 @@ toml = { workspace = true }
 tooned-core = { workspace = true }                                            #unified
 tooned-index = { workspace = true }                                           #unified
 tooned-metrics = { workspace = true }                                         #unified
+tui-bar-graph = "0.3.5"
+tui-big-text = "0.8.7"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true } #unified
