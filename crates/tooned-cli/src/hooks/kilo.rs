@@ -18,13 +18,14 @@ use super::{InstallError, Scope};
 fn config_root() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        std::env::var_os("APPDATA").map(PathBuf::from)
+        if let Some(appdata) = std::env::var_os("APPDATA").filter(|v| !v.is_empty()) {
+            return Some(PathBuf::from(appdata));
+        }
+        // Fall back to $HOME/.config for test environments that clear %APPDATA%.
     }
-    #[cfg(not(windows))]
-    {
-        let home = std::env::var_os("HOME")?;
-        Some(PathBuf::from(home).join(".config"))
-    }
+    let home =
+        std::env::var_os("HOME").or(std::env::var_os("USERPROFILE")).filter(|v| !v.is_empty())?;
+    Some(PathBuf::from(home).join(".config"))
 }
 
 const AGENT: PluginAgent = PluginAgent {
