@@ -76,7 +76,7 @@ jobs:
             local crate="$1"
             for attempt in $(seq 1 20); do
               local out status
-              out=$(cargo publish -p "$crate" --allow-dirty 2>&1)
+              out=$(cargo publish -p "$crate" 2>&1)
               status=$?
               if [ $status -eq 0 ]; then
                 return 0
