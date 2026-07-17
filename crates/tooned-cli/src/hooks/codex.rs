@@ -89,7 +89,7 @@ pub fn install(mcp: bool) -> Result<(), InstallError> {
 
     let command = super::hook_command_for(&binary, "codex");
 
-    let mut hooks_root = super::read_json_value(&hooks_json_path);
+    let mut hooks_root = super::read_json_value(&hooks_json_path)?;
     super::merge_post_tool_use_entry(&mut hooks_root, super::CODEX_MATCHER, &command);
     super::write_json_pretty(&hooks_json_path, &hooks_root)?;
 
@@ -134,7 +134,7 @@ pub(crate) fn hooks_json_path() -> Result<std::path::PathBuf, InstallError> {
 /// graceful no-op, never an error).
 pub fn uninstall() -> Result<bool, InstallError> {
     let path = hooks_json_path()?;
-    let mut root = super::read_json_value(&path);
+    let mut root = super::read_json_value(&path)?;
     let removed =
         super::remove_post_tool_use_entries_by_suffix(&mut root, super::CODEX_COMMAND_SUFFIX);
     if removed {
@@ -150,6 +150,6 @@ pub fn status() -> bool {
     let Ok(path) = hooks_json_path() else {
         return false;
     };
-    let root = super::read_json_value(&path);
+    let root = super::read_json_value(&path).unwrap_or_else(|_| serde_json::json!({}));
     super::has_post_tool_use_entry_by_suffix(&root, super::CODEX_COMMAND_SUFFIX)
 }
