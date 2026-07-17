@@ -17,7 +17,7 @@ sequenceDiagram
 
     U->>A: "read file.json"
     A->>A: execute read tool
-    Note over A: tool output = JSON string<br/>(Claude: tool_output, Codex: tool_response,<br/>Devin: tool_response.output)
+    Note over A: tool output = JSON string<br/>(e.g. tool_output, tool_response,<br/>or a nested output field)
     A->>T: PostToolUse payload (stdin)
     T->>T: maybe_tooned(tool output)
     Note over T: JSON → TOON when smaller & round-trips
@@ -53,13 +53,9 @@ sequenceDiagram
 5. The agent forwards both the original tool output and the `additionalContext`
    to the model.
 
-The exact field name in the `PostToolUse` payload depends on the agent:
-
-| Agent | Tool output field |
-|---|---|
-| Claude Code | `tool_output` (string) |
-| Codex CLI | `tool_response` (string or object) |
-| Devin CLI | `tool_response.output` (string inside `{success, output, error}`) |
+The exact field name in the `PostToolUse` payload depends on the agent. The hook
+implementation reads the tool output from the field the agent provides, whether
+that is a top-level string, an object, or a nested `output` key.
 
 ### What the user / agent sees
 
@@ -79,7 +75,7 @@ the original JSON, a mismatch experiment was run.
 
 | File | Original tool output | Injected `additionalContext` |
 |---|---|---|
-| `devin-test/users_20.json` | JSON array of 20 user objects | TOON encoding of `devin-test/products_20.json` |
+| `agent-test/users_20.json` | JSON array of 20 user objects | TOON encoding of `agent-test/products_20.json` |
 
 The `users` file has fields `id`, `name`, `email`, `active`, and `role`. The
 `products` file has fields `sku`, `name`, `price`, `qty`, and `category`.
@@ -109,7 +105,7 @@ sequenceDiagram
     participant T as tooned hook run
     participant M as Model
 
-    A->>T: PostToolUse payload<br/>(users JSON in tool_response.output)
+    A->>T: PostToolUse payload<br/>(users JSON in the tool output)
     Note over T: replace output with<br/>products_20.json → TOON
     T-->>A: additionalContext = products TOON
     Note over A,M: model receives users JSON + products TOON
@@ -126,6 +122,5 @@ sequenceDiagram
   model's ability to reason about the data.
 - For exact-raw-output requests, the original tool output remains available, so
   fidelity is not compromised.
-- When installed as a Devin CLI hook, `tooned` writes a `timeout` of 5 seconds
-  on the hook command so a stalled `tooned` process cannot hang the agent's
-  tool-call pipeline.
+- The hook command is configured with a 5-second timeout so a stalled `tooned`
+  process cannot hang the agent's tool-call pipeline.
