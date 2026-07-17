@@ -10,7 +10,7 @@ url = "https://raw.githubusercontent.com/google/supply-chain/main/audits.toml"
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
-[policy.tooned-cli]
+[policy.tooned]
 audit-as-crates-io = false
 
 [policy.tooned-convert]
@@ -29,6 +29,9 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.tooned-json]
+audit-as-crates-io = false
+
+[policy.tooned-metrics]
 audit-as-crates-io = false
 
 [policy.tooned-parse]
@@ -402,7 +405,7 @@ version = "1.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.ignore]]
-version = "0.4.29"
+version = "0.4.30"
 criteria = "safe-to-deploy"
 
 [[exemptions.indexmap]]
@@ -830,11 +833,11 @@ version = "1.12.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.52.4"
+version = "1.53.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
-version = "2.7.0"
+version = "2.7.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-util]]
