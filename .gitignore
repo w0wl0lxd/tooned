@@ -69,4 +69,10 @@ coverage/
 tarpaulin-report.html
 lcov.info
 
+# Agent work-log and spec-kit documents are intentionally excluded from
+# version control; they are generated/accumulated during agent sessions and
+# can be reconstructed from issue/PR history if needed.
+/docs/agents/work-log/
+/specs/
+
 
