@@ -67,6 +67,14 @@ pub struct ConvertArgs {
 // `std::process::exit` below rather than through the `Err` path.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
+    let config = crate::config::Config::load(args.config.as_deref())?;
+    let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
+        args.input
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(crate::cli::format_hint_from_extension)
+    });
+
     match args.to {
         // Decoding has no `max_input_bytes` gate of its own (unlike the
         // adaptive paths below) -- the whole file must be read regardless of
@@ -106,9 +114,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     std::process::exit(2);
                 }
             };
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             opts.margin_pct = 0.0;
             let output = match tooned_core::maybe_onto(&bytes, &opts) {
                 Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
@@ -130,19 +137,16 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // objects. Like `--to onto`, the margin is forced to 0% but round-trip
         // fidelity is still enforced.
         Some(Direction::Tron) => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             opts.margin_pct = 0.0;
 
             // Check if we should use streaming for NDJSON input
             let input_size = get_input_size(&args.input);
-            let is_ndjson_hint = args.format_hint == Some(FormatHint::Ndjson);
-            let is_ndjson_ext = is_ndjson_extension(&args.input);
-            let use_streaming =
-                is_ndjson_hint || is_ndjson_ext || input_size > opts.max_input_bytes as u64;
+            let is_ndjson = format_hint == Some(FormatHint::Ndjson);
+            let use_streaming = is_ndjson || input_size > opts.max_input_bytes as u64;
 
-            if use_streaming && (is_ndjson_hint || is_ndjson_ext) {
+            if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON
                 let result = run_tron_streaming(args, &opts);
                 if let Err(err) = result {
@@ -181,26 +185,21 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // still falls back to passthrough rather than ever emitting a
         // corrupted or larger-than-source encoding.
         Some(Direction::Toon) => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
             let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
             run_adaptive_bounded(args, &opts)?;
         }
         None => {
-            let config = crate::config::Config::load(args.config.as_deref())?;
-            let opts =
-                config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+            let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, None);
 
             // Check if we should use streaming for NDJSON input
             let input_size = get_input_size(&args.input);
-            let is_ndjson_hint = args.format_hint == Some(FormatHint::Ndjson);
-            let is_ndjson_ext = is_ndjson_extension(&args.input);
-            let use_streaming =
-                is_ndjson_hint || is_ndjson_ext || input_size > opts.max_input_bytes as u64;
+            let is_ndjson = format_hint == Some(FormatHint::Ndjson);
+            let use_streaming = is_ndjson || input_size > opts.max_input_bytes as u64;
 
-            if use_streaming && (is_ndjson_hint || is_ndjson_ext) {
+            if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON with adaptive size check
                 let result = run_adaptive_streaming(args, &opts);
                 if let Err(err) = result {
@@ -467,14 +466,6 @@ fn get_input_size(input: &Path) -> u64 {
         return 0;
     }
     std::fs::metadata(input).map_or(0, |m| m.len())
-}
-
-/// Checks if the file extension indicates NDJSON/JSONL format.
-fn is_ndjson_extension(path: &Path) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => ext.eq_ignore_ascii_case("ndjson") || ext.eq_ignore_ascii_case("jsonl"),
-        None => false,
-    }
 }
 
 /// Guard for a temporary file. Deletes the file on drop unless the path is
