@@ -50,7 +50,7 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
                         savings_pct: row.savings_pct,
                     })
                     .collect();
-                println!("{}", serde_json::to_string(&entries)?);
+                println!("{}", sonic_rs::to_string(&entries)?);
                 return Ok(());
             }
 

@@ -572,7 +572,7 @@ impl Store {
         let events: Vec<EventRow> =
             rows.collect::<Result<Vec<_>, _>>().map_err(MetricsError::Sqlite)?;
         match format {
-            ExportFormat::Json => serde_json::to_string(&events).map_err(|e| {
+            ExportFormat::Json => sonic_rs::to_string(&events).map_err(|e| {
                 MetricsError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
             }),
             ExportFormat::Csv => Ok(events_to_csv(&events)),
