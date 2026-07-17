@@ -2304,6 +2304,7 @@ dependencies = [
  "same-file",
  "serde",
  "serde_json",
+ "shlex",
  "similar",
  "tempfile",
  "thiserror",

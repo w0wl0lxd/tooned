@@ -30,6 +30,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 tooned-core = { workspace = true }                                            #unified
 tooned-index = { workspace = true }                                           #unified
 tooned-metrics = { workspace = true } #unified
+shlex = "2.0.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -164,7 +164,7 @@ pub fn install(scope: Option<Scope>, _mcp: bool) -> Result<(), InstallError> {
         None => DEFAULT_SCOPE,
     };
     let path = settings_path(scope)?;
-    let command = format!("{} hook run --devin", binary.display());
+    let command = super::hook_command_for(&binary, "devin");
 
     let mut root = super::read_json_value(&path);
     merge_devin_entry(&mut root, super::DEVIN_MATCHER, &command, is_nested_config(scope));
