@@ -20,11 +20,17 @@ use tooned_types::{
 
 mod shape;
 
+pub mod cbor;
+pub mod json5;
+pub mod msgpack;
+
 pub mod onto;
 pub use onto::{decode as decode_onto, encode as encode_onto, maybe_onto};
 
 pub mod tron;
-pub use tron::{decode as decode_tron, encode as encode_tron, maybe_tron};
+pub use tron::{
+    StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
+};
 
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
@@ -99,6 +105,9 @@ pub(crate) fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value
         DocType::Csv => tooned_csv::parse_csv(input),
         DocType::Tsv => tooned_csv::parse_tsv(input),
         DocType::Xml => tooned_xml::parse(input),
+        DocType::Msgpack => msgpack::parse_msgpack(input),
+        DocType::Cbor => cbor::parse_cbor(input),
+        DocType::Json5 => json5::parse_json5(input),
     }
 }
 
@@ -228,7 +237,7 @@ fn precise_token_savings_pct(json_text: &str, toon_text: &str) -> f64 {
 /// an infinite margin) -- clamping to 0 is the conservative, still-safe
 /// interpretation ("no margin required" rather than "reject everything" or
 /// "accept everything").
-pub(crate) fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
+pub fn is_smaller_enough(json_bytes: usize, toon_bytes: usize, margin_pct: f64) -> bool {
     let margin_pct = if margin_pct.is_finite() { margin_pct.max(0.0) } else { 0.0 };
     let threshold = (json_bytes as f64) * (1.0 - margin_pct / 100.0);
     (toon_bytes as f64) < threshold
@@ -514,5 +523,39 @@ mod tests {
         assert_eq!(report.reason, Some(PassthroughReason::InputTooLarge));
         assert_eq!(report.input_bytes, payload.len());
         assert_eq!(report.doc_type, None);
+    }
+
+    #[test]
+    fn msgpack_object_array_converts_to_toon() {
+        let value = serde_json::json!([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]);
+        let payload = rmp_serde::to_vec_named(&value).expect("msgpack encode");
+        let opts = ConversionOptions { margin_pct: 0.0, ..ConversionOptions::default() };
+        let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
+        assert!(matches!(result, Conversion::Toon { .. }), "msgpack array of objects converts");
+    }
+
+    #[test]
+    fn cbor_object_array_converts_to_toon() {
+        let value = serde_json::json!([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]);
+        let payload = cbor4ii::serde::to_vec(Vec::new(), &value).expect("cbor encode");
+        let opts = ConversionOptions { margin_pct: 0.0, ..ConversionOptions::default() };
+        let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
+        assert!(matches!(result, Conversion::Toon { .. }), "cbor array of objects converts");
+    }
+
+    #[test]
+    fn json5_with_comments_and_unquoted_keys_converts_to_toon() {
+        let payload = b"{ // trailing comma and comment\n  a: 1,\n  b: [2, 3],\n}";
+        let opts = ConversionOptions { margin_pct: 0.0, ..ConversionOptions::default() };
+        let result = maybe_tooned(payload, &opts).expect("infallible for payload-driven input");
+        assert!(matches!(result, Conversion::Toon { .. }), "json5 with comments converts");
+    }
+
+    #[test]
+    fn parse_by_doc_type_json5_hint_parses_relaxed_syntax() {
+        let payload = b"{ 'key': 'value', list: [1, 2,], }";
+        let value = parse_by_doc_type(payload, DocType::Json5).expect("json5 parse");
+        assert_eq!(value.get("key"), Some(&serde_json::json!("value")));
+        assert_eq!(value.get("list"), Some(&serde_json::json!([1, 2])));
     }
 }

@@ -24,14 +24,16 @@ pub use tooned_types::{
 
 // Re-export public functions from tooned-convert
 pub use tooned_convert::onto::decode as decode_onto;
-pub use tooned_convert::tron::{decode as decode_tron, encode as encode_tron, maybe_tron};
-pub use tooned_convert::{encode_onto, inspect, maybe_onto, maybe_tooned};
+pub use tooned_convert::tron::{
+    StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
+};
+pub use tooned_convert::{encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned};
 
 // Re-export decode_toon from tooned-toon
 pub use tooned_toon::decode_toon;
 
-// Re-export SONIC_RS_THRESHOLD_BYTES from tooned-json
-pub use tooned_json::SONIC_RS_THRESHOLD_BYTES;
+// Re-export SONIC_RS_THRESHOLD_BYTES and streaming NDJSON parser from tooned-json
+pub use tooned_json::{SONIC_RS_THRESHOLD_BYTES, parse_ndjson_stream};
 
 // Re-export XML module from tooned-xml
 pub mod xml {
