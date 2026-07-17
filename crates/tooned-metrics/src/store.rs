@@ -267,11 +267,12 @@ pub struct Store {
 
 impl Store {
     /// Open (creating if needed) the database at `db_path`. Enforces a
-    /// non-symlinked parent, `0600` permissions on the file, the schema
-    /// version, and a WAL + busy-timeout for safe concurrent best-effort
-    /// writes.
+    /// non-symlinked parent and database file, `0600` permissions on the file,
+    /// the schema version, and a WAL + busy-timeout for safe concurrent
+    /// best-effort writes.
     pub fn open(db_path: &Path) -> Result<Self, MetricsError> {
         ensure_parent(db_path)?;
+        refuse_symlink(db_path, "metrics database")?;
         let existed = db_path.exists();
         let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
         if !existed {
@@ -893,16 +894,36 @@ pub fn project_db_path(root: &Path) -> PathBuf {
     p
 }
 
+/// Reject paths that are symlinks. The metrics database path is either
+/// caller-supplied or derived from `TOONED_METRICS_DIR` / `XDG_DATA_HOME`, so
+/// a pre-placed symlink could otherwise redirect reads/writes to an arbitrary
+/// location.
+fn refuse_symlink(path: &Path, label: &str) -> Result<(), MetricsError> {
+    if let Ok(meta) = std::fs::symlink_metadata(path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(MetricsError::Symlink(std::path::PathBuf::from(format!(
+            "{label} at {}",
+            path.display()
+        ))));
+    }
+    Ok(())
+}
+
 fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
     if let Some(parent) = db_path.parent() {
-        if let Ok(meta) = std::fs::symlink_metadata(parent)
-            && meta.file_type().is_symlink()
-        {
-            return Err(MetricsError::Symlink(parent.to_path_buf()));
-        }
+        refuse_symlink(parent, "metrics database directory")?;
+        let parent_existed = parent.exists();
         std::fs::create_dir_all(parent).map_err(MetricsError::Io)?;
+        // Re-check after creating the directory in case a TOCTOU swap occurred
+        // (best-effort; the earlier check already stops the common case).
+        refuse_symlink(parent, "metrics database directory")?;
+        // Only chmod the parent if we just created it; do not alter permissions
+        // on an existing directory that may be shared (e.g. /tmp or a system dir).
         #[cfg(unix)]
-        set_mode(parent, 0o700);
+        if !parent_existed {
+            set_mode(parent, 0o700);
+        }
     }
     Ok(())
 }
