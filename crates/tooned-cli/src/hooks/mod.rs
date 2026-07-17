@@ -166,7 +166,7 @@ pub(crate) const MAX_HOOK_STDIN_BYTES: u64 = 8 * 2 * 1024 * 1024 + 64 * 1024;
 pub(crate) enum InstallError {
     #[error(
         "could not resolve a `tooned` binary on PATH; install it first \
-         (e.g. `cargo install tooned-cli`, or a prebuilt release binary) so it is \
+         (e.g. `cargo install tooned`, or a prebuilt release binary) so it is \
          discoverable on PATH before running `tooned hook install`"
     )]
     BinaryNotOnPath,

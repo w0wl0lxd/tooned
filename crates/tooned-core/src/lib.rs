@@ -7,7 +7,7 @@
 //! Dependency-minimal by design: no SQLite, no directory walking. This crate
 //! is meant to be embedded directly in a latency-sensitive agent hook
 //! process. See `tooned-index` for the on-disk `.tooned/` project index
-//! and `tooned-cli` for the distributed binary (CLI, hooks, MCP server)
+//! and `tooned` for the distributed binary (CLI, hooks, MCP server)
 //! that wires this crate together with `tooned-index`.
 //!
 //! The public surface here is exactly `contracts/tooned-core-api.md`:

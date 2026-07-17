@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "CSV/TSV parsing for the tooned workspace"
 categories.workspace = true
 
 [lib]
