@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Integration tests for the plugin-wrapped agent hooks (OpenCode, Kilo, Pi).
 //!
 //! These agents do not call `tooned` directly; their generated plugin files call
