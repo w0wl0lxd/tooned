@@ -86,11 +86,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `workspace = true`, with `cargo-rail unify` keeping the graph consistent across targets.
   ([work-log](docs/agents/work-log/2026-07-16-cargo-rail-setup.md))
 - **tooned-cli:** added `index compact` (SQLite WAL checkpoint), `index watch`
-  (polling `index sync`), and `diff` (compare original JSON with TOON round-trip
-  using `similar`). ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+  (`notify`-based debounced filesystem watcher with `--debounce-ms` and
+  `watch.debounce_ms` config support), and `diff` (compare original JSON with TOON
+  round-trip using `similar`). ([work-log](docs/agents/work-log/2026-07-16-004-notify-index-watch.md))
 - **tooned-cli:** added TOML configuration file support loaded from `--config`,
   `TOONED_CONFIG`, `$XDG_CONFIG_HOME/tooned/config.toml`, or `.tooned.toml`;
   CLI flags override config-file values. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-detect:** added `heapster` as a dev-dependency and a zero-allocation
+  test guardrail for the `detect` sniffing hot path across JSON, NDJSON, YAML,
+  TOML, CSV, TSV, unstructured, and empty inputs. ([work-log](docs/agents/work-log/2026-07-16-005-heapster-zero-alloc.md))
 - **tooned-convert / tooned-cli:** added prototype ONTO (`Object-Notation Tabular
   Output`) encoder/decoder for uniform arrays of flat objects and
   `tooned convert --to onto`. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))

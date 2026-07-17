@@ -555,7 +555,7 @@ mod tests {
     fn parse_by_doc_type_json5_hint_parses_relaxed_syntax() {
         let payload = b"{ 'key': 'value', list: [1, 2,], }";
         let value = parse_by_doc_type(payload, DocType::Json5).expect("json5 parse");
-        assert_eq!(value["key"], "value");
-        assert_eq!(value["list"], serde_json::json!([1, 2]));
+        assert_eq!(value.get("key"), Some(&serde_json::json!("value")));
+        assert_eq!(value.get("list"), Some(&serde_json::json!([1, 2])));
     }
 }
