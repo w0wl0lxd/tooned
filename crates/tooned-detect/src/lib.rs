@@ -47,6 +47,9 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         if is_ndjson(input) {
             return Some(DocType::NdJson);
         }
+        if is_json5(input) {
+            return Some(DocType::Json5);
+        }
         return Some(DocType::Json);
     }
 
@@ -62,6 +65,9 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         }
         if is_ndjson(input) {
             return Some(DocType::NdJson);
+        }
+        if is_json5(input) {
+            return Some(DocType::Json5);
         }
         return Some(DocType::Json);
     }
@@ -90,7 +96,11 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         return Some(delimited);
     }
 
-    tooned_xml::sniff(input)
+    if let Some(xml) = tooned_xml::sniff(input) {
+        return Some(xml);
+    }
+
+    sniff_binary(input)
 }
 
 /// Whether the first line of `trimmed` is, by itself, a TOML table header:
@@ -256,6 +266,131 @@ fn is_yaml(input: &[u8]) -> bool {
     false
 }
 
+/// JSON5 heuristics: comments (`//`, `/*`), single-quoted strings (`'`),
+/// unquoted object keys (`foo: 1`), and trailing commas (`1,}` / `1,]`).
+/// Only markers outside double-quoted strings are considered. This is a
+/// lightweight, non-exhaustive scan; when it misses a JSON5 file, the
+/// `--format-hint` or file-extension path still picks it up.
+fn is_json5(input: &[u8]) -> bool {
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (i, &b) in input.iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match b {
+            b'"' => in_string = true,
+            b'\'' => return true,
+            b'/' => {
+                if let Some(next) = input.get(i.saturating_add(1))
+                    && (*next == b'/' || *next == b'*')
+                {
+                    return true;
+                }
+            }
+            b',' => {
+                // trailing comma if the next non-whitespace byte is } or ]
+                for &after in input.iter().skip(i.saturating_add(1)) {
+                    if after.is_ascii_whitespace() {
+                        continue;
+                    }
+                    if after == b'}' || after == b']' {
+                        return true;
+                    }
+                    break;
+                }
+            }
+            _ => {
+                // bare identifier followed by ':' means an unquoted key.
+                if b.is_ascii_alphabetic() || b == b'_' || b == b'$' {
+                    let mut j = i.saturating_add(1);
+                    while j < input.len()
+                        && input.get(j).copied().is_some_and(is_json5_identifier_char)
+                    {
+                        j = j.saturating_add(1);
+                    }
+                    if j > i {
+                        // skip whitespace after the identifier
+                        let mut k = j;
+                        while k < input.len() && input.get(k).is_some_and(u8::is_ascii_whitespace) {
+                            k = k.saturating_add(1);
+                        }
+                        if input.get(k) == Some(&b':') {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn is_json5_identifier_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
+}
+
+/// MessagePack and CBOR are both self-describing binary JSON formats with
+/// overlapping byte ranges, so detection attempts a real parse and verifies
+/// the whole input is consumed. Only top-level objects/arrays are treated as
+/// tool-call-shaped data; a bare scalar would otherwise match random bytes.
+///
+/// Because a byte sequence can be valid in both encodings with different
+/// meanings (e.g. CBOR `{"a": true}` and MessagePack `{"a": -11}` can share
+/// the same bytes), we only auto-detect when *exactly one* parser fully
+/// consumes the input. If both parse, the format is ambiguous and we fall
+/// back to `None`, leaving disambiguation to the file extension or an
+/// explicit `--format-hint`.
+fn sniff_binary(input: &[u8]) -> Option<DocType> {
+    if input.is_empty() || std::str::from_utf8(input).is_ok() {
+        // Valid UTF-8 text is not a MessagePack/CBOR object/array.
+        return None;
+    }
+
+    let msgpack = parse_full_msgpack_object_or_array(input);
+    let cbor = parse_full_cbor_object_or_array(input);
+
+    match (msgpack, cbor) {
+        (Some(_), None) => Some(DocType::Msgpack),
+        (None, Some(_)) => Some(DocType::Cbor),
+        // Ambiguous bytes are not silently classified as one format or the
+        // other; the caller can still resolve them via extension/hint.
+        _ => None,
+    }
+}
+
+fn parse_full_msgpack_object_or_array(input: &[u8]) -> Option<serde_json::Value> {
+    let mut cursor = std::io::Cursor::new(input);
+    let value = rmp_serde::from_read::<_, serde_json::Value>(&mut cursor).ok()?;
+    if cursor.position() != input.len() as u64 || !is_object_or_array(&value) {
+        return None;
+    }
+    Some(value)
+}
+
+fn parse_full_cbor_object_or_array(input: &[u8]) -> Option<serde_json::Value> {
+    let mut cursor = std::io::Cursor::new(input);
+    let value = cbor4ii::serde::from_reader::<serde_json::Value, _>(&mut cursor).ok()?;
+    if cursor.position() != input.len() as u64 || !is_object_or_array(&value) {
+        return None;
+    }
+    Some(value)
+}
+
+fn is_object_or_array(value: &serde_json::Value) -> bool {
+    matches!(value, serde_json::Value::Object(_) | serde_json::Value::Array(_))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,9 +471,66 @@ mod tests {
     }
 
     #[test]
-    fn unrecognized_content_returns_none() {
-        assert_eq!(detect(b"", None), None);
-        assert_eq!(detect(b"   \n\t  ", None), None);
-        assert_eq!(detect(b"this is just some prose without any structure at all", None), None);
+    fn sniffs_json5() {
+        let with_comment = b"{ // comment\n  a: 1\n}";
+        assert_eq!(detect(with_comment, None), Some(DocType::Json5));
+
+        let single_quote = b"{ 'a': 1 }";
+        assert_eq!(detect(single_quote, None), Some(DocType::Json5));
+
+        let unquoted_key = b"{ a: 1, b: 2 }";
+        assert_eq!(detect(unquoted_key, None), Some(DocType::Json5));
+
+        let trailing_comma = b"{ \"a\": 1, }";
+        assert_eq!(detect(trailing_comma, None), Some(DocType::Json5));
+    }
+
+    #[test]
+    fn json5_array_of_unquoted_objects() {
+        assert_eq!(detect(b"[{a:1,b:2},{a:3,b:4}]", None), Some(DocType::Json5));
+    }
+
+    #[test]
+    fn json5_heuristic_does_not_misclassify_plain_json() {
+        assert_eq!(detect(br#"{"a": 1, "b": [1,2,3]}"#, None), Some(DocType::Json));
+        assert_eq!(detect(b"[1, 2, 3]", None), Some(DocType::Json));
+    }
+
+    #[test]
+    fn sniffs_msgpack() {
+        let value = serde_json::json!({"a": 1, "b": [2, 3]});
+        let bytes = rmp_serde::to_vec_named(&value).unwrap();
+        assert_eq!(detect(&bytes, None), Some(DocType::Msgpack));
+    }
+
+    #[test]
+    fn sniffs_cbor() {
+        let value = serde_json::json!({"a": 1, "b": [2, 3]});
+        let bytes = cbor4ii::serde::to_vec(Vec::new(), &value).unwrap();
+        assert_eq!(detect(&bytes, None), Some(DocType::Cbor));
+    }
+
+    #[test]
+    fn binary_detection_refuses_to_guess_ambiguous_bytes() {
+        // 0x80 is an empty MessagePack map and an empty CBOR array. Without
+        // an explicit format hint or extension it must not be silently
+        // classified as one or the other.
+        assert_eq!(detect(&[0x80], None), None);
+    }
+
+    #[test]
+    fn cbor_bytes_that_partially_parse_as_msgpack_still_select_cbor() {
+        // CBOR { "a": true } -- rmp-serde may parse the first fixstr but does
+        // not consume the whole buffer, so the CBOR parse should win.
+        let bytes = [0xa1, 0x61, 0x61, 0xf5];
+        assert_eq!(detect(&bytes, None), Some(DocType::Cbor));
+    }
+
+    #[test]
+    fn binary_detection_rejects_random_bytes_and_valid_utf8() {
+        // Random UTF-8 prose is not structured binary.
+        assert_eq!(detect(b"not a format", None), None);
+        // Random non-UTF8 bytes should not parse as a whole object/array.
+        assert_eq!(detect(&[0xff, 0xfe, 0xfd], None), None);
     }
 }

@@ -105,6 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI:** added Criterion benchmark and latency guardrail jobs, a `cargo vet`
   supply-chain audit gate with mozilla/google audit imports, and switched
   `security.yml` to direct `cargo audit`. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
+- **tooned-convert / tooned-detect / tooned-cli / tooned-index:** added MessagePack, CBOR,
+  and JSON5 as input formats. `tooned-detect` now sniffs `.msgpack`/`.cbor` binary payloads
+  and JSON5 text (comments, single-quoted strings, unquoted keys, trailing commas), while
+  `tooned-cli` maps `.msgpack`, `.msg`, `.cbor`, and `.json5` extensions to the appropriate
+  parser, and `--format-hint` / MCP `format_hint` accept `msgpack`, `cbor`, and `json5`.
 - **tooned-convert / tooned-cli:** added streaming NDJSON/JSONL conversion for large inputs.
   `tooned convert --to tron` and the default adaptive path now stream NDJSON/JSONL inputs
   (when the format is explicit via `--format-hint ndjson` or the file extension is
