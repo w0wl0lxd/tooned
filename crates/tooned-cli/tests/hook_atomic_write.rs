@@ -220,4 +220,105 @@ fn codex_install_leaves_no_stray_temp_files() {
         .map(|e| e.expect("dir entry").file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(entries, vec!["hooks.json".to_string()], "no stray temp files, got {entries:?}");
+
+    let contents = std::fs::read_to_string(hooks_dir.join("hooks.json")).expect("read hooks.json");
+    let _: serde_json::Value =
+        serde_json::from_str(&contents).expect("final file is complete, valid json");
+}
+
+#[test]
+fn devin_install_leaves_no_stray_temp_files() {
+    let project = tempfile::tempdir().expect("tempdir");
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["hook", "install", "--devin"])
+        .env_clear()
+        .env("PATH", bin_dir())
+        .current_dir(project.path())
+        .assert()
+        .success();
+
+    let hooks_dir = project.path().join(".devin");
+    let entries: Vec<String> = std::fs::read_dir(&hooks_dir)
+        .expect("read .devin dir")
+        .map(|e| e.expect("dir entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(entries, vec!["hooks.v1.json".to_string()], "no stray temp files, got {entries:?}");
+
+    let contents =
+        std::fs::read_to_string(hooks_dir.join("hooks.v1.json")).expect("read hooks.v1.json");
+    let _: serde_json::Value =
+        serde_json::from_str(&contents).expect("final file is complete, valid json");
+}
+
+#[test]
+fn concurrent_devin_installs_leave_no_stray_temp_files_and_valid_json() {
+    const WRITERS: usize = 8;
+
+    let project = tempfile::tempdir().expect("tempdir");
+    let project_path = project.path().to_path_buf();
+    let path_env = bin_dir();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
+
+    let handles: Vec<_> = (0..WRITERS)
+        .map(|_| {
+            let project_path = project_path.clone();
+            let path_env = path_env.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                Command::cargo_bin("tooned")
+                    .expect("binary exists")
+                    .args(["hook", "install", "--devin"])
+                    .env_clear()
+                    .env("PATH", &path_env)
+                    .current_dir(&project_path)
+                    .assert()
+                    .success();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().expect("installer thread must not panic");
+    }
+
+    let hooks_dir = project_path.join(".devin");
+    let entries: Vec<String> = std::fs::read_dir(&hooks_dir)
+        .expect("read .devin dir")
+        .map(|e| e.expect("dir entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        entries,
+        vec!["hooks.v1.json".to_string()],
+        "no stray temp files must survive a concurrent-writer race, got {entries:?}"
+    );
+
+    let contents =
+        std::fs::read_to_string(hooks_dir.join("hooks.v1.json")).expect("read hooks.v1.json");
+    let value: serde_json::Value = serde_json::from_str(&contents)
+        .expect("final file must be complete, valid JSON even after a concurrent-writer race");
+
+    let post_tool_use = value
+        .get("PostToolUse")
+        .and_then(serde_json::Value::as_array)
+        .expect("PostToolUse array must be present after a successful install");
+    let tooned_entries: Vec<_> = post_tool_use
+        .iter()
+        .filter(|entry| {
+            entry.get("hooks").and_then(serde_json::Value::as_array).is_some_and(|inner| {
+                inner.iter().any(|h| {
+                    h.get("command")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|c| c.ends_with("hook run --devin"))
+                })
+            })
+        })
+        .collect();
+    assert_eq!(
+        tooned_entries.len(),
+        1,
+        "concurrent installer runs targeting the same file must converge on exactly one \
+         tooned entry, not duplicate or corrupt it: got {tooned_entries:?}"
+    );
 }

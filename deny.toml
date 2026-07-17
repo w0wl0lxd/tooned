@@ -67,6 +67,9 @@ exceptions = [
   { allow = [
     "AGPL-3.0-only",
   ], crate = "tooned-convert" },
+  { allow = [
+    "AGPL-3.0-only",
+  ], crate = "tooned-metrics" },
 ]
 
 [bans]

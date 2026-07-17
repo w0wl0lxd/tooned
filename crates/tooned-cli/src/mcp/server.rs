@@ -383,7 +383,12 @@ impl ToonedMcpServer {
         // killing the entire MCP server process.
         task::spawn_blocking(move || {
             let opts = build_options(req.format_hint.as_deref(), req.margin_pct);
-            match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
+            #[allow(clippy::manual_unwrap_or)]
+            let content_len = match req.content.len().try_into() {
+                Ok(v) => v,
+                Err(_) => i64::MAX,
+            };
+            let result = match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
                 Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
                     converted: true,
                     text,
@@ -406,7 +411,24 @@ impl ToonedMcpServer {
                     report: None,
                     reason: None,
                 }),
+            };
+            {
+                let converted = result.0.converted;
+                #[allow(clippy::manual_unwrap_or)]
+                let out_len = match result.0.text.len().try_into() {
+                    Ok(v) => v,
+                    Err(_) => i64::MAX,
+                };
+                crate::metrics_recorder::record_convert_outcome(
+                    crate::metrics_recorder::CliSurface::McpServer,
+                    &crate::metrics_recorder::SourceLabel::None,
+                    None,
+                    converted,
+                    content_len,
+                    out_len,
+                );
             }
+            result
         })
         .await
         .map_err(|err| err.to_string())

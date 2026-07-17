@@ -32,6 +32,31 @@ pub use tron::{
     StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
 };
 
+/// Parse `input` into a `serde_json::Value` via the detected (or hinted)
+/// doctype. This is the same detection+parse step the conversion pipeline
+/// uses, exposed so tools like `tooned diff` can read the *original* as a
+/// structured value regardless of source format (JSON, NDJSON, YAML, TOML,
+/// CSV, TSV, XML). Binary doctypes (MessagePack, CBOR) and JSON5 are not
+/// handled here; callers should surface a clear "unsupported" message for
+/// those rather than guessing.
+pub fn parse_to_value(input: &[u8], format_hint: Option<DocType>) -> Result<Value, ParseError> {
+    let doc_type = detect(input, format_hint).ok_or_else(|| {
+        ParseError::Json("tooned: could not detect a supported structured doctype".into())
+    })?;
+    match doc_type {
+        DocType::Json => tooned_json::parse_json(input),
+        DocType::NdJson => tooned_json::parse_ndjson(input),
+        DocType::Yaml => tooned_yaml::parse_yaml(input),
+        DocType::Toml => tooned_toml::parse_toml(input),
+        DocType::Csv => tooned_csv::parse_csv(input),
+        DocType::Tsv => tooned_csv::parse_tsv(input),
+        DocType::Xml => tooned_xml::parse(input),
+        DocType::Msgpack | DocType::Cbor | DocType::Json5 => Err(ParseError::Json(
+            "tooned: binary/JSON5 doctypes are not supported by parse_to_value".into(),
+        )),
+    }
+}
+
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
 struct AttemptToon {

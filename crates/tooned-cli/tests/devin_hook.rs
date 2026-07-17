@@ -24,7 +24,6 @@ fn uniform_array_json(rows: usize) -> String {
 
 fn post_tool_use_payload(tool_response: &str) -> String {
     serde_json::json!({
-        "hook_event_name": "PostToolUse",
         "tool_name": "exec",
         "tool_input": { "command": "cat data.json" },
         "tool_response": {
@@ -105,7 +104,6 @@ fn tool_response_as_string_also_works() {
     // Defensive: if Devin ever passes `tool_response` as a plain string,
     // the hook should still process it like Codex does.
     let stdin = serde_json::json!({
-        "hook_event_name": "PostToolUse",
         "tool_name": "exec",
         "tool_input": { "command": "cat data.json" },
         "tool_response": uniform_array_json(20),
