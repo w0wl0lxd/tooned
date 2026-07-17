@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "XML detection and conversion to serde_json::Value for the tooned workspace"
 categories.workspace = true
 
 [lib]
