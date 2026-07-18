@@ -69,6 +69,22 @@ fn pipe_writes_converted_output_to_file() {
 }
 
 #[test]
+fn pipe_streams_oversized_input_to_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.txt");
+    let prose = "hello world"; // > --max-bytes 8, so it streams verbatim.
+
+    Command::cargo_bin("tooned")
+        .unwrap()
+        .args(["pipe", "--max-bytes", "8", "--out", out.to_str().unwrap()])
+        .write_stdin(prose)
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), prose);
+}
+
+#[test]
 fn pipe_always_exits_0_even_on_malformed_json() {
     let malformed = "{\"a\": not valid";
 

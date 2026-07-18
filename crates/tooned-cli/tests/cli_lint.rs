@@ -85,6 +85,20 @@ fn lint_fail_on_warning_exits_non_zero_for_inconsistent_keys() {
 }
 
 #[test]
+fn lint_json_fail_on_warning_reports_valid_false() {
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(b"- a: 1\n  b: hello\n- a: 2\n").unwrap();
+
+    Command::cargo_bin("tooned")
+        .unwrap()
+        .args(["lint", "--json", "--fail-on-warning", file.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("\"valid\":false"))
+        .stdout(predicate::str::contains("inconsistent key sets"));
+}
+
+#[test]
 fn lint_uniform_array_warns_on_inconsistent_keys() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(b"- a: 1\n  b: hello\n- a: 2\n").unwrap();
