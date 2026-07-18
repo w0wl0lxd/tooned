@@ -49,19 +49,19 @@ Whether `tooned` itself can convert the original file to TOON is irrelevant here
 
 | File | Original format | `tooned` converts? | Mismatch result | Notes |
 |---|---|---|---|---|
-| `records_20.xml` | XML attributes | yes (48.2% savings) | `SKU-1001` | Direct |
-| `config.yaml` | YAML | yes (11.7%) | `SKU-1001` | Direct |
-| `settings.toml` | TOML | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
-| `sample.json5` | JSON5 | no — not detected as structured data | `SKU-1001` | Direct, original not converted |
-| `orders_100.ndjson` | NDJSON | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
-| `events_100.ndjson` | NDJSON | yes (52.4%) | `SKU-1001` | Direct |
-| `products_20.cbor` | CBOR (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
-| `users_20.msgpack` | MessagePack (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
-| `data_20.csv` | CSV | yes (53.7%) | `SKU-1001` | Direct |
-| `data_20.tsv` | TSV | yes (53.7%) | `SKU-1001` | Direct |
-| `nested_config.json` | Nested JSON | yes (3.9%) | `SKU-1001` | Direct |
-| `large_uniform_500.json` | Large uniform JSON | yes (55.6%) | `SKU-1001` | Direct |
-| `plain.txt` | Plain text | no — not structured data | `SKU-1001` | Direct, original not converted |
+| `agent-test/records_20.xml` | XML attributes | yes (51.5% savings) | `SKU-1001` | Direct |
+| `agent-test/config.yaml` | YAML | yes (11.7% savings) | `SKU-1001` | Direct |
+| `agent-test/settings.toml` | TOML | no | `SKU-1001` | Direct, original not converted |
+| `agent-test/sample.json5` | JSON5 | no | `SKU-1001` | Direct, original not converted |
+| `agent-test/orders_100.ndjson` | NDJSON | yes (62.7% savings) | `SKU-1001` | Direct |
+| `agent-test/events_100.ndjson` | NDJSON | yes (58.2% savings) | `SKU-1001` | Direct |
+| `agent-test/products_20.cbor` | CBOR (binary) | yes (50.2% savings) | `SKU-1001` | Direct |
+| `agent-test/users_20.msgpack` | MessagePack (binary) | yes (47.2% savings) | `SKU-1001` | Direct |
+| `agent-test/data_20.csv` | CSV | yes (53.7% savings) | `SKU-1001` | Direct |
+| `agent-test/data_20.tsv` | TSV | yes (53.7% savings) | `SKU-1001` | Direct |
+| `agent-test/nested_config.json` | Nested JSON | no | `SKU-1001` | Direct, original not converted |
+| `agent-test/large_uniform_500.json` | Large uniform JSON | yes (56.4% savings) | `SKU-1001` | Direct |
+| `agent-test/plain.txt` | Plain text | no | `SKU-1001` | Direct, original not converted |
 
 In every tested case the model extracted `SKU-1001` from the injected TOON context. The "yes / no" conversion column reflects whether `tooned` would have converted that file on its own; the mismatch test does not require it.
 
@@ -72,35 +72,35 @@ The following prompts were used with the normal `tooned` hook installed. A passi
 | # | Fixture | Prompt | Expected | `tooned` converts? |
 |---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | city of person with id 3 | `City3` | no |
-| 2 | `complex/people_addresses.json` | how many people in state CA | `3` / `three` | no |
-| 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | no |
-| 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | no |
+| 2 | `complex/people_addresses.json` | how many people in state CA | `3 / three` | no |
+| 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | yes (12.7%) |
+| 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | yes (12.7%) |
 | 5 | `complex/company_org.json` | name of first employee in Engineering | `Alice` | yes (20.7%) |
-| 6 | `complex/company_org.json` | total employees across all departments | `9` / `nine` | yes |
-| 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | no |
-| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29` / `29.0` | no |
+| 6 | `complex/company_org.json` | total employees across all departments | `9 / nine` | yes (20.7%) |
+| 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | yes (28.5%) |
+| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29 / 29.0` | yes (28.5%) |
 | 9 | `complex/inventory.csv` | category of item with sku INV-1003 | `A` | yes (55.4%) |
-| 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes |
+| 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes (55.4%) |
 | 11 | `complex/webhooks.toml` | url of payments webhook | `https://example.com/payments` | no |
-| 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (18.7%) |
-| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4` / `four` | yes |
+| 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (35.7%) |
+| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4 / four` | yes (35.7%) |
 | 14 | `complex/matrix.json` | value at row 2, column 3 (1-indexed) | `6.1` | no |
 | 15 | `complex/mixed_schema.json` | special_field value for mixed-2 | `machinery-value` | no |
 | 16 | `complex/geo_markers.json` | name of marker with id 4 | `Marker 4` | no |
 | 17 | `complex/config_nested.yaml` | path of second server endpoint | `/convert` | yes (11.0%) |
-| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false` / `not enabled` / `disabled` | yes |
+| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the model could have been reading TOON; for those marked "no" `tooned` passed the original JSON unchanged, so the answer came from the original syntax.
+All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the model could have been reading TOON; for those marked "no" `tooned` passed the original output unchanged.
 
 ## Mismatch decoding cases
 
 The same complex fixtures were tested with a mismatch hook that always injected the TOON of `agent-test/products_20.json`.
 
 | # | Fixture | Prompt | Expected | Result | Notes |
-|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | SKU of first product | `SKU-1001` | PASS | — |
-| 2 | `complex/ecommerce_orders.json` | SKU of first product | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; model answered from original JSON |
+| 2 | `complex/ecommerce_orders.json` | SKU of first product | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; prompt can be answered from original output |
 | 3 | `complex/company_org.json` | SKU of first product | `SKU-1001` | PASS | — |
 | 4 | `complex/sensor_readings.ndjson` | SKU of first product | `SKU-1001` | PASS | — |
 | 5 | `complex/inventory.csv` | SKU of first product | `SKU-1001` | PASS | — |
@@ -122,46 +122,46 @@ The tables below show the actual `tooned check` output for the fixtures used in 
 
 | File | `tooned check` result | Notes |
 |---|---|---|
-| `products_20.json` | 48.6% savings, convertible | Uniform array of product objects |
-| `users_20.json` | 47.5% savings, convertible | Uniform array of user objects |
-| `records_20.xml` | 48.2% savings, convertible | XML attributes |
+| `products_20.json` | 50.2% savings, convertible | Uniform array of product objects |
+| `users_20.json` | 47.2% savings, convertible | Uniform array of user objects |
+| `records_20.xml` | 51.5% savings, convertible | XML attributes |
 | `config.yaml` | 11.7% savings, convertible | YAML |
-| `settings.toml` | not convertible — round-trip mismatch | TOML; TOON smaller but does not round-trip with the default dict tier |
-| `sample.json5` | not convertible — not detected as structured data | JSON5 |
-| `orders_100.ndjson` | not convertible — round-trip mismatch | NDJSON |
-| `events_100.ndjson` | 52.4% savings, convertible | NDJSON |
-| `products_20.cbor` | not convertible — binary not detected | CBOR |
-| `users_20.msgpack` | not convertible — binary not detected | MessagePack |
+| `settings.toml` | not convertible — only 4.9% smaller (below effective margin) | TOML; TOON is slightly smaller but does not beat the effective margin |
+| `sample.json5` | not convertible — TOON 2.5% larger | JSON5; detected by the default adaptive path but TOON does not beat compact JSON |
+| `orders_100.ndjson` | 62.7% savings, convertible | NDJSON |
+| `events_100.ndjson` | 58.2% savings, convertible | NDJSON |
+| `products_20.cbor` | 50.2% savings, convertible | CBOR |
+| `users_20.msgpack` | 47.2% savings, convertible | MessagePack |
 | `data_20.csv` | 53.7% savings, convertible | CSV |
 | `data_20.tsv` | 53.7% savings, convertible | TSV |
-| `nested_config.json` | 3.9% savings, convertible | Nested JSON object |
-| `large_uniform_500.json` | 55.6% savings, convertible | Large uniform JSON array |
+| `nested_config.json` | not convertible — only 3.9% smaller (below effective margin) | Nested JSON object; TOON is slightly smaller but below the effective margin |
+| `large_uniform_500.json` | 56.4% savings, convertible | Large uniform JSON array |
 | `plain.txt` | not convertible — not structured data | Plain text |
 
 ### Complex comprehension fixtures
 
-| Fixture | `tooned check` result | Why it behaves this way |
+| Fixture | `tooned check` result | Notes |
 |---|---|---|
-| `complex/people_addresses.json` | not convertible — TOON 17.6% larger | Nested `address` object and `tags` array make the structure non-tabular |
-| `complex/ecommerce_orders.json` | not convertible — round-trip mismatch | Nested `items` arrays and `order_id` protected by the critical-field policy |
+| `complex/people_addresses.json` | not convertible — TOON 16.6% larger | Nested `address` object and `tags` array make the structure non-tabular |
+| `complex/ecommerce_orders.json` | 12.7% savings, convertible | Nested `items` arrays and `order_id` protected by the critical-field policy; still convertible |
 | `complex/company_org.json` | 20.7% savings, convertible | Deeply nested org chart that folds cleanly |
-| `complex/sensor_readings.ndjson` | not convertible — round-trip mismatch | Nested `readings` array per row |
-| `complex/events_attendees.ndjson` | 18.7% savings, convertible | Variable-length attendee lists still encode as tabular rows |
-| `complex/matrix.json` | not convertible — TOON 32.2% larger | Array-of-arrays is smaller in JSON |
-| `complex/mixed_schema.json` | not convertible — TOON 6.9% larger | Irregular schema |
-| `complex/geo_markers.json` | not convertible — TOON 14.3% larger | Variable tags |
+| `complex/matrix.json` | not convertible — TOON 32.2% larger | Top-level array of arrays of numbers; JSON is smaller for this shape |
+| `complex/mixed_schema.json` | not convertible — TOON 6.9% larger | Irregular, mixed-schema array; TOON cannot beat compact JSON |
+| `complex/sensor_readings.ndjson` | 28.5% savings, convertible | Nested `readings` array per row; now round-trips with the current encoder |
+| `complex/events_attendees.ndjson` | 35.7% savings, convertible | Variable-length attendee lists still encode as tabular rows |
+| `complex/geo_markers.json` | not convertible — TOON 14.6% larger | Variable tags make the objects non-uniform |
+| `complex/webhooks.toml` | not convertible — TOON 0.7% larger | Array of TOML tables; the difference is within the margin and TOON is slightly larger |
 | `complex/config_nested.yaml` | 11.0% savings, convertible | Nested YAML config |
 | `complex/inventory.csv` | 55.4% savings, convertible | Flat CSV records |
-| `complex/webhooks.toml` | not convertible — TOON 0.7% larger | Array of TOML tables |
-| `complex/sample_complex.json5` | not convertible — parse failed | JSON5 not supported by the default adaptive path |
+| `complex/sample_complex.json5` | not convertible — TOON 2.5% larger | JSON5; detected by the default adaptive path but TOON does not beat compact JSON |
 
 These results match the TOON specification: TOON's sweet spot is uniform arrays of objects with primitive-valued fields. Nested objects, non-uniform arrays, and deeply nested structures often remain smaller or round-trip more reliably in JSON.
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. The mismatch test is the only one that specifically shows the model decoding the TOON `additionalContext` rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original output. The mismatch test is the only one that specifically shows the model decoding the TOON `additionalContext` rather than merely repeating the original tool output.
 
-For fixtures where `tooned` does not convert, the original JSON is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the model can still answer the same questions, and the mismatch test shows it can do so from TOON alone.
+For fixtures where `tooned` does not convert, the original output is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the model can still answer the same questions, and the mismatch test shows it can do so from TOON alone.
 
 ## Research context
 
@@ -205,3 +205,5 @@ print(json.dumps({
 ```
 
 Install it as the `PostToolUse` command for the agent under test, run a prompt such as `read agent-test/users_20.json and tell me the SKU of the first product`, then restore the normal `tooned` hook entry.
+
+> **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
