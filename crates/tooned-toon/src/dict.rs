@@ -297,7 +297,7 @@ fn expand_line(line: &str, map: &HashMap<String, String>) -> String {
         if let Some(orig) = map.get(val) {
             format!("{key}: {orig}")
         } else {
-            replace_cells_expand(trimmed, map)
+            format!("{key}: {}", replace_cells_expand(val, map))
         }
     } else {
         replace_cells_expand(trimmed, map)
