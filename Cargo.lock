@@ -3323,9 +3323,9 @@ dependencies = [
 
 [[package]]
 name = "toon-lsp"
-version = "0.7.0"
+version = "0.7.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b73073adc0108cb32c42532b1ff4ba8f2e6f0a8c3d47b99bca581aee0bdd9c3"
+checksum = "4e1e4f0f854f26bff8ade8b1439a4cbec0d0747678cefaea65f9d0e24d0d52fe"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
