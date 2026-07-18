@@ -24,8 +24,13 @@ fn watch_with_stop_triggers_sync_on_new_file() {
     let stop_for_thread = Arc::clone(&stop);
 
     let handle = thread::spawn(move || {
-        tooned_index::watch_with_stop(&root_owned, 50, &stop_for_thread, &tooned_index::IndexFilter::default())
-            .expect("watch loop should exit cleanly");
+        tooned_index::watch_with_stop(
+            &root_owned,
+            50,
+            &stop_for_thread,
+            &tooned_index::IndexFilter::default(),
+        )
+        .expect("watch loop should exit cleanly");
     });
 
     // Give the watcher time to register. FSEvents on macOS can take a
@@ -73,8 +78,13 @@ fn watch_ignores_gitignored_directories() {
     let stop_for_thread = Arc::clone(&stop);
 
     let handle = thread::spawn(move || {
-        tooned_index::watch_with_stop(&root_owned, 50, &stop_for_thread, &tooned_index::IndexFilter::default())
-            .expect("watch loop should exit cleanly");
+        tooned_index::watch_with_stop(
+            &root_owned,
+            50,
+            &stop_for_thread,
+            &tooned_index::IndexFilter::default(),
+        )
+        .expect("watch loop should exit cleanly");
     });
 
     thread::sleep(Duration::from_millis(500));
