@@ -93,7 +93,7 @@ pub fn pricing_for(profile: &TokenizerProfile) -> ModelPricing {
     match resolved {
         TokenizerProfile::Cl100k => ModelPricing::CL100K,
         TokenizerProfile::O200k => ModelPricing::O200K,
-        TokenizerProfile::Heuristic | TokenizerProfile::Named(_) => ModelPricing::HEURISTIC,
+        _ => ModelPricing::HEURISTIC,
     }
 }
 

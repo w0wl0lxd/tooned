@@ -6,6 +6,7 @@ use thiserror::Error;
 
 /// Parse error type shared across format parsers.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("invalid JSON: {0}")]
     Json(String),

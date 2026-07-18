@@ -51,7 +51,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         .collect();
     let (object_mode, header_idx, keys) = find_structure(&lines);
 
-    let data_indices: Vec<usize> = if object_mode {
+    let data_indices: HashSet<usize> = if object_mode {
         (0..lines.len()).filter(|&i| lines.get(i).is_some_and(|l| !l.trim().is_empty())).collect()
     } else {
         ((header_idx + 1)..lines.len())
@@ -75,9 +75,11 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
             .collect()
     };
 
-    // Frequency of each cell token across data lines (skipping protected
-    // columns/keys so critical values stay verbatim).
-    let mut freq: HashMap<String, usize> = HashMap::new();
+    // Split every data line once into borrowed cell slices (no allocations)
+    // and reuse them for both frequency counting and substitution. The cells
+    // borrow from `lines`, which borrows from `toon`, so they stay valid for
+    // the rest of the function.
+    let mut line_cells: Vec<(usize, Vec<&str>)> = Vec::with_capacity(data_indices.len());
     for &di in &data_indices {
         let line = match lines.get(di) {
             Some(l) => l.trim(),
@@ -92,21 +94,32 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
                 if key_is_protected(&key.to_ascii_lowercase(), &protected_lower) {
                     continue;
                 }
-                for cell in split_cells(val) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
-                }
+                line_cells.push((di, split_cells(val)));
             } else {
-                for cell in split_cells(line) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
-                }
+                line_cells.push((di, split_cells(line)));
             }
         } else {
-            for (col, cell) in split_cells(line).into_iter().enumerate() {
+            line_cells.push((di, split_cells(line)));
+        }
+    }
+
+    // Frequency of each cell token across data lines (skipping protected
+    // columns/keys so critical values stay verbatim). Keys are borrowed
+    // slices of the already-split line cells -- no per-cell `String` allocation.
+    let mut freq: HashMap<&str, usize> = HashMap::new();
+    for (di, cells) in &line_cells {
+        if object_mode {
+            for cell in cells {
+                *freq.entry(*cell).or_insert(0) += 1;
+            }
+        } else {
+            for (col, cell) in cells.iter().enumerate() {
                 if !protected_idx.contains(&col) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                    *freq.entry(*cell).or_insert(0) += 1;
                 }
             }
         }
+        let _ = di;
     }
 
     // Select tokens worth substituting: repeated, longer than their sentinel,
@@ -128,7 +141,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         if saving <= entry_cost {
             continue;
         }
-        mapping.push((token, sentinel));
+        mapping.push((token.to_string(), sentinel));
     }
     if mapping.is_empty() {
         return None;
@@ -445,5 +458,44 @@ c: this_is_a_very_long_repeated_value
         let dict = apply_dict(toon, &protected).expect("should compress");
         let expanded = expand_legend(&dict, usize::MAX).unwrap();
         assert_eq!(expanded, toon, "object-mode value fallback must not corrupt key");
+    }
+
+    #[test]
+    fn expand_legend_never_exceeds_max_output_bytes() {
+        // Pin the `max_output_bytes` contract reviewed in the perf branch:
+        // an expansion that would push the output over the bound must return
+        // `Err(ToonedError::InputTooLarge)` and never yield an `Ok` string
+        // larger than `max_output_bytes` (the post-append guard reordering in
+        // that branch still preserves this, it just transiently over-allocates
+        // on the discarded error path).
+        let toon = "[8]{id,name,role}:
+
+  1,Alice,administrator
+  2,Bob,administrator
+  3,Cara,administrator
+  4,Dan,administrator
+  5,Eve,administrator
+  6,Fay,administrator
+  7,Gus,administrator
+  8,Hal,administrator
+";
+        let protected: Vec<String> = vec![];
+        let dict = apply_dict(toon, &protected).expect("should compress");
+
+        // `dict` is smaller than `toon`; bound just under `toon`'s size so the
+        // full expansion would overflow.
+        let bound = toon.len() - 1;
+        let result = expand_legend(&dict, bound);
+        match result {
+            Ok(out) => assert!(
+                out.len() <= bound,
+                "expanded output {}/{} must not exceed max_output_bytes {}",
+                out.len(),
+                bound,
+                bound
+            ),
+            Err(ToonedError::InputTooLarge) => {}
+            Err(e) => panic!("expected InputTooLarge, got {e:?}"),
+        }
     }
 }
