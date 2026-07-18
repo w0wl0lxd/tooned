@@ -686,7 +686,7 @@ fn format_count(n: u64) -> String {
 }
 
 pub fn run(path: &Path, window: &MetricsWindow, global: bool) -> anyhow::Result<()> {
-    if !io::stdout().is_terminal() {
+    if !io::stdout().is_terminal() || !io::stdin().is_terminal() {
         anyhow::bail!("tooned dashboard: a terminal is required; run from an interactive tty");
     }
     let store = Store::open(path).map_err(|e| {
