@@ -35,6 +35,7 @@ toml = { workspace = true }
 tooned-core = { workspace = true }                                            #unified
 tooned-index = { workspace = true }                                           #unified
 tooned-metrics = { workspace = true }                                         #unified
+tooned-toon = { workspace = true }                                            #unified
 tooned-token = { workspace = true }                                           #unified
 tooned-types = { workspace = true }                                           #unified
 tui-bar-graph = "0.3.5"
