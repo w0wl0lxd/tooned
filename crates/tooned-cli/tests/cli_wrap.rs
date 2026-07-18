@@ -124,6 +124,35 @@ fn wrap_streams_oversized_output_to_file() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn wrap_oversized_out_same_file_does_not_truncate_before_reading() {
+    // Use a payload larger than a typical pipe buffer so the wrapped command
+    // blocks writing to stdout before it has read the whole file. Without an
+    // atomic temp-file-then-rename strategy, opening `--out` with truncate(true)
+    // would cut off the input file while the child is still reading it.
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data.json");
+    let original = uniform_array_json(3000);
+    std::fs::write(&data, &original).unwrap();
+
+    let mut cmd = Command::cargo_bin("tooned").unwrap();
+    cmd.args([
+        "wrap",
+        "--max-bytes",
+        "8",
+        "--out",
+        data.to_str().unwrap(),
+        "--",
+        "cat",
+        data.to_str().unwrap(),
+    ]);
+    cmd.assert().success();
+
+    let result = std::fs::read_to_string(&data).unwrap();
+    assert_eq!(result, original, "output should not be truncated");
+}
+
+#[test]
 fn wrap_mirrors_a_nonzero_exit_code() {
     let mut cmd = Command::cargo_bin("tooned").expect("binary exists");
     if cfg!(windows) {

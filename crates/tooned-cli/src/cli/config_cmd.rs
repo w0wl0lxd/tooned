@@ -67,12 +67,12 @@ pub fn run(args: &ConfigArgs) -> anyhow::Result<()> {
                  # Use BPE-token-based savings in `tooned check`/`token-savings`.\n\
                  # precise_tokens = false\n\
                  \n\
+                 # Disable all local metrics recording.\n\
+                 # metrics_disabled = false\n\
+                 \n\
                  # Default watch-mode debounce in milliseconds.\n\
                  [watch]\n\
-                 debounce_ms = {default_debounce}\n\
-                 \n\
-                 # Disable all local metrics recording.\n\
-                 # metrics_disabled = false\n",
+                 debounce_ms = {default_debounce}\n",
                 default_margin = defaults.margin_pct,
                 default_max = defaults.max_input_bytes,
                 default_debounce = 1000,
