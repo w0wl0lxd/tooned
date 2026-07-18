@@ -353,12 +353,12 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
         return Vec::new();
     }
 
-    let mut keys = std::collections::HashSet::new();
+    let mut keys = Vec::new();
     match value {
         Value::Object(map) => {
             for k in map.keys() {
                 if policy.is_protected(k) {
-                    keys.insert(k.clone());
+                    keys.push(k.clone());
                 }
             }
         }
@@ -366,8 +366,8 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
             for item in arr {
                 if let Value::Object(map) = item {
                     for k in map.keys() {
-                        if policy.is_protected(k) {
-                            keys.insert(k.clone());
+                        if policy.is_protected(k) && !keys.contains(k) {
+                            keys.push(k.clone());
                         }
                     }
                 }
@@ -375,7 +375,7 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
         }
         _ => {}
     }
-    keys.into_iter().collect()
+    keys
 }
 
 /// Recursively sort the keys of every object in `value` (F4). Returns a new

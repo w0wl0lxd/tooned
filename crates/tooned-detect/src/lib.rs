@@ -283,11 +283,8 @@ fn is_yaml(input: &[u8]) -> bool {
 fn is_json5(input: &[u8]) -> bool {
     let mut in_string = false;
     let mut escaped = false;
-    let mut pos = 0usize;
-    let len = input.len();
 
-    while pos < len {
-        let Some(&byte) = input.get(pos) else { break };
+    for (pos, &byte) in input.iter().enumerate() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -296,7 +293,6 @@ fn is_json5(input: &[u8]) -> bool {
             } else if byte == b'"' {
                 in_string = false;
             }
-            pos += 1;
             continue;
         }
 
@@ -313,8 +309,7 @@ fn is_json5(input: &[u8]) -> bool {
             b',' => {
                 // trailing comma if the next non-whitespace byte is } or ]
                 let mut next = pos + 1;
-                while next < len {
-                    let Some(&after) = input.get(next) else { break };
+                while let Some(&after) = input.get(next) {
                     if after.is_ascii_whitespace() {
                         next += 1;
                         continue;
@@ -329,8 +324,7 @@ fn is_json5(input: &[u8]) -> bool {
                 // bare identifier followed by ':' means an unquoted key.
                 if byte.is_ascii_alphabetic() || byte == b'_' || byte == b'$' {
                     let mut end = pos + 1;
-                    while end < len {
-                        let Some(&candidate) = input.get(end) else { break };
+                    while let Some(&candidate) = input.get(end) {
                         if !is_json5_identifier_char(candidate) {
                             break;
                         }
@@ -339,7 +333,9 @@ fn is_json5(input: &[u8]) -> bool {
                     if end > pos {
                         // skip whitespace after the identifier
                         let mut after = end;
-                        while after < len && input.get(after).is_some_and(u8::is_ascii_whitespace) {
+                        while let Some(&candidate) = input.get(after)
+                            && candidate.is_ascii_whitespace()
+                        {
                             after += 1;
                         }
                         if input.get(after) == Some(&b':') {
@@ -349,7 +345,6 @@ fn is_json5(input: &[u8]) -> bool {
                 }
             }
         }
-        pos += 1;
     }
 
     false
