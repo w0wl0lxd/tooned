@@ -3455,6 +3455,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tooned-core",
  "tooned-detect",
+ "tooned-json",
  "tooned-types",
 ]
 
