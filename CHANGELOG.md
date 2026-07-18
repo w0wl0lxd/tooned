@@ -174,7 +174,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metrics, and hardened public enums with `#[non_exhaustive]`. Streaming TRON
   conversions now report `input.len()` as the authoritative JSON byte count;
   `maybe_onto` preserves `std::io::Error` instead of remapping it into
-  `DecodeFailed`; gitignore filter compilation now propagates `ignore::Error`;
+  `DecodeFailed`; gitignore filter compilation (including `watch` and the
+  `scan`/`sync` exclude filter) now propagates `ignore::Error`;
   the `watch`/`index run` pipeline threads the `filter` argument through;
   SQLite PRAGMA setup uses `pragma_update` so errors are not swallowed.
   `DocType`, `ShapeClass`, `TokenizerProfile`, `PassthroughReason`,

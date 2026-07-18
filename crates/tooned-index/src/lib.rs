@@ -121,11 +121,7 @@ pub fn watch_with_stop(
     })?;
     debouncer.watcher().watch(project_root, RecursiveMode::Recursive)?;
 
-    let gitignore_filter = build_gitignore_filter(project_root).unwrap_or_else(|_| {
-        // If we cannot read the gitignore file, still fall back to the
-        // hard-coded ignores so `.tooned/` updates don't self-trigger.
-        ignore::gitignore::Gitignore::empty()
-    });
+    let gitignore_filter = build_gitignore_filter(project_root)?;
 
     let mut count: u64 = 0;
     loop {
@@ -175,9 +171,7 @@ pub fn watch(
     watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), filter)
 }
 
-fn build_gitignore_filter(
-    project_root: &Path,
-) -> Result<ignore::gitignore::Gitignore, ignore::Error> {
+fn build_gitignore_filter(project_root: &Path) -> Result<ignore::gitignore::Gitignore, IndexError> {
     let mut builder = ignore::gitignore::GitignoreBuilder::new(project_root);
     let gitignore = project_root.join(".gitignore");
     if gitignore.is_file() {
@@ -185,7 +179,7 @@ fn build_gitignore_filter(
     }
     builder.add_line(None, ".tooned/")?;
     builder.add_line(None, ".git/")?;
-    builder.build()
+    Ok(builder.build()?)
 }
 
 fn is_ignored(
