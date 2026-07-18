@@ -102,6 +102,22 @@ cargo install tooned
 Or grab a prebuilt binary from the [releases page](https://github.com/w0wl0lxd/tooned/releases)
 once one exists. v1 isn't tagged yet; see [Status](#status).
 
+### Shell completions and man page
+
+```bash
+# Generate shell completions
+tooned completions --shell bash > /etc/bash_completion.d/tooned
+tooned completions --shell zsh > /usr/local/share/zsh/site-functions/_tooned
+tooned completions --shell fish > ~/.config/fish/completions/tooned.fish
+tooned completions --shell nushell > ~/.local/share/nushell/completions/tooned.nu
+tooned completions --shell elvish > ~/.config/elvish/lib/tooned.elv
+tooned completions --shell powershell > ~/.config/powershell/completions/tooned.ps1
+
+# Generate and install man page
+tooned man > /usr/local/share/man/man1/tooned.1
+mandb
+```
+
 ## Quick start
 
 No agent required. tooned works as a plain filter:
@@ -128,6 +144,9 @@ prints somewhere else.
 ## Wiring it into an agent
 
 ```bash
+# Install for all supported agents at once
+tooned hook install --all --scope project
+
 # Claude Code: merges into settings.json, doesn't touch existing hook entries
 tooned hook install --claude-code --scope project
 
@@ -169,6 +188,8 @@ tooned hook uninstall --claude-code --scope project
 ```
 
 Uninstalling only ever removes tooned's own entry.
+
+For agent frameworks that support skill-based integration (e.g., Devin with the `.agents/skills/` directory), the tooned skill is available at `.agents/skills/tooned/SKILL.md`. This provides a self-contained agent skill definition that can be loaded and used directly by compatible agents.
 
 Prefer MCP over a native hook, or your agent doesn't have hooks at all?
 
@@ -219,9 +240,16 @@ that project's `.gitignore` the first time it's created.
 | `tooned wrap -- <command>` | Runs `<command>`, adaptively converts its captured stdout. |
 | `tooned index [path]` / `index sync` / `index status` / `index show <file>` | The `.tooned/` project index. |
 | `tooned stats [path] [--top N] [--json]` | Ranked savings report from the index. `--json` emits machine-readable JSON. |
-| `tooned hook install (--claude-code\|--codex\|--devin\|--droid\|--opencode\|--kilo\|--pi) [--scope user\|project] [--mcp]` | Installs the agent hook or plugin wrapper, idempotently. |
+| `tooned diff <file>` | Compares original JSON with TOON round-trip. |
+| `tooned lint <file\|->` | Validates TOON files for round-trip fidelity and anti-patterns. |
+| `tooned hook install (--claude-code\|--codex\|--devin\|--droid\|--opencode\|--kilo\|--pi\|--all) [--scope user\|project] [--mcp]` | Installs the agent hook or plugin wrapper, idempotently. |
 | `tooned hook uninstall / status / doctor` | Removes, checks, or audits hook installations. It never touches another tool's entries. |
 | `tooned mcp serve` | Runs the MCP server over stdio. |
+| `tooned metrics [summary\|breakdown\|top\|recent\|export\|reset]` | Inspects the local token-savings metrics ledger. |
+| `tooned heatmap` | GitHub/Codex-style contribution calendar of token savings. |
+| `tooned dashboard` | Interactive ratatui metrics dashboard. |
+| `tooned completions --shell <bash\|zsh\|fish\|nushell\|elvish\|powershell>` | Generates shell completion scripts. |
+| `tooned man` | Generates the man page (roff format). |
 
 ## Architecture
 
