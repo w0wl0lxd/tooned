@@ -10,6 +10,7 @@ pub mod diff;
 pub mod heatmap;
 pub mod index;
 mod io;
+pub mod lint;
 pub mod metrics;
 pub mod pipe;
 pub mod stats;
