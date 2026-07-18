@@ -30,7 +30,8 @@ pub use onto::{decode as decode_onto, encode as encode_onto, maybe_onto};
 
 pub mod tron;
 pub use tron::{
-    StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
+    StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_csv_stream,
+    maybe_tron_json_array_stream, maybe_tron_stream, maybe_tron_tsv_stream,
 };
 
 /// Parse `input` into a `serde_json::Value` via the detected (or hinted)
