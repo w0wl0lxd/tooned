@@ -13,6 +13,7 @@ name = "tooned_types"
 path = "src/lib.rs"
 
 [dependencies]
+serde = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]
