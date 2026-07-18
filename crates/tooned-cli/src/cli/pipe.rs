@@ -8,13 +8,14 @@
 //! non-zero exit, since this subcommand's whole contract is "never surprise
 //! the caller with a hard failure".
 
-use std::path::PathBuf;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 use tooned_core::Conversion;
 
 use crate::cli::FormatHint;
-use crate::cli::io::{BoundedRead, read_bounded};
+use crate::cli::io::{BoundedRead, output_writer, read_bounded};
 
 #[derive(Debug, Args)]
 pub struct PipeArgs {
@@ -55,26 +56,42 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         None,
     );
 
+    let is_stdout = args.out.as_deref().is_none_or(|p| p == Path::new("-"));
     let mut stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
+    let mut out_writer = output_writer(args.out.as_deref())?;
 
     // Bounded read: `--max-bytes`/`max_input_bytes` documents itself as
     // "before a hard passthrough", so stdin is never buffered past that cap
     // -- once it's known to be exceeded, `maybe_tooned`'s own
     // `InputTooLarge` gate guarantees an unchanged passthrough regardless of
-    // content, so the remainder is streamed straight to stdout instead of
-    // being accumulated (finding: unbounded `read_to_end` previously ran
-    // before the cap was ever consulted).
+    // content, so the remainder is streamed straight to the requested output
+    // instead of being accumulated (finding: unbounded `read_to_end`
+    // previously ran before the cap was ever consulted).
     // Can't read stdin at all -- nothing sane to convert; stay silent and
-    // still exit 0 per the contract.
-    let Ok(outcome) = read_bounded(&mut stdin, opts.max_input_bytes, &mut stdout) else {
-        return Ok(());
+    // still exit 0 per the contract for stdin/stdout, but surface errors when
+    // the user explicitly asked for a file destination.
+    let outcome = match read_bounded(&mut stdin, opts.max_input_bytes, &mut out_writer) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            if is_stdout {
+                return Ok(());
+            }
+            return Err(anyhow::anyhow!("tooned pipe: failed to read/process input: {err}"));
+        }
     };
 
     let bytes = match outcome {
         BoundedRead::Fits(bytes) => bytes,
-        // Already streamed verbatim to stdout by `read_bounded`.
-        BoundedRead::Streamed { .. } => return Ok(()),
+        // Already streamed verbatim to the requested output by `read_bounded`;
+        // make sure the buffered stream is flushed before returning.
+        BoundedRead::Streamed { .. } => {
+            if let Err(err) = out_writer.flush()
+                && !is_stdout
+            {
+                return Err(anyhow::anyhow!("tooned pipe: failed to flush output: {err}"));
+            }
+            return Ok(());
+        }
     };
 
     #[allow(clippy::manual_unwrap_or)]
@@ -104,10 +121,16 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
 
     // Write to the requested destination (stdout by default). A broken pipe
     // on the reader side is not this subcommand's problem to escalate as a
-    // CLI error either.
-    let write_result = crate::cli::io::write_output(args.out.as_deref(), &output);
-    if let (Some(_), Err(err)) = (args.out.as_ref(), write_result) {
+    // CLI error either, but a file destination should still report failures.
+    if let Err(err) = out_writer.write_all(&output)
+        && !is_stdout
+    {
         return Err(anyhow::anyhow!("tooned pipe: failed to write output: {err}"));
+    }
+    if let Err(err) = out_writer.flush()
+        && !is_stdout
+    {
+        return Err(anyhow::anyhow!("tooned pipe: failed to flush output: {err}"));
     }
 
     Ok(())
