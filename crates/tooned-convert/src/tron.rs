@@ -12,6 +12,7 @@
 //! values must be primitive for the encoder, but the decoder expands any
 //! class calls found in the body.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
@@ -471,28 +472,31 @@ impl std::io::Write for ByteCountingWriter {
 ///
 /// Mirrors `maybe_tooned` semantics: payload-driven failures downgrade to
 /// `Conversion::Passthrough`, never `Err`.
-pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
+pub fn maybe_tron(
+    input: &[u8],
+    opts: &ConversionOptions,
+) -> Result<Conversion<'static>, ToonedError> {
     if input.len() > opts.max_input_bytes {
         // Try streaming conversion for large inputs
         if let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) {
             return try_streaming_tron(input, doc_type, opts);
         }
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::InputTooLarge,
         });
     }
 
     let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::NotStructuredData,
         });
     };
 
     let Ok(value) = crate::parse_by_doc_type(input, doc_type) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -515,7 +519,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     let Ok(encoded) = encode(&value) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -523,7 +527,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !crate::is_smaller_enough(json_bytes, tron_bytes, opts.margin_pct) {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes: tron_bytes },
         });
     }
@@ -535,13 +539,13 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !round_trip_ok {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::RoundTripMismatch,
         });
     }
 
     Ok(Conversion::Toon {
-        text: encoded,
+        text: Cow::Owned(encoded),
         report: ConversionReport {
             doc_type,
             shape,
@@ -558,7 +562,7 @@ fn try_streaming_tron(
     input: &[u8],
     doc_type: tooned_types::DocType,
     opts: &ConversionOptions,
-) -> Result<Conversion, ToonedError> {
+) -> Result<Conversion<'static>, ToonedError> {
     use std::io::Cursor;
 
     let mut output = Vec::new();
@@ -571,7 +575,7 @@ fn try_streaming_tron(
         tooned_types::DocType::Tsv => maybe_tron_tsv_stream(Cursor::new(input), &mut output)?,
         _ => {
             return Ok(Conversion::Passthrough {
-                bytes: input.to_vec(),
+                bytes: Cow::Owned(input.to_vec()),
                 reason: PassthroughReason::InputTooLarge,
             });
         }
@@ -584,7 +588,7 @@ fn try_streaming_tron(
         opts.margin_pct,
     ) {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::NotSmallerEnough {
                 json_bytes: stats.input_bytes as usize,
                 toon_bytes: stats.output_bytes as usize,
@@ -605,7 +609,9 @@ fn try_streaming_tron(
     };
 
     Ok(Conversion::Toon {
-        text: String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
+        text: Cow::Owned(
+            String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
+        ),
         report: ConversionReport {
             doc_type,
             shape,

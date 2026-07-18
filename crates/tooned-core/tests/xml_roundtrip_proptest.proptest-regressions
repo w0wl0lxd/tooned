@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 17545205dee0ba8eac3346993cb56cca84cb3b65da8d181a9f517e66f16d04ac # shrinks to (bytes, expected) = ([60, 105, 116, 101, 109, 115, 62, 60, 101, 110, 116, 114, 121, 32, 65, 53, 72, 61, 34, 48, 120, 48, 34, 32, 66, 48, 61, 34, 34, 32, 69, 80, 50, 95, 95, 52, 61, 34, 34, 32, 75, 116, 119, 120, 55, 48, 61, 34, 34, 32, 77, 89, 54, 87, 105, 88, 52, 114, 61, 34, 34, 32, 80, 61, 34, 34, 32, 104, 74, 84, 95, 110, 86, 103, 61, 34, 34, 32, 47, 62, 60, 101, 110, 116, 114, 121, 32, 65, 53, 72, 61, 34, 34, 32, 66, 48, 61, 34, 34, 32, 69, 80, 50, 95, 95, 52, 61, 34, 34, 32, 75, 116, 119, 120, 55, 48, 61, 34, 34, 32, 77, 89, 54, 87, 105, 88, 52, 114, 61, 34, 34, 32, 80, 61, 34, 34, 32, 104, 74, 84, 95, 110, 86, 103, 61, 34, 34, 32, 47, 62, 60, 47, 105, 116, 101, 109, 115, 62], Object {"items": Object {"entry": Array [Object {"@A5H": String("0x0"), "@B0": String(""), "@EP2__4": String(""), "@Ktwx70": String(""), "@MY6WiX4r": String(""), "@P": String(""), "@hJT_nVg": String("")}, Object {"@A5H": String(""), "@B0": String(""), "@EP2__4": String(""), "@Ktwx70": String(""), "@MY6WiX4r": String(""), "@P": String(""), "@hJT_nVg": String("")}]}})

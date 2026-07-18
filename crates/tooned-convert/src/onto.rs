@@ -17,6 +17,7 @@
 //! passthrough for everything else.
 
 use serde_json::Value;
+use std::borrow::Cow;
 use std::io::Write;
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, PassthroughReason, ToonedError,
@@ -216,24 +217,27 @@ impl std::io::Write for ByteCountingWriter {
 ///
 /// Mirrors `maybe_tooned` semantics: payload-driven failures downgrade to
 /// `Conversion::Passthrough`, never `Err`.
-pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
+pub fn maybe_onto(
+    input: &[u8],
+    opts: &ConversionOptions,
+) -> Result<Conversion<'static>, ToonedError> {
     if input.len() > opts.max_input_bytes {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::InputTooLarge,
         });
     }
 
     let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::NotStructuredData,
         });
     };
 
     let Ok(value) = crate::parse_by_doc_type(input, doc_type) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -256,7 +260,7 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     let Ok(encoded) = encode(&value) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -264,7 +268,7 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !crate::is_smaller_enough(json_bytes, onto_bytes, opts.margin_pct) {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes: onto_bytes },
         });
     }
@@ -276,13 +280,13 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !round_trip_ok {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Owned(input.to_vec()),
             reason: PassthroughReason::RoundTripMismatch,
         });
     }
 
     Ok(Conversion::Toon {
-        text: encoded,
+        text: Cow::Owned(encoded),
         report: ConversionReport {
             doc_type,
             shape,

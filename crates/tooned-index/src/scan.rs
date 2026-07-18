@@ -300,7 +300,7 @@ fn persist_shape_and_conversion(
             let sampled_i64 = saturating_i64(*sampled as u64);
             (Some(*uniformity_pct), Some(sampled_i64))
         }
-        ShapeClass::Irregular | ShapeClass::Scalar => (None, None),
+        ShapeClass::Irregular | ShapeClass::Scalar | ShapeClass::NotClassified => (None, None),
     };
     conn.execute(
         "INSERT INTO shapes (path, json_pointer, shape_class, uniformity_pct, sampled_count)
@@ -341,6 +341,7 @@ fn shape_class_str(shape: &ShapeClass) -> &'static str {
         ShapeClass::UniformArrayOfObjects { .. } => "uniform",
         ShapeClass::Irregular => "irregular",
         ShapeClass::Scalar => "scalar",
+        ShapeClass::NotClassified => "not_classified",
     }
 }
 

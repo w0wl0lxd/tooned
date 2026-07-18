@@ -78,8 +78,8 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         Err(_) => i64::MAX,
     };
     let output = match tooned_core::maybe_tooned(&bytes, &opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+        Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
         Err(_) => bytes,
     };
     #[allow(clippy::manual_unwrap_or)]

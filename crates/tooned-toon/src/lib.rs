@@ -53,7 +53,10 @@ pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
 /// Direct callers that do NOT perform their own round-trip check should use
 /// [`encode_toon`] instead, which fails closed on lossy values.
 pub fn encode_toon_raw(value: &Value) -> Result<String, ToonedError> {
-    toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    let mut out = String::new();
+    toon_lsp::toon::encode_into(value, &toon_lsp::toon::ToonConfig::default(), &mut out)
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    Ok(out)
 }
 
 /// Decodes a TOON document back into a structured [`serde_json::Value`].

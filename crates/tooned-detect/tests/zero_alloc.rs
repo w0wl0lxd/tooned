@@ -3,8 +3,9 @@
 //! Zero-allocation regression test for `tooned_detect::detect`.
 //!
 //! This lives in its own integration-test binary so that `heapster` only sees
-//! the allocations performed by this test, avoiding false positives from other
-//! tests running concurrently in the same process.
+//! the allocations performed by this test. There is a single `#[test]` so the
+//! measurements are not interleaved with other tests running concurrently in
+//! the same binary.
 
 #![forbid(unsafe_code)]
 
@@ -38,13 +39,7 @@ fn detect_is_zero_allocation_on_representative_inputs() {
         assert_eq!(diff.alloc_count, 0, "detect({input:?}) must not perform any heap allocations");
         assert_eq!(diff.alloc_sum, 0, "detect({input:?}) must not allocate any heap bytes");
     }
-}
 
-#[test]
-fn explicit_hint_also_zero_alloc() {
-    if std::env::var_os("CARGO_LLVM_COV").is_some() {
-        return;
-    }
     let (_, diff) = GLOBAL.measure(|| detect(b"not json", Some(DocType::Json)));
     assert_eq!(diff.alloc_count, 0, "hint path must not allocate");
     assert_eq!(diff.alloc_sum, 0, "hint path must not allocate bytes");

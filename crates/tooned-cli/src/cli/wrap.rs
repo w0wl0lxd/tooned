@@ -117,7 +117,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                     buf_len,
                     text_len,
                 );
-                text.into_bytes()
+                text.into_owned().into_bytes()
             }
             Ok(Conversion::Passthrough { bytes, .. }) => {
                 #[allow(clippy::manual_unwrap_or)]
@@ -138,7 +138,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                     buf_len,
                     bytes_len,
                 );
-                bytes
+                bytes.into_owned()
             }
             Err(_) => buf,
         };

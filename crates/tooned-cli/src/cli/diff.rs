@@ -41,7 +41,7 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
     // originals (not binary MessagePack/CBOR/JSON5).
     let original: serde_json::Value = tooned_core::parse_to_value(&bytes, None)
         .map_err(|e| anyhow::anyhow!("tooned diff: cannot parse input as structured data: {e}"))?;
-    let roundtrip = tooned_core::decode_toon(&toon_text)?;
+    let roundtrip = tooned_core::decode_toon(toon_text.as_ref())?;
 
     crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Diff, "diff");
 

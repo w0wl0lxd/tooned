@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is actually smaller than compact JSON by the configured margin. A dedicated
   `no_panic_proptest` suite covers adversarial input (invalid UTF-8, truncated multi-byte
   sequences, deep nesting) for both `maybe_tooned` and `inspect`.
+- `tooned-core` / `tooned-convert`: `toon_from_value(value, opts, out)` and
+  `maybe_tooned_in(input, opts, out)` write TOON into a caller-provided `&mut String`
+  and return `Conversion<'a>` with borrowed `Cow<'a, str>` / `Cow<'a, [u8]>` text and
+  bytes. When dict/entropy/auto-margin tiers are disabled and the output buffer is
+  pre-sized, the conversion path after parsing performs no heap allocations.
+  `maybe_tooned` remains as an owned-output convenience wrapper.
 - `tooned-index`: the `.tooned/` project-local SQLite index (`rusqlite`, bundled).
   `tooned index` performs a full directory scan (respecting `.gitignore` via the `ignore`
   crate) that blake3-fingerprints, doc-type-detects, and shape-classifies every file into
@@ -170,6 +176,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **tooned-convert / tooned-toon:** dictionary-encoded TOON output is now verified by
+  decoding the legend-encoded text and comparing `Value`s, rather than by a plain
+  re-encode comparison that incorrectly rejected valid dict-compressed output. This
+  restores the dict tier for repetitive payloads.
+- **toon-lsp:** hexadecimal string values such as `"0x0"` are now quoted during encode
+  because `is_toon_number` recognizes `0x`/`0X` prefixes as numeric literals. This fixes
+  XML→TOON round-trip failures for attributes containing hex strings.
+- **tooned-types / tooned-index / tooned-cli:** the new `ShapeClass::NotClassified`
+  variant is handled everywhere `ShapeClass` is matched, fixing compilation of
+  `tooned-index` and the MCP server's `ShapeClassDto`.
 - **tooned-core:** removed the redundant JSON-style structural-depth preflight
   from XML parsing; `quick-xml`'s own recursion limits and new adversarial
   tests now guard malformed input. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))

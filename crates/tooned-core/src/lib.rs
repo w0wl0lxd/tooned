@@ -28,7 +28,8 @@ pub use tooned_convert::tron::{
     StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
 };
 pub use tooned_convert::{
-    encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned, parse_to_value,
+    encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned, maybe_tooned_in,
+    parse_to_value, toon_from_value,
 };
 
 // Re-export decode_toon from tooned-toon
