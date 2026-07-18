@@ -102,7 +102,7 @@ pub enum TopByArg {
 
 #[derive(Debug, Args)]
 pub struct ExportArgs {
-    /// Output format: `json` (default) or `csv`.
+    /// Output format: `json` (default), `csv`, `prometheus`, or `otel`.
     #[arg(long, value_enum)]
     pub format: Option<ExportFormatArg>,
     /// Write to this file instead of stdout.
@@ -114,12 +114,21 @@ pub struct ExportArgs {
     /// Inclusive upper bound, `YYYY-MM-DD` (default: today).
     #[arg(long)]
     pub until: Option<String>,
+    /// Push metrics to this URL (requires --format prometheus or otel).
+    /// Enables periodic pushes. Example: http://localhost:9091/metrics
+    #[arg(long)]
+    pub push_url: Option<String>,
+    /// Push interval in seconds (default: 60, requires --push-url).
+    #[arg(long)]
+    pub push_interval: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum ExportFormatArg {
     Json,
     Csv,
+    Prometheus,
+    Otel,
 }
 
 impl ExportFormatArg {
@@ -127,6 +136,8 @@ impl ExportFormatArg {
         match self {
             ExportFormatArg::Json => ExportFormat::Json,
             ExportFormatArg::Csv => ExportFormat::Csv,
+            ExportFormatArg::Prometheus => ExportFormat::Prometheus,
+            ExportFormatArg::Otel => ExportFormat::Otel,
         }
     }
 }
@@ -223,17 +234,30 @@ pub fn run(args: &MetricsArgs) -> anyhow::Result<()> {
             };
             let format = format_val.to_format();
             let text = store.export(format, since, until)?;
-            match &e.out {
-                Some(p) => {
-                    std::fs::write(p, &text)?;
-                    println!(
-                        "tooned metrics: exported {} events to {}",
-                        count_lines(&text),
-                        p.display()
-                    );
+
+            if let Some(push_url) = &e.push_url {
+                if !matches!(format, ExportFormat::Prometheus | ExportFormat::Otel) {
+                    bail!("--push-url requires --format prometheus or --format otel");
                 }
-                None => {
-                    print!("{text}");
+                #[allow(clippy::manual_unwrap_or)]
+                let interval = match e.push_interval {
+                    Some(v) => v,
+                    None => 60,
+                };
+                push_metrics(push_url, &text, interval)?;
+            } else {
+                match &e.out {
+                    Some(p) => {
+                        std::fs::write(p, &text)?;
+                        println!(
+                            "tooned metrics: exported {} events to {}",
+                            count_lines(&text),
+                            p.display()
+                        );
+                    }
+                    None => {
+                        print!("{text}");
+                    }
                 }
             }
         }
@@ -253,6 +277,53 @@ pub fn run(args: &MetricsArgs) -> anyhow::Result<()> {
 
 fn count_lines(text: &str) -> usize {
     text.trim_end().split('\n').filter(|l| !l.is_empty()).count()
+}
+
+fn push_metrics(url: &str, body: &str, interval: u64) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::Duration;
+
+    let content_type = if url.contains("/v1/metrics") || url.contains("opentelemetry") {
+        "application/json"
+    } else {
+        "text/plain; version=0.0.4; charset=utf-8"
+    };
+
+    loop {
+        let mut child = Command::new("curl")
+            .arg("-sS")
+            .arg("-X")
+            .arg("POST")
+            .arg("-H")
+            .arg(format!("Content-Type: {content_type}"))
+            .arg("--data-binary")
+            .arg("@-")
+            .arg(url)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("failed to spawn `curl` for metrics push: {e}"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(body.as_bytes()).ok();
+        }
+
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("metrics push to {url} failed: {stderr}");
+        }
+
+        if interval == 0 {
+            break;
+        }
+        println!("tooned metrics: pushed to {url}; sleeping {interval}s...");
+        thread::sleep(Duration::from_secs(interval));
+    }
+    Ok(())
 }
 
 pub(crate) fn metric_word(m: Metric) -> &'static str {
