@@ -105,17 +105,19 @@ once one exists. v1 isn't tagged yet; see [Status](#status).
 ### Shell completions and man page
 
 ```bash
-# Generate shell completions
-tooned completions --shell bash > /etc/bash_completion.d/tooned
-tooned completions --shell zsh > /usr/local/share/zsh/site-functions/_tooned
+# Generate shell completions (user-local paths; use sudo + mkdir -p for
+# system-wide locations like /etc or /usr/local)
+tooned completions --shell bash > ~/.local/share/bash-completion/tooned.bash
+tooned completions --shell zsh > ~/.local/share/zsh/site-functions/_tooned
 tooned completions --shell fish > ~/.config/fish/completions/tooned.fish
 tooned completions --shell nushell > ~/.local/share/nushell/completions/tooned.nu
 tooned completions --shell elvish > ~/.config/elvish/lib/tooned.elv
 tooned completions --shell powershell > ~/.config/powershell/completions/tooned.ps1
 
-# Generate and install man page
-tooned man > /usr/local/share/man/man1/tooned.1
-mandb
+# Generate and install man page (system-wide needs sudo + the parent dir)
+sudo mkdir -p /usr/local/share/man/man1
+tooned man | sudo tee /usr/local/share/man/man1/tooned.1 >/dev/null
+sudo mandb
 ```
 
 ## Quick start
