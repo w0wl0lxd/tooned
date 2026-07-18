@@ -73,16 +73,15 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         }
     }
 
-    let protected_lower_vec: Vec<String> =
+    let protected_lower: HashSet<String> =
         protected_keys.iter().map(|p| p.to_ascii_lowercase()).collect();
-    let protected_lower: HashSet<&str> = protected_lower_vec.iter().map(String::as_str).collect();
 
     let protected_idx: HashSet<usize> = if object_mode {
         HashSet::new()
     } else {
         keys.iter()
             .enumerate()
-            .filter(|(_, k)| key_is_protected(&k.to_ascii_lowercase(), &protected_lower))
+            .filter(|(_, k)| key_is_protected(k, &protected_lower))
             .map(|(i, _)| i)
             .collect()
     };
@@ -103,7 +102,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
             if let Some(sp) = line.find(": ") {
                 let key = or_fallback(line.get(..sp), "");
                 let val = or_fallback(line.get(sp + 2..), "");
-                if key_is_protected(&key.to_ascii_lowercase(), &protected_lower) {
+                if key_is_protected(key, &protected_lower) {
                     continue;
                 }
                 for cell in split_cells(val) {
@@ -171,7 +170,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
             if line.trim().is_empty() {
                 // leave blank
             } else if is_data.get(li).is_some_and(|&b| b) {
-                out.push_str(&transform_line(line, &map, true));
+                transform_line(line, &map, true, &mut out);
             } else {
                 out.push_str(line);
             }
@@ -180,7 +179,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         } else if line.trim().is_empty() {
             // leave blank
         } else if is_data.get(li).is_some_and(|&b| b) {
-            out.push_str(&transform_line(line, &map, false));
+            transform_line(line, &map, false, &mut out);
         } else {
             out.push_str(line);
         }
@@ -233,11 +232,10 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
     let mut out = String::with_capacity(text.len());
     let mut lines_iter = lines.iter().skip(i).peekable();
     while let Some(&line) = lines_iter.next() {
-        let expanded = expand_line(line, &map);
-        if out.len() + expanded.len() > max_output_bytes {
+        expand_line(line, &map, &mut out);
+        if out.len() > max_output_bytes {
             return Err(ToonedError::InputTooLarge);
         }
-        out.push_str(&expanded);
         if lines_iter.peek().is_some() {
             if out.len() + eol.len() > max_output_bytes {
                 return Err(ToonedError::InputTooLarge);
@@ -307,11 +305,10 @@ fn replace_cells_expand_into(s: &str, map: &HashMap<&str, &str>, out: &mut Strin
 }
 
 /// Replace mapped cell tokens in `line` with their sentinels (array mode) or
-/// mapped value tokens (object mode `key: value`).
-fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool) -> String {
+/// mapped value tokens (object mode `key: value`). Writes directly to `out`.
+fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool, out: &mut String) {
     let indent = line.len() - line.trim_start().len();
     let trimmed = line.trim();
-    let mut out = String::with_capacity(line.len());
     out.push_str(&line[..indent]);
     if object_mode {
         if let Some(sp) = trimmed.find(": ") {
@@ -322,22 +319,20 @@ fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool) -> S
             if let Some(sent) = map.get(val).copied() {
                 out.push_str(sent);
             } else {
-                replace_cells_into(val, map, &mut out);
+                replace_cells_into(val, map, out);
             }
         } else {
-            replace_cells_into(trimmed, map, &mut out);
+            replace_cells_into(trimmed, map, out);
         }
     } else {
-        replace_cells_into(trimmed, map, &mut out);
+        replace_cells_into(trimmed, map, out);
     }
-    out
 }
 
-/// Replace sentinel tokens in `line` with their originals.
-fn expand_line(line: &str, map: &HashMap<&str, &str>) -> String {
+/// Replace sentinel tokens in `line` with their originals. Writes directly to `out`.
+fn expand_line(line: &str, map: &HashMap<&str, &str>, out: &mut String) {
     let indent = line.len() - line.trim_start().len();
     let trimmed = line.trim();
-    let mut out = String::with_capacity(line.len() * 2);
     out.push_str(&line[..indent]);
     if let Some(sp) = trimmed.find(": ") {
         let key = or_fallback(trimmed.get(..sp), "");
@@ -347,12 +342,11 @@ fn expand_line(line: &str, map: &HashMap<&str, &str>) -> String {
         if let Some(orig) = map.get(val).copied() {
             out.push_str(orig);
         } else {
-            replace_cells_expand_into(val, map, &mut out);
+            replace_cells_expand_into(val, map, out);
         }
     } else {
-        replace_cells_expand_into(trimmed, map, &mut out);
+        replace_cells_expand_into(trimmed, map, out);
     }
-    out
 }
 
 /// Detect whether `toon` is an array-of-objects table (header line
@@ -377,9 +371,10 @@ fn find_structure<'a>(lines: &'a [&'a str]) -> (bool, usize, Vec<&'a str>) {
     (true, 0, Vec::new())
 }
 
-/// Case-insensitive substring protection check between a lowercased TOON header
-/// key and the pre-lowercased set of configured protected key names.
-fn key_is_protected(header_key_lower: &str, protected_lower: &HashSet<&str>) -> bool {
+/// Case-insensitive substring protection check between a TOON header
+/// key and the set of configured protected key names.
+fn key_is_protected(header_key: &str, protected_lower: &HashSet<String>) -> bool {
+    let header_key_lower = header_key.to_ascii_lowercase();
     protected_lower.iter().any(|p| header_key_lower.contains(p))
 }
 
