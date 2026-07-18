@@ -36,8 +36,10 @@ fn first_scan_appends_tooned_entry_to_an_existing_gitignore() {
 fn running_index_twice_does_not_duplicate_the_gitignore_entry() {
     let dir = tempdir().expect("tempdir");
 
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("first scan_full");
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("second scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("first scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("second scan_full");
 
     let contents = fs::read_to_string(dir.path().join(".gitignore")).expect("read .gitignore");
     let count = contents.lines().filter(|l| l.trim() == ".tooned/").count();
