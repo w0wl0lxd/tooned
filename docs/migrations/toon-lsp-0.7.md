@@ -2,8 +2,9 @@
 
 This release introduces an in-place, zero-allocation encoding API and a
 round-trip verifier. Most existing code continues to compile; the breaking
-changes are limited to the `tooned` `Conversion` type (which gains a
-lifetime) and a quoting fix for hexadecimal literals.
+changes are limited to the `tooned` `Conversion` type (which gains a lifetime
+and a new `Rejected` variant), `ShapeClass::NotClassified` (a new enum
+variant), and a quoting fix for hexadecimal literals.
 
 ## toon-lsp API changes
 
@@ -33,11 +34,11 @@ an expected `serde_json::Value` without allocating an intermediate `Value`:
 
 ```rust
 // Allocates a temporary scratch String:
-assert!(toon_lsp::toon::verify_round_trip(text, &expected, &config)?);
+assert!(toon_lsp::toon::verify_round_trip(text, &expected, &config).is_ok());
 
 // Allocation-free if the scratch buffer has capacity:
 let mut scratch = String::with_capacity(4096);
-assert!(toon_lsp::toon::verify_round_trip_with_scratch(text, &expected, &config, &mut scratch)?);
+assert!(toon_lsp::toon::verify_round_trip_with_scratch(text, &expected, &config, &mut scratch).is_ok());
 ```
 
 ### Hexadecimal literal quoting
@@ -56,6 +57,7 @@ non-round-trippable output), you must quote them in the source `Value`.
 pub enum Conversion<'a> {
     Toon { text: Cow<'a, str>, report: ConversionReport },
     Passthrough { bytes: Cow<'a, [u8]>, reason: PassthroughReason },
+    Rejected { reason: PassthroughReason },
 }
 ```
 
@@ -69,19 +71,24 @@ borrow their output buffers instead of cloning.
   allocation.
 - If you have code that pattern-matches on `Conversion` without a lifetime,
   add `Conversion<'a>` (or `Conversion<'_>` / `Conversion<'static>` as
-  appropriate):
+  appropriate) and handle the new `Rejected` variant:
 
 ```rust
 // before
-match conversion {
-    Conversion::Toon { text, .. } => text.into_owned(),
-    Conversion::Passthrough { bytes, .. } => bytes.into_owned(),
+fn handle(conversion: Conversion) -> String {
+    match conversion {
+        Conversion::Toon { text, .. } => text.into_owned(),
+        Conversion::Passthrough { bytes, .. } => String::from_utf8_lossy(&bytes).into_owned(),
+    }
 }
 
-// after (when borrowing)
-match conversion {
-    Conversion::Toon { text, .. } => text.into_owned(),
-    Conversion::Passthrough { bytes, .. } => bytes.into_owned(),
+// after
+fn handle(conversion: Conversion<'_>) -> String {
+    match conversion {
+        Conversion::Toon { text, .. } => text.into_owned(),
+        Conversion::Passthrough { bytes, .. } => String::from_utf8_lossy(&bytes).into_owned(),
+        Conversion::Rejected { reason } => panic!("conversion rejected: {reason:?}"),
+    }
 }
 ```
 
@@ -95,6 +102,8 @@ continue to work exactly as before if you need an owned value.
 - [ ] Replace round-trip checks that parse+compare `Value`s with
       `verify_round_trip_with_scratch` when you can pre-size a scratch buffer.
 - [ ] Update any match sites on `tooned_types::Conversion` to
-      `Conversion<'a>` / `Conversion<'static>`.
+      `Conversion<'a>` / `Conversion<'static>` and add a `Rejected` arm.
+- [ ] Add `ShapeClass::NotClassified` to any exhaustive matches on
+      `tooned_types::ShapeClass`.
 - [ ] Re-encode any fixtures containing unquoted hex strings; the encoder now
       quotes `0x`/`0X` values.

@@ -720,7 +720,9 @@ pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option
             };
             sonic_rs::to_string(&out).ok()
         }
-        tooned_core::Conversion::Passthrough { .. } => None,
+        tooned_core::Conversion::Passthrough { .. } | tooned_core::Conversion::Rejected { .. } => {
+            None
+        }
     };
     {
         #[allow(clippy::single_match_else, clippy::manual_unwrap_or)]

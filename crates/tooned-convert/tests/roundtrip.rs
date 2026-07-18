@@ -23,7 +23,7 @@ fn roundtrip_cases() -> Vec<(&'static str, serde_json::Value)> {
             ]),
         ),
         ("nested object", json!({"a": {"b": {"c": 1, "d": [2, 3, 4]}}})),
-        ("escaped string", json!({"msg": "hello: world, \"quoted\", tab\there"})),
+        ("escaped string", json!({"msg": "hello: world, \"quoted\", tab	here"})),
         ("numeric scalar", json!({"pi": 3.5, "count": 42, "neg": -7})),
         ("hex string regression", json!({"addr": "0x0", "mask": "0xDEADBEEF"})),
         ("mixed array", json!([null, true, 1.5, "x", {"y": 2}])),
@@ -37,9 +37,9 @@ fn encode_then_verify_round_trip_succeeds() {
         let mut toon = String::new();
         encode_into(&value, &config, &mut toon).expect("encode should succeed");
 
-        let verified =
-            verify_round_trip(&toon, &value, &config).expect("verify_round_trip must not error");
-        assert!(verified, "verify_round_trip failed for case: {label}\n{toon}");
+        if let Err(e) = verify_round_trip(&toon, &value, &config) {
+            panic!("verify_round_trip failed for case: {label}\n{e}\n{toon}");
+        }
     }
 }
 
@@ -59,7 +59,7 @@ fn encode_then_decode_toon_yields_original_value() {
 fn verify_round_trip_rejects_non_canonical_text() {
     let value = json!({"name": "Alice", "age": 30});
     let mut canonical = String::new();
-    encode_into(&value, &ToonConfig::default(), &mut canonical).unwrap();
+    encode_into(&value, &ToonConfig::default(), &mut canonical).expect("encode should succeed");
 
     // Extra whitespace makes the text non-canonical, so the verifier should
     // report a mismatch without panicking.

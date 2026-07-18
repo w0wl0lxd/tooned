@@ -12,7 +12,7 @@
 //!
 //! The public surface is defined by `contracts/tooned-core-api.md`:
 //! [`maybe_tooned`], [`maybe_tooned_in`], [`inspect`], and [`decode_toon`].
-//! The zero-allocation hot path is [`maybe_tooned_in`]`/`[`toon_from_value`]`:
+//! The zero-allocation hot path is [`maybe_tooned_in`]/[`toon_from_value`]:
 //! after parsing, the function writes TOON into a caller-provided `&mut String`
 //! and returns a [`Conversion`] that borrows from it. The parsing step itself
 //! still allocates, but the encode/verify/margin phases do not when dict,

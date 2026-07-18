@@ -237,10 +237,15 @@ pub struct InspectReport {
 /// `Conversion<'a>` that borrows from the caller's `&'a mut String` and
 /// `&'a [u8]`; `maybe_tooned` is the owned convenience wrapper that returns
 /// `Conversion<'static>`.
+///
+/// `Rejected` is used by `toon_from_value` (which only has a `Value`, not the
+/// original input bytes) to signal that the value did not convert. Callers with
+/// the original bytes can convert it to `Passthrough { bytes }`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Conversion<'a> {
     Toon { text: Cow<'a, str>, report: ConversionReport },
     Passthrough { bytes: Cow<'a, [u8]>, reason: PassthroughReason },
+    Rejected { reason: PassthroughReason },
 }
 
 /// Diagnostic detail attached to a successful `Conversion::Toon`

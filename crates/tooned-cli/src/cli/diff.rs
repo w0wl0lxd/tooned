@@ -26,13 +26,14 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
     let bytes = std::fs::read(&args.file)?;
 
     let opts = tooned_core::ConversionOptions::default();
-    let toon_text = match tooned_core::maybe_tooned(&bytes, &opts) {
-        Ok(tooned_core::Conversion::Toon { text, .. }) => text,
-        Ok(tooned_core::Conversion::Passthrough { reason, .. }) => {
+    let conversion = tooned_core::maybe_tooned(&bytes, &opts).map_err(anyhow::Error::from)?;
+    let toon_text = match conversion {
+        tooned_core::Conversion::Toon { text, .. } => text,
+        tooned_core::Conversion::Passthrough { reason, .. }
+        | tooned_core::Conversion::Rejected { reason } => {
             eprintln!("tooned diff: input was not converted: {reason:?}");
             std::process::exit(2);
         }
-        Err(err) => return Err(err.into()),
     };
 
     // Parse the original as a structured value via the same detect+parse step

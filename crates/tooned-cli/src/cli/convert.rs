@@ -213,8 +213,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let converted = matches!(onto_outcome, Ok(Conversion::Toon { .. }));
             let output = match onto_outcome {
                 Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
-                Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
-                Err(_) => bytes.clone(),
+                Ok(Conversion::Passthrough { bytes: pt_bytes, .. }) => pt_bytes.into_owned(),
+                Ok(Conversion::Rejected { .. }) | Err(_) => bytes.clone(),
             };
             let (tokens, precise) = precise_savings(&bytes, &output, &opts);
             #[allow(clippy::manual_unwrap_or)]
@@ -286,8 +286,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 let converted = matches!(tron_outcome, Ok(Conversion::Toon { .. }));
                 let output = match tron_outcome {
                     Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
-                    Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
-                    Err(_) => bytes.clone(),
+                    Ok(Conversion::Passthrough { bytes: pt_bytes, .. }) => pt_bytes.into_owned(),
+                    Ok(Conversion::Rejected { .. }) | Err(_) => bytes.clone(),
                 };
                 let (tokens, precise) = precise_savings(&bytes, &output, &opts);
                 #[allow(clippy::manual_unwrap_or)]
@@ -653,11 +653,11 @@ fn finalize_json(value: &serde_json::Value, bytes: &[u8]) -> Vec<u8> {
 /// payload-driven ambiguity).
 fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
     TOON_OUT.with_borrow_mut(|out| {
-        // Ensure the reusable buffer is at least as large as the input so the
-        // first conversion on this thread does not immediately reallocate.
-        if out.capacity() < bytes.len() {
-            out.reserve(bytes.len() - out.capacity());
-        }
+        // Clear and reserve capacity equal to the input length. `reserve`
+        // guarantees `len() + additional` capacity; after `clear` the length is
+        // zero, so this precisely ensures the buffer can hold the input.
+        out.clear();
+        out.reserve(bytes.len());
 
         #[allow(clippy::manual_unwrap_or)]
         let input_len = match bytes.len().try_into() {
@@ -666,10 +666,11 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
         };
         let output = match maybe_tooned_in(bytes, opts, out) {
             Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
-            Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
-            // Infallible in practice (see maybe_tooned's doc comment); fail
-            // safe to the original bytes rather than panicking or erroring.
-            Err(_) => bytes.to_vec(),
+            Ok(Conversion::Passthrough { bytes: pt_bytes, .. }) => pt_bytes.into_owned(),
+            // Infallible in practice (see maybe_tooned's doc comment); a
+            // `Rejected` or genuine caller-misuse `Err` both fail-safe to the
+            // original bytes rather than panicking.
+            Ok(Conversion::Rejected { .. }) | Err(_) => bytes.to_vec(),
         };
         #[allow(clippy::manual_unwrap_or)]
         let output_len = match output.len().try_into() {

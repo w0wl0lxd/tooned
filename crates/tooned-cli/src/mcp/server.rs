@@ -461,12 +461,14 @@ impl ToonedMcpServer {
                 }),
                 // `attempt()`/`maybe_tooned` already computed exactly why this
                 // declined to convert -- surfaced here rather than discarded.
-                Ok(Conversion::Passthrough { reason, .. }) => Json(ConvertResult {
-                    converted: false,
-                    text: req.content,
-                    report: None,
-                    reason: Some(reason.into()),
-                }),
+                Ok(Conversion::Passthrough { reason, .. } | Conversion::Rejected { reason }) => {
+                    Json(ConvertResult {
+                        converted: false,
+                        text: req.content,
+                        report: None,
+                        reason: Some(reason.into()),
+                    })
+                }
                 // Infallible in practice; a genuine caller-misuse Err still
                 // falls back to the fail-safe passthrough shape.
                 Err(_) => Json(ConvertResult {

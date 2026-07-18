@@ -119,14 +119,14 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                 );
                 text.into_owned().into_bytes()
             }
-            Ok(Conversion::Passthrough { bytes, .. }) => {
+            Ok(Conversion::Passthrough { bytes: pt_bytes, .. }) => {
                 #[allow(clippy::manual_unwrap_or)]
                 let buf_len = match buf.len().try_into() {
                     Ok(v) => v,
                     Err(_) => i64::MAX,
                 };
                 #[allow(clippy::manual_unwrap_or)]
-                let bytes_len = match bytes.len().try_into() {
+                let bytes_len = match pt_bytes.len().try_into() {
                     Ok(v) => v,
                     Err(_) => i64::MAX,
                 };
@@ -138,9 +138,9 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                     buf_len,
                     bytes_len,
                 );
-                bytes.into_owned()
+                pt_bytes.into_owned()
             }
-            Err(_) => buf,
+            Ok(Conversion::Rejected { .. }) | Err(_) => buf,
         };
         let _ = out_stdout.lock().write_all(&converted);
     } else {

@@ -79,8 +79,8 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     };
     let output = match tooned_core::maybe_tooned(&bytes, &opts) {
         Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
-        Err(_) => bytes,
+        Ok(Conversion::Passthrough { bytes: pt_bytes, .. }) => pt_bytes.into_owned(),
+        Ok(Conversion::Rejected { .. }) | Err(_) => bytes,
     };
     #[allow(clippy::manual_unwrap_or)]
     let output_len = match output.len().try_into() {

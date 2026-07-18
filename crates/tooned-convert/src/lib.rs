@@ -145,46 +145,21 @@ pub(crate) fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value
 
 thread_local! {
     /// Thread-local scratch buffer for zero-allocation round-trip verification.
-    /// Pre-allocated with capacity for max_input_bytes to avoid allocation on hot path.
-    static VERIFY_SCRATCH: RefCell<String> = RefCell::new(String::with_capacity(2 * 1024 * 1024));
+    /// Left empty initially and grown by the first call; subsequent calls reuse
+    /// the warmed capacity so the hot path remains allocation-free.
+    static VERIFY_SCRATCH: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
-/// Zero-allocation estimate of JSON byte count for a Value.
-/// This is a conservative approximation used on the zero-alloc path
-/// when precise_tokens is false. It overestimates slightly to be safe.
-fn estimate_json_bytes(value: &Value) -> usize {
-    fn estimate(v: &Value) -> usize {
-        match v {
-            Value::Null => 4,
-            Value::Bool(b) => {
-                if *b {
-                    4
-                } else {
-                    5
-                }
-            }
-            Value::Number(_n) => {
-                // Estimate without allocation: count digits and sign
-                // Use a conservative estimate of 20 bytes for any number
-                20
-            }
-            Value::String(s) => s.len() + 2, // +2 for quotes
-            Value::Array(arr) => {
-                let inner: usize = arr.iter().map(estimate).sum();
-                inner + arr.len().max(1) + 2 // +2 for brackets, +1 for each comma
-            }
-            Value::Object(obj) => {
-                let inner: usize = obj
-                    .iter()
-                    .map(|(k, v)| {
-                        k.len() + 2 + 1 + estimate(v) // key + quotes + colon + value
-                    })
-                    .sum();
-                inner + obj.len().max(1) + 2 // +2 for braces, +1 for each comma
-            }
-        }
-    }
-    estimate(value)
+/// Exact compact-JSON byte length for a `Value` without materializing the text.
+///
+/// `serde_json::to_writer` writes directly into a counting `io::Write` sink;
+/// no intermediate `String`/`Vec` is allocated. This keeps the zero-alloc path
+/// in `toon_from_value` honest while matching the byte count used by the
+/// regression property tests.
+fn json_bytes_exact(value: &Value) -> Result<usize, serde_json::Error> {
+    let mut counter = ByteCountingWriter(0);
+    serde_json::to_writer(&mut counter, value)?;
+    Ok(counter.0)
 }
 
 /// Zero-allocation conversion from a `serde_json::Value` to TOON.
@@ -192,12 +167,15 @@ fn estimate_json_bytes(value: &Value) -> usize {
 /// When `opts.dict_enabled == false`, `opts.auto_margin == false`, and
 /// `opts.entropy_gate == false`, this function performs no heap allocations
 /// (after the first call warms the thread-local scratch buffer) provided that
-/// `out` has sufficient capacity.
+/// `out` has sufficient capacity. The `entropy_gate` option is ignored here
+/// because `toon_from_value` does not have the original input bytes; callers
+/// such as `maybe_tooned_in` fold the entropy margin into `margin_pct` before
+/// calling this function.
 ///
 /// # Errors
-/// Returns `ToonedError` for caller misuse; payload-driven failures
-/// (malformed/oversized input) are never errors here since `value` is already
-/// parsed.
+/// Returns `ToonedError` for caller misuse or an internal serialization failure;
+/// payload-driven failures (round-trip mismatch, size margin, dict mismatch)
+/// resolve to `Conversion::Rejected` rather than `Err`.
 pub fn toon_from_value<'a>(
     value: &Value,
     opts: &ConversionOptions,
@@ -207,7 +185,7 @@ pub fn toon_from_value<'a>(
     out.clear();
 
     // Skip shape classification on the zero-alloc hot path
-    let shape = if opts.dict_enabled || opts.auto_margin || opts.entropy_gate {
+    let shape = if opts.dict_enabled || opts.auto_margin {
         shape::classify(value)
     } else {
         ShapeClass::NotClassified
@@ -220,16 +198,11 @@ pub fn toon_from_value<'a>(
         Vec::new()
     };
 
-    // Compute JSON byte count (skip precise_tokens on zero-alloc path)
-    let json_bytes = if opts.precise_tokens {
-        let text = sonic_rs::to_string(value)
-            .map_err(|e| ToonedError::DecodeFailed(format!("failed to serialize JSON: {e}")))?;
-        text.len()
-    } else {
-        // On zero-alloc path, use a simple estimate based on value structure
-        // This is an approximation but sufficient for the margin check
-        estimate_json_bytes(value)
-    };
+    // Compute the exact compact-JSON byte count for the margin gate. The
+    // counter writer never materializes the text, so this path stays
+    // allocation-free.
+    let json_bytes = json_bytes_exact(value)
+        .map_err(|e| ToonedError::DecodeFailed(format!("failed to compute JSON size: {e}")))?;
 
     // Encode TOON into the caller's buffer (plain, before any dict tier)
     toon_lsp::toon::encode_into(value, &toon_lsp::toon::ToonConfig::default(), out)
@@ -238,21 +211,17 @@ pub fn toon_from_value<'a>(
     // Verify the plain TOON round-trips before layering on the dict tier.
     // This is a zero-allocation re-encode comparison on the hot path.
     let round_trip_ok = VERIFY_SCRATCH.with_borrow_mut(|scratch| {
-        matches!(
-            toon_lsp::toon::verify_round_trip_with_scratch(
-                out.as_str(),
-                value,
-                &toon_lsp::toon::ToonConfig::default(),
-                scratch,
-            ),
-            Ok(true)
+        scratch.clear();
+        toon_lsp::toon::verify_round_trip_with_scratch(
+            out.as_str(),
+            value,
+            &toon_lsp::toon::ToonConfig::default(),
+            scratch,
         )
+        .is_ok()
     });
     if !round_trip_ok {
-        return Ok(Conversion::Passthrough {
-            bytes: Cow::Borrowed(&[]), // Caller with original input should replace this sentinel
-            reason: PassthroughReason::RoundTripMismatch,
-        });
+        return Ok(Conversion::Rejected { reason: PassthroughReason::RoundTripMismatch });
     }
 
     // Apply dict tier if enabled; verify by decoding because the re-encode
@@ -275,15 +244,10 @@ pub fn toon_from_value<'a>(
     } else {
         opts.margin_pct
     };
-    if opts.entropy_gate {
-        // For toon_from_value, we don't have the original input bytes,
-        // so we skip entropy gate (it's only relevant for maybe_tooned_in)
-    }
 
     // Check size margin
     if !is_smaller_enough(json_bytes, out.len(), margin) {
-        return Ok(Conversion::Passthrough {
-            bytes: Cow::Borrowed(&[]), // Caller with original input should replace this sentinel
+        return Ok(Conversion::Rejected {
             reason: PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes: out.len() },
         });
     }
@@ -294,7 +258,7 @@ pub fn toon_from_value<'a>(
     Ok(Conversion::Toon {
         text: toon_text,
         report: ConversionReport {
-            doc_type: DocType::Json, // Value is already JSON-shaped
+            doc_type: DocType::Json, // corrected by maybe_tooned_in when input is known
             shape,
             json_bytes,
             toon_bytes,
@@ -342,25 +306,31 @@ pub fn maybe_tooned_in<'a>(
         });
     };
 
-    // For maybe_tooned_in, we need to handle entropy gate since we have input bytes
-    let mut opts_with_entropy = opts.clone();
-    if opts.entropy_gate {
-        // Compute entropy margin from input bytes
-        let _entropy_margin = entropy_margin_for(input);
-        // This will be used inside toon_from_value, but we need to pass it through
-        // Since toon_from_value doesn't have access to input bytes, we handle this
-        // by setting auto_margin appropriately as a signal
-        opts_with_entropy.auto_margin = true;
-    }
+    // Fold the entropy gate into the margin percentage. `toon_from_value` does
+    // not have the original input bytes, so it cannot compute entropy itself.
+    let adjusted_opts;
+    let effective_opts = if opts.entropy_gate {
+        adjusted_opts = ConversionOptions {
+            margin_pct: opts.margin_pct.max(entropy_margin_for(input)),
+            entropy_gate: false,
+            ..opts.clone()
+        };
+        &adjusted_opts
+    } else {
+        opts
+    };
 
-    let mut result = toon_from_value(&value, &opts_with_entropy, out)?;
-    // `toon_from_value` does not have the original input bytes, so it uses an
-    // empty byte slice as a Passthrough sentinel. Substitute the real input
-    // bytes here so the caller gets a usable fallback.
-    if let Conversion::Passthrough { ref mut bytes, .. } = result
-        && bytes.is_empty()
-    {
-        *bytes = Cow::Borrowed(input);
+    let mut result = toon_from_value(&value, effective_opts, out)?;
+    match result {
+        Conversion::Toon { ref mut report, .. } => {
+            // `toon_from_value` only sees a parsed Value; restore the detected
+            // input document type for accurate reporting.
+            report.doc_type = doc_type;
+        }
+        Conversion::Rejected { reason } => {
+            return Ok(Conversion::Passthrough { bytes: Cow::Borrowed(input), reason });
+        }
+        Conversion::Passthrough { .. } => {}
     }
     Ok(result)
 }
@@ -684,13 +654,17 @@ pub fn maybe_tooned(
     let mut out = String::new();
     let result = maybe_tooned_in(input, opts, &mut out)?;
 
-    // Convert any borrowed Cow data to owned for the 'static lifetime
+    // Convert any borrowed Cow data to owned for the 'static lifetime.
+    // `maybe_tooned_in` should never return `Rejected`; handle it defensively.
     match result {
         Conversion::Toon { text, report } => {
             Ok(Conversion::Toon { text: text.into_owned().into(), report })
         }
         Conversion::Passthrough { bytes, reason } => {
             Ok(Conversion::Passthrough { bytes: bytes.into_owned().into(), reason })
+        }
+        Conversion::Rejected { reason } => {
+            Ok(Conversion::Passthrough { bytes: Cow::Owned(input.to_vec()), reason })
         }
     }
 }
