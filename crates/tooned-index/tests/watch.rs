@@ -51,3 +51,52 @@ fn watch_with_stop_triggers_sync_on_new_file() {
     let after = tooned_index::status(root).expect("status after watch");
     assert_eq!(after.file_count, 1, "watch should have synced the new file");
 }
+
+#[test]
+fn watch_ignores_gitignored_directories() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // A `.gitignore` that ignores `target/` should be respected by the watcher.
+    std::fs::write(root.join(".gitignore"), b"target/\n").expect("write .gitignore");
+    // Pre-create the ignored directory so the recursive watcher has a chance
+    // to see activity inside it (the watcher will still filter it out).
+    std::fs::create_dir(root.join("target")).expect("create target dir");
+
+    // Initial scan must see the .gitignore but not the ignored directory.
+    tooned_index::scan_full(root).expect("initial scan");
+    let before = tooned_index::status(root).expect("status before watch");
+    assert_eq!(before.file_count, 0, "gitignored directory should not be indexed");
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let root_owned = root.to_path_buf();
+    let stop_for_thread = Arc::clone(&stop);
+
+    let handle = thread::spawn(move || {
+        tooned_index::watch_with_stop(&root_owned, 50, &stop_for_thread)
+            .expect("watch loop should exit cleanly");
+    });
+
+    thread::sleep(Duration::from_millis(500));
+
+    std::fs::write(root.join("tracked.json"), br#"{"id":1}"#).expect("write tracked file");
+    std::fs::write(root.join("target").join("ignored.json"), br#"{"id":2}"#)
+        .expect("write ignored file");
+
+    let deadline = Instant::now() + Duration::from_secs(WATCH_TIMEOUT_SECS);
+    while Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(100));
+        if tooned_index::status(root).is_ok_and(|s| s.file_count == 1) {
+            break;
+        }
+    }
+
+    stop.store(true, Ordering::SeqCst);
+    handle.join().expect("watch thread should join");
+
+    let after = tooned_index::status(root).expect("status after watch");
+    assert_eq!(after.file_count, 1, "only the tracked file should be synced");
+
+    let detail = tooned_index::show_file(root, "tracked.json").expect("tracked file detail");
+    assert!(detail.file.path.ends_with("tracked.json"));
+}
