@@ -43,12 +43,12 @@ fn post_tool_use_payload(tool_response: &str) -> String {
 }
 
 #[test]
-fn convertible_tool_response_passthrough_and_exits_0() {
+fn convertible_tool_response_passes_through_and_exits_0() {
     let tool_response = uniform_array_json(20);
     let stdin = post_tool_use_payload(&tool_response);
 
     // Devin cannot replace the native tool output, and `additionalContext`
-    // would inflate total context, so the hook passthroughs.
+    // would inflate total context, so the hook passes through.
     Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--devin"])
@@ -94,7 +94,7 @@ fn empty_stdin_produces_no_stdout_and_exits_0() {
 }
 
 #[test]
-fn tool_response_as_string_also_passthroughs() {
+fn tool_response_as_string_also_passes_through() {
     // Defensive: if Devin ever passes `tool_response` as a plain string,
     // extraction still works, but the protocol cannot replace the output so the
     // hook remains silent.

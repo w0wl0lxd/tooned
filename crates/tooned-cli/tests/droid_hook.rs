@@ -41,7 +41,7 @@ fn object_payload(output: &serde_json::Value) -> String {
 }
 
 #[test]
-fn convertible_output_field_passthroughs_and_exits_0() {
+fn convertible_output_field_passes_through_and_exits_0() {
     let tool_response = uniform_array_json(20);
     let stdin = object_payload(&serde_json::json!({
         "success": true,
@@ -50,7 +50,7 @@ fn convertible_output_field_passthroughs_and_exits_0() {
     }));
 
     // Droid cannot replace the native tool output, and `additionalContext`
-    // would inflate total context, so the hook passthroughs.
+    // would inflate total context, so the hook passes through.
     Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--droid"])
@@ -61,7 +61,7 @@ fn convertible_output_field_passthroughs_and_exits_0() {
 }
 
 #[test]
-fn string_tool_response_also_passthroughs() {
+fn string_tool_response_also_passes_through() {
     let stdin = serde_json::json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "Execute",
@@ -89,7 +89,7 @@ fn content_array_extracts_text_items() {
         ],
     }));
 
-    // Concatenation with a non-JSON prefix should passthrough, so no stdout.
+    // Concatenation with a non-JSON prefix should pass through, so no stdout.
     Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--droid"])
@@ -100,7 +100,7 @@ fn content_array_extracts_text_items() {
 }
 
 #[test]
-fn content_array_with_only_json_text_item_passthroughs() {
+fn content_array_with_only_json_text_item_passes_through() {
     let stdin = object_payload(&serde_json::json!({
         "content": [{ "type": "text", "text": uniform_array_json(20) }],
     }));

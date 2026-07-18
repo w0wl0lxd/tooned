@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PostToolUse` hooks. `additionalContext` keeps the original JSON in context and
   appends the TOON, inflating total token count rather than reducing it. Codex
   now uses `continue: false` + `reason` feedback to replace the model-visible
-  tool result with TOON; Devin and Droid passthrough because their `PostToolUse`
+  tool result with TOON; Devin and Droid pass through because their `PostToolUse`
   protocols do not support output replacement. Use `tooned wrap -- <cmd>` or
   `... | tooned pipe` with Devin/Droid (and for any command on other agents)
   when TOON-only output is required. README and evidence docs were updated to
@@ -141,7 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.jsonl`/`.ndjson`). For `--to tron` forced, streaming writes to a temp file and then
   promotes it atomically for file output or copies to stdout for stdout output. For the
   default adaptive case, streaming writes to a temp file, compares output size vs input
-  size using the margin check, and discards the temp and passthrough the original input
+  size using the margin check, and discards the temp and passes through the original input
   if not smaller enough. On parse/IO error, falls back to passthrough of the original
   input (for stdin, spools stdin to a temp file first so it can be retried/copied). Only
   uses streaming when the input is large (above `max_input_bytes`) or the user explicitly
@@ -150,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tooned-cli:** added Devin CLI hook integration. `tooned hook run --devin` reads
   Devin's `PostToolUse` stdin shape (`tool_response.output`). Devin only supports
   `additionalContext` in `PostToolUse`, which would keep the original JSON in context,
-  so the hook passthroughs and prints nothing; use `tooned wrap -- <cmd>` or
+  so the hook passes through and prints nothing; use `tooned wrap -- <cmd>` or
   `... | tooned pipe` for TOON-only output with Devin.
   `tooned hook install --devin [--scope user|project]` writes `.devin/hooks.v1.json`
   (project scope) or `~/.config/devin/config.json` (user scope) with a matcher covering
@@ -160,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tooned-cli:** added Droid (Factory AI) hook integration. `tooned hook run --droid`
   uses Droid's `hooks.PostToolUse` JSON format (`toolName` / `toolInput` / `toolOutput`).
   Droid only supports `additionalContext` in `PostToolUse`, which would keep the original
-  JSON in context, so the hook passthroughs and prints nothing; use `tooned wrap -- <cmd>`
+  JSON in context, so the hook passes through and prints nothing; use `tooned wrap -- <cmd>`
   or `... | tooned pipe` for TOON-only output with Droid. `tooned hook install --droid`
   writes `.factory/hooks.json` (project) or `~/.factory/hooks.json` (user), `uninstall --droid`
   only removes tooned's own entries, and `status`/`doctor` report Droid installations.

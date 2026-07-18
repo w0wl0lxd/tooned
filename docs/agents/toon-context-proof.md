@@ -154,5 +154,5 @@ LLMs can already answer structured questions from a losslessly compressed, tabul
 - The model does not need raw JSON in context to answer structured questions.
 - TOON reduces context size for convertible payloads when the agent protocol replaces the native tool result with TOON.
 - For exact-raw-output requests with replacement protocols, the model returns the TOON text (the original JSON is not preserved in that context item).
-- For agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the `tooned` hook passthroughs. Use command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) to deliver TOON-only output with those agents.
+- For agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the `tooned` hook passes through. Use command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) to deliver TOON-only output with those agents.
 - The hook command is configured with a short timeout so a stalled `tooned` process cannot hang the agent's tool-call pipeline.

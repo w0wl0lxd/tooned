@@ -759,7 +759,7 @@ impl HookProtocol {
 /// - Devin and Droid do not support output replacement in `PostToolUse`. Using
 ///   `additionalContext` would keep the original JSON in context and append the
 ///   TOON, inflating total token count, so those protocols intentionally
-///   passthrough. Use command-level wrapping (`tooned wrap -- <cmd>` or
+///   pass through. Use command-level wrapping (`tooned wrap -- <cmd>` or
 ///   `... | tooned pipe`) with those agents if TOON-only output is required.
 ///
 /// Never panics for any `stdin` byte slice, including invalid UTF-8 or

@@ -852,7 +852,7 @@ fn run_tron_streaming(args: &ConvertArgs, _opts: &ConversionOptions) -> anyhow::
 /// Runs adaptive streaming conversion for the default path.
 /// Streams NDJSON to TRON in a temp file, then compares output size
 /// vs input size using the margin check. If not smaller enough,
-/// discards the temp and passthrough the original input.
+/// discards the temp and passes through the original input.
 fn run_adaptive_streaming(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow::Result<()> {
     let out_path = args.out.as_deref();
 
