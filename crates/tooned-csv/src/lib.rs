@@ -86,14 +86,14 @@ pub fn parse_csv_stream<R: BufRead>(reader: R) -> CsvStream<R> {
     let headers_result = csv_reader.headers();
     let headers = match headers_result {
         Ok(h) => {
-            if let Some(dup) = first_duplicate_header(&h) {
+            if let Some(dup) = first_duplicate_header(h) {
                 let dup = dup.to_string();
                 Err(format!(
                     "duplicate column header {dup:?}: refusing to parse, since later columns of the \
                      same name would silently overwrite earlier ones and lose data"
                 ))
             } else {
-                Ok(h.iter().map(|s| s.to_string()).collect())
+                Ok(h.iter().map(std::string::ToString::to_string).collect())
             }
         }
         Err(e) => Err(e.to_string()),
@@ -111,7 +111,7 @@ pub struct CsvStream<R> {
 impl<R: BufRead> CsvStream<R> {
     /// Get the headers, if available.
     pub fn headers(&self) -> Option<&[String]> {
-        self.headers.as_ref().ok().map(|h| h.as_slice())
+        self.headers.as_ref().ok().map(Vec::as_slice)
     }
 }
 
@@ -155,14 +155,14 @@ pub fn parse_tsv_stream<R: BufRead>(reader: R) -> TsvStream<R> {
     let headers_result = csv_reader.headers();
     let headers = match headers_result {
         Ok(h) => {
-            if let Some(dup) = first_duplicate_header(&h) {
+            if let Some(dup) = first_duplicate_header(h) {
                 let dup = dup.to_string();
                 Err(format!(
                     "duplicate column header {dup:?}: refusing to parse, since later columns of the \
                      same name would silently overwrite earlier ones and lose data"
                 ))
             } else {
-                Ok(h.iter().map(|s| s.to_string()).collect())
+                Ok(h.iter().map(std::string::ToString::to_string).collect())
             }
         }
         Err(e) => Err(e.to_string()),
@@ -180,7 +180,7 @@ pub struct TsvStream<R> {
 impl<R: BufRead> TsvStream<R> {
     /// Get the headers, if available.
     pub fn headers(&self) -> Option<&[String]> {
-        self.headers.as_ref().ok().map(|h| h.as_slice())
+        self.headers.as_ref().ok().map(Vec::as_slice)
     }
 }
 
