@@ -1,23 +1,44 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `tooned stats [path] [--top N]`
+//! `tooned stats [path] [--top N] [--sort-by savings|count|recency]`
 //!
 //! Ranked savings-opportunity report from the index (FR-022, T060). Exit
 //! codes: 0 success, 1 no existing index.
 
 use std::path::PathBuf;
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum StatsSortBy {
+    Savings,
+    Count,
+    Recency,
+}
+
+impl From<StatsSortBy> for tooned_index::SortBy {
+    fn from(sort: StatsSortBy) -> Self {
+        match sort {
+            StatsSortBy::Savings => tooned_index::SortBy::Savings,
+            StatsSortBy::Count => tooned_index::SortBy::Count,
+            StatsSortBy::Recency => tooned_index::SortBy::Recency,
+        }
+    }
+}
 
 #[derive(Debug, Args)]
 pub struct StatsArgs {
     /// Project path (default: current directory).
     pub path: Option<PathBuf>,
 
-    /// Limit results to the top N entries by savings percentage.
+    /// Limit results to the top N entries.
     #[arg(long)]
     pub top: Option<u32>,
+
+    /// Rank results by savings, conversion count, or recency.
+    #[arg(long = "sort-by")]
+    pub sort_by: Option<StatsSortBy>,
 
     /// Emit the report as a JSON array instead of human-readable text.
     #[arg(long)]
@@ -30,6 +51,7 @@ struct StatsEntry<'a> {
     json_bytes: i64,
     toon_bytes: i64,
     savings_pct: f64,
+    score: f64,
 }
 
 pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
@@ -38,7 +60,8 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
         None => PathBuf::from("."),
     };
 
-    match tooned_index::stats(&root, args.top) {
+    let sort_by = args.sort_by.map_or(tooned_index::SortBy::Savings, Into::into);
+    match tooned_index::stats_sorted(&root, args.top, sort_by) {
         Ok(rows) => {
             if args.json {
                 let entries: Vec<StatsEntry> = rows
@@ -48,6 +71,7 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
                         json_bytes: row.json_bytes,
                         toon_bytes: row.toon_bytes,
                         savings_pct: row.savings_pct,
+                        score: row.score,
                     })
                     .collect();
                 println!("{}", sonic_rs::to_string(&entries)?);
