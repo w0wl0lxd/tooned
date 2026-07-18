@@ -12,9 +12,11 @@ It supports two modes:
   payloads are presented to the model as TOON additionalContext while the
   original tool output is preserved.
 - ``mismatch``: a temporary hook replaces every tool response with the TOON
-  encoding of ``agent-test/products_20.json`` and the model is asked for the
-  SKU of the first product. This proves the answer came from the TOON context,
-  not the original output.
+  encoding of ``agent-test/products_20.json`` and the model is asked for a
+  fact absent from the original file (usually the SKU of the first product;
+  for ``ecommerce_orders.json`` it asks for the product ``name`` because the
+  orders already contain ``sku``). This proves the answer came from the TOON
+  context, not the original output.
 
 The script restores the original Devin hook on completion or on interrupt.
 """
@@ -477,7 +479,7 @@ def test_cases() -> list[TestCase]:
         # lets the model answer from the original JSON. Ask for `name`, which
         # the orders do not contain, so the answer must come from the injected
         # products TOON.
-        ("complex/ecommerce_orders.json", 'read agent-test/complex/ecommerce_orders.json and tell me the name of the first product', ["Product 1"], "Original orders contain `sku` but not `name`; the mismatch hook injects products_20.json TOON."),
+        ("complex/ecommerce_orders.json", 'read agent-test/complex/ecommerce_orders.json and tell me the name of the first product', ["Product 1"], "Original orders contain `sku` but not `name`."),
         ("complex/company_org.json", 'read agent-test/complex/company_org.json and tell me the SKU of the first product', ["SKU-1001"], ""),
         ("complex/sensor_readings.ndjson", 'read agent-test/complex/sensor_readings.ndjson and tell me the SKU of the first product', ["SKU-1001"], ""),
         ("complex/inventory.csv", 'read agent-test/complex/inventory.csv and tell me the SKU of the first product', ["SKU-1001"], ""),
@@ -543,11 +545,31 @@ def run_devin(prompt: str) -> str:
     return (result.stdout or "") + (result.stderr or "")
 
 
+def _is_word_boundary(text: str, idx: int, end: int) -> bool:
+    """Return True if `text[idx:end]` is not adjacent to a word character."""
+    if idx > 0:
+        ch = text[idx - 1]
+        if ch.isalnum() or ch == "_":
+            return False
+    if end < len(text):
+        ch = text[end]
+        if ch.isalnum() or ch == "_":
+            return False
+    return True
+
+
 def check_response(response: str, expected: list[str]) -> bool:
     text = response.lower()
     for exp in expected:
-        if exp.lower() in text:
-            return True
+        sub = exp.lower()
+        start = 0
+        while True:
+            idx = text.find(sub, start)
+            if idx == -1:
+                break
+            if _is_word_boundary(text, idx, idx + len(sub)):
+                return True
+            start = idx + 1
     return False
 
 
@@ -629,9 +651,11 @@ def generate_report(cases: list[TestCase]) -> str:
         "  (when it wins) and injects it as `additionalContext`; the original tool",
         "  output is preserved.",
         "- **mismatch**: a temporary hook replaces every tool response with the TOON",
-        "  encoding of `agent-test/products_20.json` and the prompt asks for the SKU",
-        "  of the first product. Because the original file does not contain `sku`, a",
-        "  correct `SKU-1001` answer must come from the injected TOON context.",
+        "  encoding of `agent-test/products_20.json`. Each prompt asks for a fact that",
+        "  is absent from the original file (usually the SKU of the first product; for",
+        "  `ecommerce_orders.json` it asks for the product `name` because the orders",
+        "  already contain `sku`). A correct answer must come from the injected TOON",
+        "  context.",
         "",
         "A response is marked **PASS** if it contains one of the expected strings",
         "(case-insensitive). A response is marked **FAIL** otherwise. Raw responses",
@@ -697,8 +721,9 @@ def generate_report(cases: list[TestCase]) -> str:
             "",
             "Hedged responses — where the model notes the original file does not",
             "contain the requested field but the 'pasted' product list does — still",
-            "demonstrate TOON decoding, because the model extracted `SKU-1001` from",
-            "the TOON context while keeping the original output in mind.",
+            "demonstrate TOON decoding, because the model extracted the expected",
+            "value (e.g. `SKU-1001` or `Product 1`) from the TOON context while",
+            "keeping the original output in mind.",
             "",
             "## Research context",
             "",
