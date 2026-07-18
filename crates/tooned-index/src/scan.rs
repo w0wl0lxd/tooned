@@ -12,6 +12,7 @@ use rusqlite::Connection;
 use tooned_core::{ConversionOptions, DocType, InspectReport, ShapeClass};
 
 use crate::IndexError;
+use crate::filter::IndexFilter;
 use crate::gitignore;
 use crate::schema::{self, file_mtime_unix, now_unix, saturating_i64};
 
@@ -55,7 +56,7 @@ pub struct ScanSummary {
 /// found, and persists the result into `.tooned/index.db`. On first
 /// creation, also appends `.tooned/` to the project's `.gitignore`
 /// (FR-020).
-pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
+pub fn scan_full(project_root: &Path, filter: &IndexFilter) -> Result<ScanSummary, IndexError> {
     // Idempotent regardless of call order: appending `.tooned/` to
     // `.gitignore` before opening the index means the very first scan
     // never walks into (and tries to index) its own database file.
@@ -75,8 +76,16 @@ pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
     // too).
     let tx = conn.transaction()?;
 
+    let exclude_gitignore = filter.compile_excludes(project_root).unwrap_or_else(|_| {
+        // If exclude compilation fails, fall back to an empty gitignore
+        // (no exclusion) rather than failing the entire scan.
+        ignore::gitignore::Gitignore::empty()
+    });
+
+    let walker = build_walker(project_root);
+
     let mut visited: usize = 0;
-    for entry in build_walker(project_root) {
+    for entry in walker {
         visited += 1;
         enforce_walk_cap(visited)?;
 
@@ -90,6 +99,12 @@ pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
         let Ok(rel) = path.strip_prefix(project_root) else { continue };
         let Some(rel_str) = rel.to_str() else { continue };
         if is_tooned_internal(rel_str) {
+            continue;
+        }
+
+        // Check if file is excluded - if so, skip processing
+        if !filter.excludes.is_empty() && filter.is_excluded(path, project_root, &exclude_gitignore)
+        {
             continue;
         }
 
@@ -107,6 +122,11 @@ pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
         // would have reported anyway.
         let max_input_bytes = ConversionOptions::default().max_input_bytes;
         let classified = if meta.len() > max_input_bytes as u64 {
+            // For oversized files, read a prefix to detect type
+            let doc_type = detect_file_type(path, filter);
+            if !filter.matches_type(doc_type) {
+                continue;
+            }
             let Ok(content_hash) = hash_file_streaming(path) else { continue };
             persist_oversized_file(
                 &tx,
@@ -118,6 +138,10 @@ pub fn scan_full(project_root: &Path) -> Result<ScanSummary, IndexError> {
             false
         } else {
             let Ok(bytes) = std::fs::read(path) else { continue };
+            let doc_type = tooned_core::inspect(&bytes, &ConversionOptions::default()).doc_type;
+            if !filter.matches_type(doc_type) {
+                continue;
+            }
             persist_scanned_file(&tx, rel_str, &bytes, meta.len(), file_mtime_unix(&meta))?
         };
         summary.files_scanned += 1;
@@ -149,6 +173,19 @@ pub(crate) fn build_walker(root: &Path) -> ignore::Walk {
 /// treat `.tooned/`'s own contents as a file to index.
 pub(crate) fn is_tooned_internal(rel_path: &str) -> bool {
     rel_path == ".tooned" || rel_path.starts_with(".tooned/")
+}
+
+/// Detects the document type of a file by reading a prefix (up to 4 KiB).
+/// Used for oversized files where we don't want to read the entire file.
+pub(crate) fn detect_file_type(path: &Path, _filter: &IndexFilter) -> Option<DocType> {
+    let mut file = File::open(path).ok()?;
+    let mut buffer = [0u8; 4096];
+    let n = std::io::Read::read(&mut file, &mut buffer).ok()?;
+    if n == 0 {
+        return None;
+    }
+    let prefix = buffer.get(..n)?;
+    tooned_detect::detect(prefix, None)
 }
 
 /// Fingerprints, classifies, and upserts one file's row into

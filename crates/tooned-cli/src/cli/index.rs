@@ -15,11 +15,20 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Subcommand};
 
 use crate::config::Config;
+use tooned_index::{DocTypeFilter, IndexFilter};
 
 #[derive(Debug, Args)]
 pub struct IndexArgs {
     /// Project path (default: current directory). Ignored when a subcommand is given.
     pub path: Option<PathBuf>,
+
+    /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
+    #[arg(long, value_name = "TYPE")]
+    pub type_filter: Option<String>,
+
+    /// Exclude paths matching these gitignore-style globs (repeatable).
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
 
     #[command(subcommand)]
     pub command: Option<IndexSubcommand>,
@@ -28,7 +37,15 @@ pub struct IndexArgs {
 #[derive(Debug, Subcommand)]
 pub enum IndexSubcommand {
     /// Incremental: stat-first, re-hash/re-classify only on real change.
-    Sync { path: Option<PathBuf> },
+    Sync {
+        path: Option<PathBuf>,
+        /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
+        #[arg(long, value_name = "TYPE")]
+        type_filter: Option<String>,
+        /// Exclude paths matching these gitignore-style globs (repeatable).
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
+    },
     /// Reports index existence, file count, last scan time.
     Status { path: Option<PathBuf> },
     /// Reports the indexed record for one file.
@@ -42,6 +59,12 @@ pub enum IndexSubcommand {
         /// Quiet period in milliseconds before a change triggers a sync.
         #[arg(long)]
         debounce_ms: Option<u64>,
+        /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
+        #[arg(long, value_name = "TYPE")]
+        type_filter: Option<String>,
+        /// Exclude paths matching these gitignore-style globs (repeatable).
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
     },
 }
 
@@ -52,16 +75,34 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
     }
 }
 
+fn build_filter(type_filter: Option<&String>, exclude: &[String]) -> anyhow::Result<IndexFilter> {
+    let type_filter = match type_filter {
+        Some(s) => {
+            let parsed = DocTypeFilter::parse(s)
+                .ok_or_else(|| anyhow::anyhow!("invalid type filter: {s}"))?;
+            Some(parsed)
+        }
+        None => None,
+    };
+    Ok(IndexFilter { type_filter, excludes: exclude.to_vec() })
+}
+
 pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
     match &args.command {
-        None => run_scan(&resolve_project_root(args.path.as_ref())),
-        Some(IndexSubcommand::Sync { path }) => run_sync(&resolve_project_root(path.as_ref())),
+        None => {
+            let filter = build_filter(args.type_filter.as_ref(), &args.exclude)?;
+            run_scan(&resolve_project_root(args.path.as_ref()), &filter)
+        }
+        Some(IndexSubcommand::Sync { path, type_filter, exclude }) => {
+            let filter = build_filter(type_filter.as_ref(), exclude)?;
+            run_sync(&resolve_project_root(path.as_ref()), &filter)
+        }
         Some(IndexSubcommand::Status { path }) => run_status(&resolve_project_root(path.as_ref())),
         Some(IndexSubcommand::Show { file }) => run_show(file),
         Some(IndexSubcommand::Compact { path }) => {
             run_compact(&resolve_project_root(path.as_ref()))
         }
-        Some(IndexSubcommand::Watch { path, debounce_ms }) => {
+        Some(IndexSubcommand::Watch { path, debounce_ms, type_filter, exclude }) => {
             let config = Config::load(None)?;
             let configured_debounce = config.watch.as_ref().and_then(|w| w.debounce_ms);
             // `clippy::disallowed_methods` forbids `unwrap_or` (silent default),
@@ -72,18 +113,19 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
                 Some(d) => d,
                 None => 1000,
             };
+            let _filter = build_filter(type_filter.as_ref(), exclude)?;
             Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), debounce)?)
         }
     }
 }
 
-fn run_scan(root: &Path) -> anyhow::Result<()> {
+fn run_scan(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
     if !root.is_dir() {
         eprintln!("tooned index: path not found: {}", root.display());
         std::process::exit(2);
     }
 
-    let summary = tooned_index::scan_full(root)?;
+    let summary = tooned_index::scan_full(root, filter)?;
     println!(
         "Indexed {} file(s) ({} classified) at {}",
         summary.files_scanned,
@@ -94,8 +136,8 @@ fn run_scan(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_sync(root: &Path) -> anyhow::Result<()> {
-    match tooned_index::sync(root) {
+fn run_sync(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
+    match tooned_index::sync(root, filter) {
         Ok(summary) => {
             println!(
                 "Synced {}: {} added, {} updated, {} unchanged, {} removed",
