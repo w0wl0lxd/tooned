@@ -177,7 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DecodeFailed`; gitignore filter compilation (including `watch` and the
   `scan`/`sync` exclude filter) now propagates `ignore::Error`;
   the `watch`/`index run` pipeline threads the `filter` argument through;
-  SQLite PRAGMA setup uses `pragma_update` so errors are not swallowed.
+  SQLite `journal_mode` uses `pragma_update` and `busy_timeout` uses the
+  type-safe `Connection::busy_timeout` method so errors are not swallowed.
   `DocType`, `ShapeClass`, `TokenizerProfile`, `PassthroughReason`,
   `ParseError`, `IndexError`, and `MetricsError` are now `#[non_exhaustive]`,
   with MCP DTOs gaining `Unknown` fallback variants.
