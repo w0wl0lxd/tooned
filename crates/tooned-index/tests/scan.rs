@@ -27,7 +27,8 @@ fn full_scan_populates_files_table_for_every_scanned_file() {
     fs::write(dir.path().join("notes.txt"), "just some prose, nothing structured")
         .expect("write fixture");
 
-    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("scan_full");
+    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("scan_full");
     assert_eq!(summary.files_scanned, 2);
     assert_eq!(summary.files_classified, 1, "only data.json should be a recognized doctype");
 
@@ -69,7 +70,8 @@ fn full_scan_respects_gitignore_via_the_ignore_crate() {
     fs::write(dir.path().join("ignored.json"), uniform_array_json(5)).expect("write fixture");
     fs::write(dir.path().join("kept.json"), uniform_array_json(5)).expect("write fixture");
 
-    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("scan_full");
+    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("scan_full");
 
     assert!(tooned_index::show_file(dir.path(), "kept.json").is_ok(), "kept.json must be indexed");
     assert!(
@@ -86,10 +88,12 @@ fn full_scan_never_indexes_its_own_tooned_directory() {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("data.json"), uniform_array_json(3)).expect("write fixture");
 
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("first scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("first scan_full");
     // A second scan must not try to walk into (and re-index) its own
     // `.tooned/index.db` file.
-    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("second scan_full");
+    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("second scan_full");
     assert_eq!(summary.files_scanned, 1);
 }
 
