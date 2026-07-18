@@ -872,6 +872,13 @@ fn filter_clause(opts: &QueryOpts<'_>) -> Filter {
         clauses.push("surface = ?".to_string());
         binds.push(rusqlite::types::Value::Text(surface.to_string()));
     }
+    // Apply the requested date window to every metrics query (summary,
+    // per_surface, leaderboard, daily_aggregates). Without this, --since /
+    // --until are ignored and the whole history is aggregated.
+    let (since, until) = window(opts);
+    clauses.push("day BETWEEN ? AND ?".to_string());
+    binds.push(rusqlite::types::Value::Integer(since));
+    binds.push(rusqlite::types::Value::Integer(until));
     Filter { clause: if clauses.is_empty() { String::new() } else { clauses.join(" AND ") }, binds }
 }
 
