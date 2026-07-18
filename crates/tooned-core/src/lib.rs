@@ -37,9 +37,6 @@ pub use tooned_toon::decode_toon;
 // Re-export SONIC_RS_THRESHOLD_BYTES and streaming parsers from tooned-json
 pub use tooned_json::{SONIC_RS_THRESHOLD_BYTES, parse_json_stream, parse_ndjson_stream};
 
-// Re-export streaming CSV/TSV parsers from tooned-csv
-pub use tooned_csv::{parse_csv_stream, parse_tsv_stream};
-
 // Re-export XML module from tooned-xml
 pub mod xml {
     pub use tooned_xml::{XmlParseOptions, parse, sniff};
