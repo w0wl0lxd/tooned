@@ -1116,6 +1116,7 @@ pub fn run(args: &HookArgs) {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use super::merge_post_tool_use_entry;
 

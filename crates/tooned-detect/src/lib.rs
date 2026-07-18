@@ -43,6 +43,15 @@ fn sniff(input: &[u8]) -> Option<DocType> {
         return None;
     }
 
+    // JSON5 permits a single- or multi-line comment to precede the value
+    // (e.g. `/* header */ { ... }` or `// note\n{ ... }`). Plain JSON forbids
+    // leading comments, so a leading `//` or `/*` is a reliable JSON5 signal;
+    // confirm with `is_json5` so other formats starting with `/` are not
+    // misclassified.
+    if (trimmed.starts_with(b"//") || trimmed.starts_with(b"/*")) && is_json5(input) {
+        return Some(DocType::Json5);
+    }
+
     if trimmed.first() == Some(&b'{') {
         if is_ndjson(input) {
             return Some(DocType::NdJson);

@@ -216,6 +216,10 @@ criteria = "safe-to-deploy"
 version = "2.2.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.colored]]
+version = "3.1.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.colorgrad]]
 version = "0.8.0"
 criteria = "safe-to-deploy"
@@ -1244,8 +1248,16 @@ criteria = "safe-to-deploy"
 version = "0.4.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.toon-format]]
+version = "0.5.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.toon-lsp]]
 version = "0.6.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.toon-lsp]]
+version = "0.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower]]
