@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 
-tooned watches the JSON-shaped data moving through an AI coding agent's tool
+`tooned` watches the JSON-shaped data moving through an AI coding agent's tool
 calls: API responses, database rows, config files read from disk. When TOON is
 smaller, tooned swaps it in. There's nothing to configure or opt into per call,
 and tooned never touches a source file. When TOON doesn't win, the agent sees
