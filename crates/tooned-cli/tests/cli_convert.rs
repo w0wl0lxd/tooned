@@ -451,3 +451,25 @@ fn convert_config_format_hint_overrides_extension() {
         .stdout(predicate::str::contains("1,2"))
         .stdout(predicate::str::contains("3,4"));
 }
+
+#[test]
+fn convert_to_json_rejects_input_exceeding_the_decode_size_cap() {
+    // Regression: `convert --to json` must reject an input larger than
+    // `max_input_bytes` instead of materializing it in memory first (a local
+    // denial-of-memory vector). The default cap is 2 MiB.
+    let dir = tempfile::tempdir().expect("tempdir");
+    // ~3 MiB of valid JSON, well above the 2 MiB default cap.
+    let big = uniform_array_json(40_000);
+    assert!(
+        big.len() > 2 * 1024 * 1024,
+        "fixture must exceed the 2 MiB default cap to exercise the bound"
+    );
+    let path = write_fixture(&dir, "big.json", &big);
+
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--to", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("exceeds"));
+}
