@@ -126,16 +126,47 @@ fn home_dir() -> Option<PathBuf> {
     None
 }
 
-fn build_options(format_hint: Option<&str>, margin_pct: Option<f64>) -> ConversionOptions {
-    let margin_pct = match margin_pct {
-        Some(m) => m,
-        None => ConversionOptions::default().margin_pct,
-    };
-    ConversionOptions {
+fn build_options(
+    format_hint: Option<&str>,
+    margin_pct: Option<f64>,
+    dict_enabled: Option<bool>,
+    auto_margin: Option<bool>,
+    entropy_gate: Option<bool>,
+    protect: Option<Vec<String>>,
+) -> ConversionOptions {
+    let mut opts = ConversionOptions {
         format_hint: parse_doc_type_hint(format_hint),
-        margin_pct,
+        margin_pct: margin_pct.unwrap_or_else(|| ConversionOptions::default().margin_pct),
+        dict_enabled: true,
+        auto_margin: true,
+        entropy_gate: true,
         ..ConversionOptions::default()
+    };
+    if let Some(d) = dict_enabled {
+        opts.dict_enabled = d;
     }
+    if let Some(a) = auto_margin {
+        opts.auto_margin = a;
+    }
+    if let Some(e) = entropy_gate {
+        opts.entropy_gate = e;
+    }
+    if let Some(keys) = protect
+        && !keys.is_empty()
+    {
+        let default = tooned_types::CriticalFieldPolicy::default_policy();
+        let mut protected = default.protected.clone();
+        for key in keys {
+            if !protected.iter().any(|p| p.eq_ignore_ascii_case(&key)) {
+                protected.push(key.to_lowercase());
+            }
+        }
+        opts.critical_policy = tooned_types::CriticalFieldPolicy {
+            protected,
+            min_benefit_bytes: default.min_benefit_bytes,
+        };
+    }
+    opts
 }
 
 /// Structured mirror of `tooned_core::DocType`, so MCP JSON consumers get
@@ -238,6 +269,18 @@ pub struct ConvertRequest {
     /// Overrides the default 2% adaptive-savings margin.
     #[serde(default)]
     pub margin_pct: Option<f64>,
+    /// Enable the dictionary-compression tier (#1). Default: on.
+    #[serde(default)]
+    pub dict_enabled: Option<bool>,
+    /// Enable the density-aware acceptance margin (#2). Default: on.
+    #[serde(default)]
+    pub auto_margin: Option<bool>,
+    /// Enable the entropy gate (#5). Default: on.
+    #[serde(default)]
+    pub entropy_gate: Option<bool>,
+    /// Column/key substrings protected from dictionary abbreviation (#3).
+    #[serde(default)]
+    pub protect: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -278,6 +321,18 @@ pub struct DetectRequest {
     pub content: String,
     #[serde(default)]
     pub format_hint: Option<String>,
+    /// Enable the dictionary-compression tier (#1). Default: on.
+    #[serde(default)]
+    pub dict_enabled: Option<bool>,
+    /// Enable the density-aware acceptance margin (#2). Default: on.
+    #[serde(default)]
+    pub auto_margin: Option<bool>,
+    /// Enable the entropy gate (#5). Default: on.
+    #[serde(default)]
+    pub entropy_gate: Option<bool>,
+    /// Column/key substrings protected from dictionary abbreviation (#3).
+    #[serde(default)]
+    pub protect: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -382,7 +437,14 @@ impl ToonedMcpServer {
         // any panic in the codec path is caught as a `JoinError` instead of
         // killing the entire MCP server process.
         task::spawn_blocking(move || {
-            let opts = build_options(req.format_hint.as_deref(), req.margin_pct);
+            let opts = build_options(
+                req.format_hint.as_deref(),
+                req.margin_pct,
+                req.dict_enabled,
+                req.auto_margin,
+                req.entropy_gate,
+                req.protect.clone(),
+            );
             #[allow(clippy::manual_unwrap_or)]
             let content_len = match req.content.len().try_into() {
                 Ok(v) => v,
@@ -442,7 +504,14 @@ impl ToonedMcpServer {
         Parameters(req): Parameters<DetectRequest>,
     ) -> Result<Json<DetectResult>, String> {
         task::spawn_blocking(move || {
-            let opts = build_options(req.format_hint.as_deref(), None);
+            let opts = build_options(
+                req.format_hint.as_deref(),
+                None,
+                req.dict_enabled,
+                req.auto_margin,
+                req.entropy_gate,
+                req.protect.clone(),
+            );
             let report = tooned_core::inspect(req.content.as_bytes(), &opts);
             Json(report.into())
         })
