@@ -23,6 +23,7 @@ rusqlite = { workspace = true } #unified
 thiserror = { workspace = true }
 tooned-core = { workspace = true }                                    #unified
 tooned-detect = { workspace = true }                                  #unified
+tooned-json = { workspace = true }                                    #unified
 tooned-types = { workspace = true }                                    #unified
 
 [target.'cfg(target_os = "macos")'.dependencies]
