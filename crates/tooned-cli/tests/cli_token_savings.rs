@@ -56,3 +56,23 @@ fn token_savings_json_reports_savings_fields() {
                 .and(predicate::str::contains("\"bpe-token savings\":").not()),
         );
 }
+
+#[test]
+fn token_savings_missing_file_exits_non_zero() {
+    Command::cargo_bin("tooned")
+        .unwrap()
+        .args(["token-savings", "/nonexistent/path/to/input.json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to read"));
+}
+
+#[test]
+fn token_savings_missing_file_json_does_not_emit_garbage() {
+    Command::cargo_bin("tooned")
+        .unwrap()
+        .args(["token-savings", "--json", "/nonexistent/path/to/input.json"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty());
+}

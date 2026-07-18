@@ -95,20 +95,17 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     };
 
     #[allow(clippy::manual_unwrap_or)]
-    let input_len = match bytes.len().try_into() {
+    let to_i64_or_max = |n: usize| match i64::try_from(n) {
         Ok(v) => v,
         Err(_) => i64::MAX,
     };
+    let input_len = to_i64_or_max(bytes.len());
     let output = match tooned_core::maybe_tooned(&bytes, &opts) {
         Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
         Ok(Conversion::Passthrough { bytes, .. }) => bytes,
         Err(_) => bytes,
     };
-    #[allow(clippy::manual_unwrap_or)]
-    let output_len = match output.len().try_into() {
-        Ok(v) => v,
-        Err(_) => i64::MAX,
-    };
+    let output_len = to_i64_or_max(output.len());
     let converted = output_len < input_len;
     crate::metrics_recorder::record_convert_outcome(
         crate::metrics_recorder::CliSurface::Pipe,

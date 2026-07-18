@@ -13,7 +13,7 @@ use clap::Args;
 use tooned_core::{InspectReport, PassthroughReason, ShapeClass, inspect};
 
 use crate::cli::FormatHint;
-use crate::cli::io::{BoundedRead, open_input, read_bounded};
+use crate::cli::io::{BoundedRead, open_input, read_bounded, write_output};
 
 #[derive(Debug, Args)]
 pub struct TokenSavingsArgs {
@@ -63,24 +63,15 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
         None,
     );
 
-    let mut reader = match open_input(&args.input) {
-        Ok(reader) => reader,
-        Err(err) => {
-            eprintln!("tooned token-savings: failed to read {}: {err}", args.input.display());
-            println!("would_convert: false");
-            return Ok(());
-        }
-    };
+    let mut reader = open_input(&args.input).map_err(|err| {
+        anyhow::anyhow!("tooned token-savings: failed to read {}: {err}", args.input.display())
+    })?;
 
     let mut sink = std::io::sink();
-    let outcome = match read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink) {
-        Ok(outcome) => outcome,
-        Err(err) => {
-            eprintln!("tooned token-savings: failed to read {}: {err}", args.input.display());
-            println!("would_convert: false");
-            return Ok(());
-        }
-    };
+    let outcome =
+        read_bounded(reader.as_mut(), opts.max_input_bytes, &mut sink).map_err(|err| {
+            anyhow::anyhow!("tooned token-savings: failed to read {}: {err}", args.input.display())
+        })?;
 
     let report = match outcome {
         BoundedRead::Fits(bytes) => inspect(&bytes, &opts),
@@ -99,7 +90,11 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
     };
 
     if args.json {
-        println!("{}", sonic_rs::to_string(&report)?);
+        let mut json = sonic_rs::to_string(&report)?;
+        json.push('\n');
+        write_output(None, json.as_bytes()).map_err(|err| {
+            anyhow::anyhow!("tooned token-savings: failed to write JSON output: {err}")
+        })?;
         return Ok(());
     }
 
@@ -135,27 +130,13 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
     }
 
     #[allow(clippy::manual_unwrap_or)]
+    let clamp = |n: usize| match i64::try_from(n) {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
     let (input_bytes, output_bytes) = match (report.json_bytes, report.toon_bytes) {
-        (Some(j), Some(t)) => (
-            match j.try_into() {
-                Ok(v) => v,
-                Err(_) => i64::MAX,
-            },
-            match t.try_into() {
-                Ok(v) => v,
-                Err(_) => i64::MAX,
-            },
-        ),
-        _ => (
-            match report.input_bytes.try_into() {
-                Ok(v) => v,
-                Err(_) => i64::MAX,
-            },
-            match report.input_bytes.try_into() {
-                Ok(v) => v,
-                Err(_) => i64::MAX,
-            },
-        ),
+        (Some(j), Some(t)) => (clamp(j), clamp(t)),
+        _ => (clamp(report.input_bytes), clamp(report.input_bytes)),
     };
     crate::metrics_recorder::record_convert_outcome(
         crate::metrics_recorder::CliSurface::TokenSavings,
