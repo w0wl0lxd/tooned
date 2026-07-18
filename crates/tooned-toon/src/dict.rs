@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Compression via Dictionary-Encoding").
 //!
 //! TOON already lifts repeated *keys* into a header; this tier lifts repeated
@@ -62,8 +64,18 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         return None;
     }
 
-    let protected_lower: HashSet<String> =
+    // O(1) per-line membership check; `data_indices.contains` inside the later
+    // line loop would be O(n) per line and dominates on large tabular payloads.
+    let mut is_data = vec![false; lines.len()];
+    for &di in &data_indices {
+        if let Some(cell) = is_data.get_mut(di) {
+            *cell = true;
+        }
+    }
+
+    let protected_lower_vec: Vec<String> =
         protected_keys.iter().map(|p| p.to_ascii_lowercase()).collect();
+    let protected_lower: HashSet<&str> = protected_lower_vec.iter().map(String::as_str).collect();
 
     let protected_idx: HashSet<usize> = if object_mode {
         HashSet::new()
@@ -76,8 +88,10 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
     };
 
     // Frequency of each cell token across data lines (skipping protected
-    // columns/keys so critical values stay verbatim).
-    let mut freq: HashMap<String, usize> = HashMap::new();
+    // columns/keys so critical values stay verbatim). Keys borrow from `lines`
+    // to avoid cloning every token before we know any of them will compress.
+    let mut freq: HashMap<&str, usize> =
+        HashMap::with_capacity(data_indices.len().saturating_mul(4));
     for &di in &data_indices {
         let line = match lines.get(di) {
             Some(l) => l.trim(),
@@ -93,17 +107,17 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
                     continue;
                 }
                 for cell in split_cells(val) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                    *freq.entry(cell).or_insert(0) += 1;
                 }
             } else {
                 for cell in split_cells(line) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                    *freq.entry(cell).or_insert(0) += 1;
                 }
             }
         } else {
             for (col, cell) in split_cells(line).into_iter().enumerate() {
                 if !protected_idx.contains(&col) {
-                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                    *freq.entry(cell).or_insert(0) += 1;
                 }
             }
         }
@@ -128,7 +142,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         if saving <= entry_cost {
             continue;
         }
-        mapping.push((token, sentinel));
+        mapping.push((token.to_string(), sentinel));
     }
     if mapping.is_empty() {
         return None;
@@ -136,7 +150,9 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
 
     let map: HashMap<&str, &str> = mapping.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
 
-    let mut out = String::new();
+    // Net-positive compression guarantees the output is no larger than the
+    // input, so `toon.len()` is a safe initial capacity.
+    let mut out = String::with_capacity(toon.len());
     out.push_str(LEGEND_MARKER);
     out.push_str(eol);
     for (orig, sent) in &mapping {
@@ -151,24 +167,23 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
     for (li, line) in lines.iter().enumerate() {
         let is_last = li + 1 == total;
         let emit_eol = !(is_last && line.trim().is_empty());
-        let content: String = if object_mode {
+        if object_mode {
             if line.trim().is_empty() {
-                String::new()
-            } else if data_indices.contains(&li) {
-                transform_line(line, &map, true)
+                // leave blank
+            } else if is_data.get(li).is_some_and(|&b| b) {
+                out.push_str(&transform_line(line, &map, true));
             } else {
-                line.to_string()
+                out.push_str(line);
             }
         } else if li == header_idx {
-            line.to_string()
+            out.push_str(line);
         } else if line.trim().is_empty() {
-            String::new()
-        } else if data_indices.contains(&li) {
-            transform_line(line, &map, false)
+            // leave blank
+        } else if is_data.get(li).is_some_and(|&b| b) {
+            out.push_str(&transform_line(line, &map, false));
         } else {
-            line.to_string()
-        };
-        out.push_str(&content);
+            out.push_str(line);
+        }
         if emit_eol {
             out.push_str(eol);
         }
@@ -198,7 +213,7 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
         .split('\n')
         .map(|s| if let Some(stripped) = s.strip_suffix('\r') { stripped } else { s })
         .collect();
-    let mut map: HashMap<String, String> = HashMap::new();
+    let mut map: HashMap<&str, &str> = HashMap::new();
     let mut i = 1;
     while let Some(line) = lines.get(i).copied() {
         if line.trim().is_empty() {
@@ -206,8 +221,8 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
             break;
         }
         if let Some(sp) = line.find(' ') {
-            let sentinel = or_fallback(line.get(..sp), "").to_string();
-            let original = or_fallback(line.get(sp + 1..), "").to_string();
+            let sentinel = or_fallback(line.get(..sp), "");
+            let original = or_fallback(line.get(sp + 1..), "");
             if !sentinel.is_empty() {
                 map.insert(sentinel, original);
             }
@@ -215,7 +230,7 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
         i += 1;
     }
 
-    let mut out = String::new();
+    let mut out = String::with_capacity(text.len());
     let mut lines_iter = lines.iter().skip(i).peekable();
     while let Some(&line) = lines_iter.next() {
         let expanded = expand_line(line, &map);
@@ -239,7 +254,7 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
 fn split_cells(line: &str) -> Vec<&str> {
     let bytes = line.as_bytes();
     let n = bytes.len();
-    let mut cells = Vec::new();
+    let mut cells = Vec::with_capacity(8);
     let mut start = 0usize;
     let mut i = 0usize;
     while i < n {
@@ -267,73 +282,75 @@ fn split_cells(line: &str) -> Vec<&str> {
     cells
 }
 
-/// Replace mapped cell tokens in `line` with their sentinels (array mode) or
-/// mapped value tokens (object mode `key: value`).
-fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool) -> String {
-    let indent = line.len() - line.trim_start().len();
-    let trimmed = line.trim();
-    let body = if object_mode {
-        if let Some(sp) = trimmed.find(": ") {
-            let key = or_fallback(trimmed.get(..sp), "");
-            let val = or_fallback(trimmed.get(sp + 2..), "");
-            if let Some(s) = map.get(val) {
-                format!("{key}: {s}")
-            } else {
-                format!("{key}: {}", replace_cells(val, map))
-            }
-        } else {
-            replace_cells(trimmed, map)
-        }
-    } else {
-        replace_cells(trimmed, map)
-    };
-    let mut out = String::with_capacity(indent + body.len());
-    out.push_str(&line[..indent]);
-    out.push_str(&body);
-    out
-}
-
-/// Replace sentinel tokens in `line` with their originals.
-fn expand_line(line: &str, map: &HashMap<String, String>) -> String {
-    let indent = line.len() - line.trim_start().len();
-    let trimmed = line.trim();
-    let body = if let Some(sp) = trimmed.find(": ") {
-        let key = or_fallback(trimmed.get(..sp), "");
-        let val = or_fallback(trimmed.get(sp + 2..), "");
-        if let Some(orig) = map.get(val) {
-            format!("{key}: {orig}")
-        } else {
-            format!("{key}: {}", replace_cells_expand(val, map))
-        }
-    } else {
-        replace_cells_expand(trimmed, map)
-    };
-    let mut out = String::with_capacity(indent + body.len());
-    out.push_str(&line[..indent]);
-    out.push_str(&body);
-    out
-}
-
-fn replace_cells(s: &str, map: &HashMap<&str, &str>) -> String {
+/// Append the cells of `s` to `out`, replacing any token that appears in `map`
+/// with its sentinel. `map` is token -> sentinel.
+fn replace_cells_into(s: &str, map: &HashMap<&str, &str>, out: &mut String) {
     let cells = split_cells(s);
-    let mut out = String::new();
     for (i, c) in cells.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
         out.push_str(or_fallback(map.get(c).copied(), c));
     }
-    out
 }
 
-fn replace_cells_expand(s: &str, map: &HashMap<String, String>) -> String {
+/// Append the cells of `s` to `out`, replacing any sentinel that appears in
+/// `map` with its original token. `map` is sentinel -> original.
+fn replace_cells_expand_into(s: &str, map: &HashMap<&str, &str>, out: &mut String) {
     let cells = split_cells(s);
-    let mut out = String::new();
     for (i, c) in cells.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(map.get(*c).map_or(*c, String::as_str));
+        out.push_str(or_fallback(map.get(c).copied(), c));
+    }
+}
+
+/// Replace mapped cell tokens in `line` with their sentinels (array mode) or
+/// mapped value tokens (object mode `key: value`).
+fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool) -> String {
+    let indent = line.len() - line.trim_start().len();
+    let trimmed = line.trim();
+    let mut out = String::with_capacity(line.len());
+    out.push_str(&line[..indent]);
+    if object_mode {
+        if let Some(sp) = trimmed.find(": ") {
+            let key = or_fallback(trimmed.get(..sp), "");
+            let val = or_fallback(trimmed.get(sp + 2..), "");
+            out.push_str(key);
+            out.push_str(": ");
+            if let Some(sent) = map.get(val).copied() {
+                out.push_str(sent);
+            } else {
+                replace_cells_into(val, map, &mut out);
+            }
+        } else {
+            replace_cells_into(trimmed, map, &mut out);
+        }
+    } else {
+        replace_cells_into(trimmed, map, &mut out);
+    }
+    out
+}
+
+/// Replace sentinel tokens in `line` with their originals.
+fn expand_line(line: &str, map: &HashMap<&str, &str>) -> String {
+    let indent = line.len() - line.trim_start().len();
+    let trimmed = line.trim();
+    let mut out = String::with_capacity(line.len() * 2);
+    out.push_str(&line[..indent]);
+    if let Some(sp) = trimmed.find(": ") {
+        let key = or_fallback(trimmed.get(..sp), "");
+        let val = or_fallback(trimmed.get(sp + 2..), "");
+        out.push_str(key);
+        out.push_str(": ");
+        if let Some(orig) = map.get(val).copied() {
+            out.push_str(orig);
+        } else {
+            replace_cells_expand_into(val, map, &mut out);
+        }
+    } else {
+        replace_cells_expand_into(trimmed, map, &mut out);
     }
     out
 }
@@ -342,7 +359,7 @@ fn replace_cells_expand(s: &str, map: &HashMap<String, String>) -> String {
 /// `[N]{k1,k2,...}:`) or a single-object document (`key: value` lines).
 /// Returns `(object_mode, header_index, header_keys)`; for object mode
 /// `header_index` is 0 and `header_keys` is empty.
-fn find_structure(lines: &[&str]) -> (bool, usize, Vec<String>) {
+fn find_structure<'a>(lines: &'a [&'a str]) -> (bool, usize, Vec<&'a str>) {
     for (i, line) in lines.iter().enumerate() {
         let l = line.trim();
         if l.contains('{')
@@ -352,8 +369,8 @@ fn find_structure(lines: &[&str]) -> (bool, usize, Vec<String>) {
             && a < b
         {
             let inner = or_fallback(l.get(a + 1..b), "");
-            let keys: Vec<String> =
-                inner.split(',').map(|s| s.trim().trim_start_matches('@').to_string()).collect();
+            let keys: Vec<&str> =
+                inner.split(',').map(|s| s.trim().trim_start_matches('@')).collect();
             return (false, i, keys);
         }
     }
@@ -362,8 +379,8 @@ fn find_structure(lines: &[&str]) -> (bool, usize, Vec<String>) {
 
 /// Case-insensitive substring protection check between a lowercased TOON header
 /// key and the pre-lowercased set of configured protected key names.
-fn key_is_protected(header_key_lower: &str, protected_lower: &HashSet<String>) -> bool {
-    protected_lower.iter().any(|p| header_key_lower.contains(p.as_str()))
+fn key_is_protected(header_key_lower: &str, protected_lower: &HashSet<&str>) -> bool {
+    protected_lower.iter().any(|p| header_key_lower.contains(p))
 }
 
 #[cfg(test)]
@@ -405,10 +422,8 @@ mod tests {
 
     #[test]
     fn round_trips_object_document() {
-        let toon = "a: 1
-b: this_is_a_very_long_repeated_value
-c: this_is_a_very_long_repeated_value
-";
+        let toon =
+            "a: 1\nb: this_is_a_very_long_repeated_value\nc: this_is_a_very_long_repeated_value\n";
         let protected: Vec<String> = vec![];
         let dict = apply_dict(toon, &protected).expect("should compress");
         assert_eq!(expand_legend(&dict, usize::MAX).unwrap(), toon);
@@ -416,13 +431,7 @@ c: this_is_a_very_long_repeated_value
 
     #[test]
     fn protects_critical_columns() {
-        let toon = "[4]{id,role}:
-
-  1,administrator
-  2,administrator
-  3,administrator
-  4,administrator
-";
+        let toon = "[4]{id,role}:\n\n  1,administrator\n  2,administrator\n  3,administrator\n  4,administrator\n";
         let protected = vec!["role".to_string()];
         let dict = apply_dict(toon, &protected);
         assert!(dict.is_none(), "protected column must not be compressed");

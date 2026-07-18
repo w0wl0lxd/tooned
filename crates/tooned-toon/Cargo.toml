@@ -12,11 +12,18 @@ categories.workspace = true
 name = "tooned_toon"
 path = "src/lib.rs"
 
+[[bench]]
+name = "dict"
+harness = false
+
 [dependencies]
 serde_json = { workspace = true }
 toon-lsp = { workspace = true }
 tooned-parse = { workspace = true } #unified
 tooned-types = { workspace = true } #unified
+
+[dev-dependencies]
+criterion = { workspace = true }
 
 [lints]
 workspace = true
