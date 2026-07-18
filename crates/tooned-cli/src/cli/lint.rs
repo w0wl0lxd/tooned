@@ -52,7 +52,7 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| anyhow::anyhow!("tooned lint: input is not valid UTF-8"))?;
 
-    let value = match tooned_core::decode_toon(text) {
+    let value = match tooned_toon::decode_toon_with_limit(text, opts.max_input_bytes) {
         Ok(value) => value,
         Err(ToonedError::InputTooLarge) => {
             anyhow::bail!("tooned lint: input exceeds the {} byte limit", opts.max_input_bytes);
@@ -68,7 +68,7 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let encoded = tooned_toon::encode_toon(&value)
         .map_err(|err| anyhow::anyhow!("tooned lint: re-encode failed: {err:?}"))?;
 
-    let round_trip = tooned_core::decode_toon(&encoded)
+    let round_trip = tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes)
         .map_err(|err| anyhow::anyhow!("tooned lint: round-trip decode failed: {err:?}"))?;
 
     if round_trip != value {
@@ -84,10 +84,14 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
         } else if !array.iter().all(serde_json::Value::is_object) {
             warnings.push("top-level array contains non-object rows");
         } else if let Some(first) = array.first().and_then(serde_json::Value::as_object) {
-            let keys: Vec<&str> = first.keys().map(String::as_str).collect();
+            let first_keys: std::collections::HashSet<&str> =
+                first.keys().map(String::as_str).collect();
+            let first_len = first.len();
             let inconsistent = array.iter().skip(1).any(|v| {
-                v.as_object()
-                    .is_none_or(|obj| obj.keys().map(String::as_str).collect::<Vec<_>>() != keys)
+                v.as_object().is_none_or(|obj| {
+                    obj.len() != first_len
+                        || !obj.keys().map(String::as_str).all(|k| first_keys.contains(k))
+                })
             });
             if inconsistent {
                 warnings.push("top-level array rows have inconsistent key sets");
