@@ -71,7 +71,11 @@ pub fn sync(project_root: &Path, filter: &IndexFilter) -> Result<SyncSummary, In
                 // A yielded entry we can't read is transient; record it as seen so
                 // the prune pass does not delete a row for a file that still exists.
                 if let ignore::Error::WithPath { path, .. } = err {
-                    seen.insert(path.to_string_lossy().into_owned());
+                    let key = path.strip_prefix(project_root).map_or_else(
+                        |_| path.to_string_lossy().into_owned(),
+                        |r| r.to_string_lossy().into_owned(),
+                    );
+                    seen.insert(key);
                 }
                 continue;
             }
@@ -79,7 +83,11 @@ pub fn sync(project_root: &Path, filter: &IndexFilter) -> Result<SyncSummary, In
         let Some(file_type) = entry.file_type() else {
             // No file type (rare); treat as seen so the prune pass does not
             // delete a row for a file that still exists on disk.
-            seen.insert(entry.path().to_string_lossy().into_owned());
+            let key = entry.path().strip_prefix(project_root).map_or_else(
+                |_| entry.path().to_string_lossy().into_owned(),
+                |r| r.to_string_lossy().into_owned(),
+            );
+            seen.insert(key);
             continue;
         };
         if !file_type.is_file() {

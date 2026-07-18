@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
-use tooned_toon::{apply_dict, encode_toon_raw};
+use tooned_toon::{apply_dict, decode_toon_with_options, encode_toon_raw_with_options};
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
     PassthroughReason, ShapeClass, ToonedError,
@@ -210,7 +210,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (counter.0, None)
     };
 
-    let Ok(encoded) = encode_toon_raw(&value) else {
+    let Ok(encoded) = encode_toon_raw_with_options(&value, opts) else {
         return Attempt {
             doc_type: Some(doc_type),
             shape,
@@ -266,7 +266,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         };
     }
 
-    let round_trip_ok = match tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes) {
+    let round_trip_ok = match decode_toon_with_options(&encoded, opts) {
         Ok(decoded) => decoded == value,
         Err(_) => false,
     };
@@ -719,13 +719,10 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_mismatch_downgrades_to_passthrough() {
-        // A genuine TOON codec edge case (not a mock/seam): a whole-number
-        // JSON float like `1.0` round-trips through TOON as the integer `1`
-        // (`Number(1.0) != Number(1)` under serde_json::Value's own
-        // equality), so this MUST downgrade to Passthrough rather than
-        // silently surfacing a corrupted conversion (FR-008, constitution
-        // Principle I).
+    fn whole_number_floats_now_convert() {
+        // The TOON codec now preserves whole-number floats and negative zero,
+        // so a payload that previously triggered RoundTripMismatch converts
+        // cleanly at margin 0.
         let payload: &[u8] = br#"{"x": 1.0, "y": 2.0, "z": 3.0, "note": "whole-number floats"}"#;
         let opts = ConversionOptions {
             margin_pct: 0.0,
@@ -733,12 +730,46 @@ mod tests {
             ..ConversionOptions::default()
         };
         let result = maybe_tooned(payload, &opts).expect("infallible for payload-driven input");
-        match result {
-            Conversion::Passthrough { reason: PassthroughReason::RoundTripMismatch, bytes } => {
-                assert_eq!(bytes, payload);
-            }
-            other => panic!("expected Passthrough(RoundTripMismatch), got {other:?}"),
-        }
+        assert!(matches!(result, Conversion::Toon { .. }), "expected Toon, got {result:?}");
+    }
+
+    #[test]
+    fn ecommerce_orders_convert() {
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
+        let opts = ConversionOptions {
+            margin_pct: 0.0,
+            entropy_gate: false,
+            ..ConversionOptions::default()
+        };
+        let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
+        assert!(matches!(result, Conversion::Toon { .. }), "expected Toon, got {result:?}");
+    }
+
+    #[test]
+    fn ecommerce_orders_convert_with_cli_defaults() {
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
+        let opts = ConversionOptions {
+            margin_pct: 2.0,
+            auto_margin: true,
+            entropy_gate: true,
+            ..ConversionOptions::default()
+        };
+        let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
+        assert!(matches!(result, Conversion::Toon { .. }), "expected Toon, got {result:?}");
+    }
+
+    #[test]
+    fn inspect_ecommerce_orders() {
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
+        let opts = ConversionOptions {
+            margin_pct: 2.0,
+            auto_margin: true,
+            entropy_gate: true,
+            ..ConversionOptions::default()
+        };
+        let report = inspect(&payload, &opts);
+        eprintln!("{report:?}");
+        assert!(report.would_convert, "expected to convert, got {report:?}");
     }
 
     #[test]

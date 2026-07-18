@@ -54,6 +54,10 @@ proptest! {
             critical_policy: tooned_types::CriticalFieldPolicy::default_policy(),
             entropy_gate: true,
             tokenizer: None,
+            fold_keys: true,
+            flatten_keys: false,
+            expand_paths: true,
+            preserve_number_types: true,
         };
         let _ = maybe_tooned(&bytes, &opts);
         let _ = inspect(&bytes, &opts);

@@ -885,14 +885,6 @@ fn filter_clause(opts: &QueryOpts<'_>) -> Filter {
     let mut clauses = Vec::new();
     let mut binds = Vec::new();
 
-    // Date window is applied by every query so that `--since`/`--until` affect
-    // summary, breakdown, leaderboard, heatmap, and recent. `window()` supplies
-    // the same default (last 365 days) used for rendering.
-    let (since, until) = window(opts);
-    clauses.push("day BETWEEN ? AND ?".to_string());
-    binds.push(rusqlite::types::Value::Integer(since));
-    binds.push(rusqlite::types::Value::Integer(until));
-
     if !opts.include_opportunity {
         clauses.push("kind = ?".to_string());
         binds.push(rusqlite::types::Value::Text("actual".into()));
@@ -901,7 +893,14 @@ fn filter_clause(opts: &QueryOpts<'_>) -> Filter {
         clauses.push("surface = ?".to_string());
         binds.push(rusqlite::types::Value::Text(surface.to_string()));
     }
-    Filter { clause: clauses.join(" AND "), binds }
+    // Apply the requested date window to every metrics query (summary,
+    // per_surface, leaderboard, daily_aggregates). Without this, --since /
+    // --until are ignored and the whole history is aggregated.
+    let (since, until) = window(opts);
+    clauses.push("day BETWEEN ? AND ?".to_string());
+    binds.push(rusqlite::types::Value::Integer(since));
+    binds.push(rusqlite::types::Value::Integer(until));
+    Filter { clause: if clauses.is_empty() { String::new() } else { clauses.join(" AND ") }, binds }
 }
 
 fn window(opts: &QueryOpts<'_>) -> (i64, i64) {

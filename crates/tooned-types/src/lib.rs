@@ -103,6 +103,19 @@ pub struct ConversionOptions {
     /// `precise_tokens` is implied and the reported `savings_pct` /
     /// `precise_savings_pct` reflect the chosen model's actual tokenizer.
     pub tokenizer: Option<TokenizerProfile>,
+    /// Encode: collapse single-key object chains into dotted keys via
+    /// `toon-lsp`. Default: true (tooned enables folding for more compact
+    /// nested objects).
+    pub fold_keys: bool,
+    /// Encode: flatten nested objects into dotted keys (more aggressive than
+    /// `fold_keys`). Default: false.
+    pub flatten_keys: bool,
+    /// Decode: expand dotted keys back into nested objects (the inverse of
+    /// folding/flattening). Default: true so folded encodings round-trip.
+    pub expand_paths: bool,
+    /// Decode: preserve the source int/float distinction (e.g. `1.0` stays a
+    /// float). Default: true so numeric values round-trip losslessly.
+    pub preserve_number_types: bool,
 }
 
 impl Default for ConversionOptions {
@@ -117,6 +130,10 @@ impl Default for ConversionOptions {
             critical_policy: CriticalFieldPolicy::default_policy(),
             entropy_gate: false,
             tokenizer: None,
+            fold_keys: true,
+            flatten_keys: false,
+            expand_paths: true,
+            preserve_number_types: true,
         }
     }
 }
