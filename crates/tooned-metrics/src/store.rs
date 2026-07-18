@@ -7,7 +7,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -318,7 +318,7 @@ impl Store {
             set_mode(db_path, 0o600);
         }
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "busy_timeout", 50)?;
+        conn.busy_timeout(Duration::from_millis(50))?;
         let store = Store { conn };
         store.create_schema_if_needed()?;
         Ok(store)
@@ -356,7 +356,7 @@ impl Store {
                  CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);",
             )
             .map_err(MetricsError::Sqlite)?;
-        // Insert schema version separately - ignore ExecuteReturnedResults error
+        // Insert schema version separately.
         self.conn.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)",
             [SCHEMA_VERSION],
