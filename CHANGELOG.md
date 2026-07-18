@@ -189,6 +189,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hook_event_name`) and cover status, doctor, coexistence, and concurrent
   install atomicity. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
 
+- **tooned-cli:** `tooned dashboard` now fails gracefully with a clear error
+  instead of panicking when stdout is not a terminal.
+  ([work-log](docs/agents/work-log/2026-07-17-009-dashboard-tty.md))
+
 ### Security
 
 - **tooned-index:** hardened `.tooned/index.db` and `.gitignore` temp-file
