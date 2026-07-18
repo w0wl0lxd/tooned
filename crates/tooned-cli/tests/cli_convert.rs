@@ -391,7 +391,6 @@ fn dict_tier_engages_by_default_and_respects_protect_and_no_dict() {
     let path = write_fixture(&dir, "input.json", &json);
 
     let legend = "\u{E000}legend:";
-    let member_sentinel = format!("\u{E000}1");
 
     // Default: dict tier engages -- legend present, `member` abbreviated
     // (no verbatim `,member,` in any data row).
@@ -401,7 +400,7 @@ fn dict_tier_engages_by_default_and_respects_protect_and_no_dict() {
         .assert()
         .success()
         .stdout(predicate::str::contains(legend))
-        .stdout(predicate::str::contains(&member_sentinel))
+        .stdout(predicate::str::contains("\u{E000}1"))
         .stdout(predicate::str::contains(",member").not());
 
     // `--no-dict`: no legend, `member` stays verbatim.

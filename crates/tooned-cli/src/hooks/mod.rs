@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::indexing_slicing)]
     fn suffix_dedup_collapses_reinstall_with_new_prefix() {
         // Regression: an existing tooned entry under an old absolute path must
         // not cause a duplicate when `tooned` later moves on PATH (reinstall).
@@ -1154,7 +1154,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::indexing_slicing)]
     fn suffix_dedup_never_touches_foreign_entry() {
         // A foreign tool's entry must never be collapsed by the tooned
         // suffix match: merging a brand-new tooned entry alongside a lone
@@ -1172,7 +1172,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::indexing_slicing)]
     fn exact_command_dedup_still_works() {
         let mut root = post_tool_use_root(&[OLD_PATH]);
         let appended = merge_post_tool_use_entry(&mut root, "Bash|Read", OLD_PATH);

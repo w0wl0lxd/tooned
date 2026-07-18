@@ -6,7 +6,6 @@ additionalContext. Used by the decoding test suite to verify that the model
 reads the TOON context rather than the original tool output.
 """
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,9 +17,8 @@ def repo_root() -> Path:
 
 
 def tooned_binary() -> str:
-    # Prefer a tooned on PATH; fall back to the known cargo install location.
     from shutil import which
-    return which("tooned") or "/mnt/build/cargo-home/bin/tooned"
+    return which("tooned") or "tooned"
 
 
 def main() -> None:

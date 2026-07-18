@@ -25,7 +25,6 @@ from __future__ import annotations
 import atexit
 import csv
 import json
-import os
 import re
 import subprocess
 import sys
@@ -520,7 +519,7 @@ def fix_matrix_expected(cases: list[TestCase]) -> None:
 
 
 def devin_binary() -> str:
-    return which("devin") or "/usr/bin/devin"
+    return which("devin") or "devin"
 
 
 def run_devin(prompt: str) -> str:

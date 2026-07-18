@@ -76,10 +76,11 @@ to the same TOON header format. tooned checks this on every tool call. A lone
 scalar or a ragged, deeply nested object usually won't compress, so JSON stays
 smaller. tooned tries both and ships the shorter one.
 
-I tested this by having agents use `tooned` and then reason about the response.
-Even though the JSON bytes had been rewritten into TOON, the model still read
-and reasoned about the data as if it were the original JSON. It doesn't need
-the original syntax to understand what the data means.
+Live tests show that agents using `tooned` still read and reason about the
+response as if it were the original JSON, even though the bytes have been
+rewritten into TOON. The model does not need the original syntax to understand
+what the data means. See [docs/agents/toon-comprehension-evidence.md](docs/agents/toon-comprehension-evidence.md)
+for sanitized transcripts, the full test matrix, and the reproduction scripts.
 
 Example:
 

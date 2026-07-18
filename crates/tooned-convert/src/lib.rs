@@ -583,7 +583,11 @@ mod tests {
             let mut s = String::with_capacity(16);
             for _ in 0..16 {
                 let idx = (rng() & 0x3F) as usize;
-                s.push(B64[idx] as char);
+                let byte = match B64.get(idx) {
+                    Some(&b) => b,
+                    None => b'A',
+                };
+                s.push(byte as char);
             }
             s
         };
@@ -599,6 +603,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn shannon_entropy_extremes() {
         assert_eq!(shannon_entropy(&[]), 0.0);
         assert_eq!(shannon_entropy(&[b'a'; 64]), 0.0);
@@ -611,6 +616,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn entropy_margin_widens_for_incompressible() {
         // Maximally redundant input -- no extra margin needed.
         assert_eq!(entropy_margin_for(&[b'a'; 256]), 0.0);
@@ -678,6 +684,29 @@ mod tests {
         let opts = ConversionOptions::default();
         let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
         assert!(matches!(result, Conversion::Toon { .. }));
+    }
+
+    #[test]
+    fn dict_tier_engages_and_round_trips() {
+        // `role` is a long-enough repeated token that the dict tier actually
+        // engages (its byte length exceeds the sentinel), so this exercises
+        // both the legend insertion and the lossless expand on decode.
+        let mut s = String::from("[");
+        for i in 0..50 {
+            if i > 0 {
+                s.push(',');
+            }
+            let _ = write!(s, r#"{{"id":{i},"role":"administrator"}}"#);
+        }
+        s.push(']');
+        let payload = s.into_bytes();
+        let opts = ConversionOptions { dict_enabled: true, ..ConversionOptions::default() };
+        let result = attempt(&payload, &opts);
+        assert!(result.reason.is_none(), "dict tier must round-trip; reason={:?}", result.reason);
+        assert!(
+            result.toon.as_ref().is_some_and(|t| t.text.contains("legend:")),
+            "dict tier should engage a legend for a repeated long token"
+        );
     }
 
     #[test]
