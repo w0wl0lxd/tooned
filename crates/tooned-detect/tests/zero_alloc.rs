@@ -35,14 +35,8 @@ fn detect_is_zero_allocation_on_representative_inputs() {
     ];
     for input in cases {
         let (_, diff) = GLOBAL.measure(|| detect(input, None));
-        assert_eq!(
-            diff.alloc_count, 0,
-            "detect({input:?}) must not perform any heap allocations"
-        );
-        assert_eq!(
-            diff.alloc_sum, 0,
-            "detect({input:?}) must not allocate any heap bytes"
-        );
+        assert_eq!(diff.alloc_count, 0, "detect({input:?}) must not perform any heap allocations");
+        assert_eq!(diff.alloc_sum, 0, "detect({input:?}) must not allocate any heap bytes");
     }
 }
 
