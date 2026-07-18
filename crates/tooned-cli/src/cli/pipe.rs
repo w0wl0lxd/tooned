@@ -8,7 +8,6 @@
 //! non-zero exit, since this subcommand's whole contract is "never surprise
 //! the caller with a hard failure".
 
-use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args;
@@ -34,6 +33,10 @@ pub struct PipeArgs {
     /// Path to a tooned config file.
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+
+    /// Write output to this file instead of stdout.
+    #[arg(short = 'o', long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -99,9 +102,13 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         output_len,
     );
 
-    // Best-effort write: a broken pipe on the reader side is not this
-    // subcommand's problem to escalate as a CLI error either.
-    let _ = stdout.write_all(&output);
+    // Write to the requested destination (stdout by default). A broken pipe
+    // on the reader side is not this subcommand's problem to escalate as a
+    // CLI error either.
+    let write_result = crate::cli::io::write_output(args.out.as_deref(), &output);
+    if let (Some(_), Err(err)) = (args.out.as_ref(), write_result) {
+        return Err(anyhow::anyhow!("tooned pipe: failed to write output: {err}"));
+    }
 
     Ok(())
 }

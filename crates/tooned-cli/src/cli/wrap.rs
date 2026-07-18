@@ -6,8 +6,8 @@
 //! path, prints the result; stderr and exit code of the wrapped command are
 //! passed through unchanged.
 
-use std::io::{Read as _, Write as _};
-use std::path::PathBuf;
+use std::io::{BufWriter, Read as _, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::Args;
@@ -60,9 +60,36 @@ pub struct WrapArgs {
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
 
+    /// Write output to this file instead of stdout.
+    #[arg(short = 'o', long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
+
     /// The command (and its arguments) to run, after `--`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,
+}
+
+/// Build a buffered writer for the requested output: a file (created and
+/// truncated) when `out` is a path, or stdout when `out` is `None` or `-`.
+fn output_writer(out: Option<&Path>) -> anyhow::Result<BufWriter<Box<dyn Write>>> {
+    let w: Box<dyn Write> = match out {
+        Some(path) if path != Path::new("-") => {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "tooned wrap: failed to open {} for writing: {e}",
+                        path.display()
+                    )
+                })?;
+            Box::new(file)
+        }
+        _ => Box::new(std::io::stdout()),
+    };
+    Ok(BufWriter::new(w))
 }
 
 /// Collapse the `--flag` / `--no-flag` pair into a single `Option<bool>`.
@@ -162,7 +189,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         std::process::exit(code);
     }
 
-    let out_stdout = std::io::stdout();
+    let mut writer = output_writer(args.out.as_deref())?;
     if buf.len() as u64 <= cap as u64 {
         // Entire output fits within the cap: run it through the normal
         // adaptive conversion path.
@@ -211,13 +238,16 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
             }
             Err(_) => buf,
         };
-        let _ = out_stdout.lock().write_all(&converted);
+        writer
+            .write_all(&converted)
+            .map_err(|e| anyhow::anyhow!("tooned wrap: failed to write output: {e}"))?;
     } else {
         // Output exceeds the cap: it would be a guaranteed passthrough, so
         // write the buffered prefix and stream the rest straight through
         // without ever holding it all in memory at once.
-        let mut lock = out_stdout.lock();
-        let _ = lock.write_all(&buf);
+        writer
+            .write_all(&buf)
+            .map_err(|e| anyhow::anyhow!("tooned wrap: failed to write output: {e}"))?;
         drop(buf);
         let mut chunk = vec![0u8; STREAM_CHUNK_BYTES];
         loop {
@@ -226,10 +256,14 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                 Ok(n) => n,
             };
             if let Some(written) = chunk.get(..n) {
-                let _ = lock.write_all(written);
+                writer
+                    .write_all(written)
+                    .map_err(|e| anyhow::anyhow!("tooned wrap: failed to write output: {e}"))?;
             }
         }
     }
+
+    let _ = writer.flush();
 
     // Mirror the wrapped command's exit code exactly.
     let status = match child.wait() {

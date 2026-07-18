@@ -49,6 +49,26 @@ fn pipe_passes_through_non_json_stdin_unchanged() {
 }
 
 #[test]
+fn pipe_writes_converted_output_to_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.toon");
+    let json = uniform_array_json(20);
+
+    Command::cargo_bin("tooned")
+        .unwrap()
+        .args(["pipe", "--out", out.to_str().unwrap()])
+        .write_stdin(json)
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        contents.contains("id,name,active,score"),
+        "file should contain converted TOON: {contents}"
+    );
+}
+
+#[test]
 fn pipe_always_exits_0_even_on_malformed_json() {
     let malformed = "{\"a\": not valid";
 
