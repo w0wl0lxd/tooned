@@ -743,13 +743,13 @@ mod tests {
 
         terminal.draw(|frame| app.draw(frame)).expect("draw summary");
         let buffer = terminal.backend().buffer();
-        let text: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        let text: String = buffer.content().iter().map(ratatui::buffer::Cell::symbol).collect();
         assert!(text.contains("Summary"), "rendered dashboard should contain Summary tab: {text}");
 
         app.handle_key(KeyEvent::from(KeyCode::Char('4'))).expect("switch to Agents");
         terminal.draw(|frame| app.draw(frame)).expect("draw agents");
         let buffer = terminal.backend().buffer();
-        let text: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        let text: String = buffer.content().iter().map(ratatui::buffer::Cell::symbol).collect();
         assert!(text.contains("Per-agent breakdown"), "rendered Agents tab should exist: {text}");
         assert!(text.contains("hook"), "rendered Agents tab should list the surface: {text}");
     }

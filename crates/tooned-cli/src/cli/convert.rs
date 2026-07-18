@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use tooned_core::{
-    Conversion, ConversionOptions, StreamStats, decode_onto, decode_toon, decode_tron,
-    is_smaller_enough, maybe_tooned, maybe_tron, maybe_tron_stream,
+    Conversion, ConversionOptions, StreamStats, decode_onto, decode_tron, is_smaller_enough,
+    maybe_tooned, maybe_tron, maybe_tron_stream,
 };
+use tooned_toon::decode_toon_with_options;
 
 use crate::cli::FormatHint;
 use crate::cli::io::{
@@ -109,6 +110,20 @@ pub struct ConvertArgs {
     #[arg(long = "protect", action = clap::ArgAction::Append)]
     pub protect: Vec<String>,
 
+    /// Enable TOON key folding (#25). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_fold")]
+    pub fold: bool,
+    /// Disable TOON key folding (#25).
+    #[arg(long = "no-fold", action = clap::ArgAction::SetTrue, conflicts_with = "fold")]
+    pub no_fold: bool,
+
+    /// Enable TOON path expansion when decoding (#25). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_expand")]
+    pub expand: bool,
+    /// Disable TOON path expansion when decoding (#25).
+    #[arg(long = "no-expand", action = clap::ArgAction::SetTrue, conflicts_with = "expand")]
+    pub no_expand: bool,
+
     /// Path to a tooned config file.
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
@@ -155,9 +170,19 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             // to materialize an arbitrarily large file in memory before the cap
             // is consulted (finding: the decode direction previously used the
             // unbounded `read_input`, a local denial-of-memory vector).
-            let cap = config
-                .conversion_options(None, args.max_bytes, None, None, None, None, None, None)
-                .max_input_bytes;
+            let opts = config.conversion_options(
+                None,
+                args.max_bytes,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                flag_value(args.fold, args.no_fold),
+                flag_value(args.expand, args.no_expand),
+            );
+            let cap = opts.max_input_bytes;
             let bytes = match crate::cli::io::read_input_bounded(&args.input, cap) {
                 Ok(bytes) => bytes,
                 Err(err) => {
@@ -165,7 +190,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     std::process::exit(2);
                 }
             };
-            let output = decode_to_json_or_exit(&bytes);
+            let output = decode_to_json_or_exit(&bytes, &opts);
             let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
                 write_in_place(&args.input, &output)
             } else {
@@ -197,6 +222,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 None,
                 None,
                 None,
+                flag_value(args.fold, args.no_fold),
+                flag_value(args.expand, args.no_expand),
             );
             opts.margin_pct = 0.0;
             let onto_outcome = tooned_core::maybe_onto(&bytes, &opts);
@@ -248,6 +275,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 None,
                 None,
                 None,
+                flag_value(args.fold, args.no_fold),
+                flag_value(args.expand, args.no_expand),
             );
             opts.margin_pct = 0.0;
 
@@ -324,6 +353,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 flag_value(args.auto_margin, args.no_auto_margin),
                 flag_value(args.entropy_gate, args.no_entropy_gate),
                 if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+                flag_value(args.fold, args.no_fold),
+                flag_value(args.expand, args.no_expand),
             );
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
@@ -339,6 +370,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 flag_value(args.auto_margin, args.no_auto_margin),
                 flag_value(args.entropy_gate, args.no_entropy_gate),
                 if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+                flag_value(args.fold, args.no_fold),
+                flag_value(args.expand, args.no_expand),
             );
 
             // Stream only when the input is genuinely too large to buffer:
@@ -561,7 +594,7 @@ fn run_adaptive_bounded(args: &ConvertArgs, opts: &ConversionOptions) -> anyhow:
 /// `class ` key (e.g. `class Foo { ... }`), which would otherwise be mistaken
 /// for a TRON record header. ONTO/TRON are only attempted once their explicit
 /// schema prefix is present.
-fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
+fn decode_to_json_or_exit(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
     const ONTO_SCHEMA_PREFIX: &str = "!schema ";
     const TRON_CLASS_PREFIX: &str = "class ";
 
@@ -575,7 +608,7 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
     // TOON headers).
     if !text.starts_with(ONTO_SCHEMA_PREFIX)
         && !text.trim_start().starts_with(TRON_CLASS_PREFIX)
-        && let Ok(value) = decode_toon(text)
+        && let Ok(value) = decode_toon_with_options(text, opts)
     {
         return finalize_json(&value, bytes);
     }
@@ -597,7 +630,7 @@ fn decode_to_json_or_exit(bytes: &[u8]) -> Vec<u8> {
             }
         }
     } else {
-        match decode_toon(text) {
+        match decode_toon_with_options(text, opts) {
             Ok(value) => value,
             Err(err) => {
                 eprintln!("tooned convert: failed to decode TOON: {err}");
