@@ -22,13 +22,15 @@ use tooned_types::{ConversionOptions, ToonedError};
 /// an error for the caller to handle (e.g. fall back to a passthrough) rather
 /// than emitted as corrupt TOON.
 pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
-    let encoded = toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-    let round_trip_ok = match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
-        Ok(decoded) => decoded == *value,
-        // A decode failure means the encoding is not faithfully reversible, so
-        // it is not lossless -- fail closed (refuse to emit).
-        Err(_) => false,
-    };
+    let encoded =
+        toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let round_trip_ok =
+        match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
+            Ok(decoded) => decoded == *value,
+            // A decode failure means the encoding is not faithfully reversible, so
+            // it is not lossless -- fail closed (refuse to emit).
+            Err(_) => false,
+        };
     if !round_trip_ok {
         return Err(ToonedError::DecodeFailed(
             "TOON encoding is not lossless for this value (numeric type / negative-zero \
