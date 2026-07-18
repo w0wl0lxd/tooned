@@ -50,6 +50,7 @@ proptest! {
             format_hint: None,
             precise_tokens,
             auto_margin: false,
+            cache_stable: false,
             dict_enabled: true,
             critical_policy: tooned_types::CriticalFieldPolicy::default_policy(),
             entropy_gate: true,

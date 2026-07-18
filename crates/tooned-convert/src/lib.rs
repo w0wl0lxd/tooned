@@ -9,7 +9,7 @@
 //! `inspect` computes the same decision (so it can report accurate sizes and
 //! a convertible y/n verdict) but never returns the TOON text itself.
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
@@ -153,6 +153,14 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     let Ok(value) = parse_by_doc_type(input, doc_type) else {
         return Attempt::parse_failed(doc_type);
     };
+
+    // F4: cache-stable deterministic encoding. Sort object keys recursively so
+    // identical data in different key orders yields byte-identical TOON (a
+    // stable prompt-cache prefix; cf. "Don't Break the Cache", arXiv
+    // 2601.06007). The sorted value feeds every downstream step (shape,
+    // json_bytes, encode, round-trip), so the lossless round-trip gate still
+    // holds -- `decode(encoded) == sorted_value`.
+    let value = if opts.cache_stable { sort_keys(value) } else { value };
 
     let shape = shape::classify(&value);
 
@@ -362,6 +370,25 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
         _ => {}
     }
     keys
+}
+
+/// Recursively sort the keys of every object in `value` (F4). Returns a new
+/// `Value` whose [`Map`]s are ordered by key so that two payloads carrying the
+/// same data in different key orders serialize to byte-identical text. Arrays
+/// recurse element-wise; scalars are returned unchanged. A pure transform run
+/// only when `cache_stable` is opted in (never on the default hot path).
+fn sort_keys(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let sorted =
+                entries.into_iter().map(|(k, v)| (k, sort_keys(v))).collect::<Map<String, Value>>();
+            Value::Object(sorted)
+        }
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sort_keys).collect()),
+        other => other,
+    }
 }
 
 /// Density-aware acceptance margin (#2). Higher uniformity (more redundant
@@ -880,5 +907,48 @@ mod tests {
         let value = parse_by_doc_type(payload, DocType::Json5).expect("json5 parse");
         assert_eq!(value.get("key"), Some(&serde_json::json!("value")));
         assert_eq!(value.get("list"), Some(&serde_json::json!([1, 2])));
+    }
+
+    #[test]
+    fn cache_stable_produces_identical_toon_regardless_of_key_order() {
+        // F4: the same object in two different key orders must yield
+        // byte-identical TOON when `cache_stable` is on, so the encoded
+        // observation is a stable prompt-cache prefix. The lossless round-trip
+        // gate still holds (decode == sorted value).
+        let a: &[u8] = br#"{"z":1,"a":2,"m":{"q":9,"p":8}}"#;
+        let b: &[u8] = br#"{"a":2,"m":{"p":8,"q":9},"z":1}"#;
+        let opts = ConversionOptions {
+            cache_stable: true,
+            margin_pct: 0.0,
+            ..ConversionOptions::default()
+        };
+        let ra = maybe_tooned(a, &opts).expect("infallible for payload-driven input");
+        let rb = maybe_tooned(b, &opts).expect("infallible for payload-driven input");
+        match (ra, rb) {
+            (Conversion::Toon { text: ta, .. }, Conversion::Toon { text: tb, .. }) => {
+                assert_eq!(
+                    ta, tb,
+                    "cache_stable must yield byte-identical TOON regardless of input key order"
+                );
+            }
+            other => panic!("expected two Toon conversions, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cache_stable_off_preserves_input_key_order_distinction() {
+        // Without cache_stable, different key orders produce different TOON
+        // (the default preserves insertion order), confirming F4 is opt-in.
+        let a: &[u8] = br#"{"z":1,"a":2}"#;
+        let b: &[u8] = br#"{"a":2,"z":1}"#;
+        let opts = ConversionOptions { margin_pct: 0.0, ..ConversionOptions::default() };
+        let ra = maybe_tooned(a, &opts).expect("infallible for payload-driven input");
+        let rb = maybe_tooned(b, &opts).expect("infallible for payload-driven input");
+        match (ra, rb) {
+            (Conversion::Toon { text: ta, .. }, Conversion::Toon { text: tb, .. }) => {
+                assert_ne!(ta, tb, "without cache_stable, key order is preserved");
+            }
+            other => panic!("expected two Toon conversions, got {other:?}"),
+        }
     }
 }
