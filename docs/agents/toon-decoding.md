@@ -2,7 +2,7 @@
 
 A model given a TOON tool result extracts values as if it were reading a table. It sees the header `[20]{sku,name,price,qty,category}:` and the rows, then answers questions like "what is the SKU of the first product?" with `SKU-1001`. No `toon → json` conversion runs inside the agent; the model maps the header/row structure to the question directly.
 
-This works because TOON is explicit about structure: field names are declared once, rows are comma-separated, and array lengths are in the header. The same pattern appears in CSV, Markdown tables, SQL result sets, and pandas output, so models can read it without a bespoke parser.
+This works because TOON is explicit about structure: field names are declared once, rows are comma-separated, and array lengths are in the header. The same pattern appears in CSV and Markdown tables, which models already see in tool output, so they can map the header/row structure to the question without learning a new parser.
 
 The mismatch test in [`toon-evidence.md`](toon-evidence.md) isolates this behavior by injecting the TOON of `products_20.json` while reading `users_20.json` (which has no `sku` field). The model still returned `SKU-1001`.
 
