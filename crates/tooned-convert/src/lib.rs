@@ -584,7 +584,10 @@ mod tests {
             let mut s = String::with_capacity(16);
             for _ in 0..16 {
                 let idx = (rng() & 0x3F) as usize;
-                s.push(B64[idx] as char);
+                match B64.get(idx) {
+                    Some(&b) => s.push(b as char),
+                    None => s.push('A'),
+                }
             }
             s
         };
@@ -601,8 +604,8 @@ mod tests {
 
     #[test]
     fn shannon_entropy_extremes() {
-        assert_eq!(shannon_entropy(&[]), 0.0);
-        assert_eq!(shannon_entropy(&[b'a'; 64]), 0.0);
+        assert!(shannon_entropy(&[]).abs() < f64::EPSILON);
+        assert!(shannon_entropy(&[b'a'; 64]).abs() < f64::EPSILON);
         // Cycling through every byte value -- maximal (normalized ~1.0).
         let mut varied = Vec::with_capacity(256);
         for b in 0u16..256 {
@@ -614,7 +617,7 @@ mod tests {
     #[test]
     fn entropy_margin_widens_for_incompressible() {
         // Maximally redundant input -- no extra margin needed.
-        assert_eq!(entropy_margin_for(&[b'a'; 256]), 0.0);
+        assert!(entropy_margin_for(&[b'a'; 256]).abs() < f64::EPSILON);
         // Repetitive JSON is still lower-entropy than random data.
         let rep = build_uniform_array_payload(50);
         let rand = build_random_array_payload(50);

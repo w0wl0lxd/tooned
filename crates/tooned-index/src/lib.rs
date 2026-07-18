@@ -30,6 +30,59 @@ pub use scan::{ScanSummary, scan_full};
 pub use schema::{ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists};
 pub use sync::{SyncSummary, sync};
 
+/// Return the local (`path`-type) flake inputs declared in `root/flake.lock`.
+/// Only inputs whose `locked.type` (or `original.type`) is `"path"` and that
+/// resolve to an existing directory are returned. Remote inputs (GitHub, etc.)
+/// are intentionally skipped so the default scan never makes network calls.
+pub fn flake_inputs(root: &Path) -> Vec<PathBuf> {
+    let lock_path = root.join("flake.lock");
+    let Ok(bytes) = std::fs::read(&lock_path) else {
+        return Vec::new();
+    };
+    let Ok(value) = tooned_json::parse_json(&bytes) else {
+        return Vec::new();
+    };
+
+    let mut inputs = Vec::new();
+    let Some(nodes) = value.get("nodes").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    let Some(root_node) = nodes.get("root").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    let Some(root_inputs) = root_node.get("inputs").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+
+    for node_name in root_inputs.values().filter_map(|v| v.as_str()) {
+        let Some(node) = nodes.get(node_name).and_then(|v| v.as_object()) else {
+            continue;
+        };
+
+        let locked = node.get("locked").and_then(|v| v.as_object());
+        let original = node.get("original").and_then(|v| v.as_object());
+
+        let path = locked
+            .filter(|o| o.get("type").and_then(|v| v.as_str()) == Some("path"))
+            .and_then(|o| o.get("path"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                original
+                    .filter(|o| o.get("type").and_then(|v| v.as_str()) == Some("path"))
+                    .and_then(|o| o.get("path"))
+                    .and_then(|v| v.as_str())
+            });
+
+        let Some(path) = path else { continue };
+        let resolved = root.join(path);
+        if resolved.is_dir() {
+            inputs.push(resolved);
+        }
+    }
+
+    inputs
+}
+
 /// Checkpoint the SQLite WAL and truncate the `-wal` file (backs
 /// `tooned index compact`). Safe to call on a live index; concurrent readers
 /// are not blocked.
@@ -479,6 +532,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_file_and_conversion_with_doc_type(
         conn: &rusqlite::Connection,
         json_pointer: &str,
