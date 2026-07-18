@@ -12,10 +12,14 @@ mod scan;
 mod schema;
 mod sync;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
+
+/// Recency half-life for `SortBy::Recency` scoring (one day in seconds).
+const HALF_LIFE_SECONDS: f64 = 86_400.0;
 
 use notify::RecursiveMode;
 use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent, new_debouncer};
@@ -199,6 +203,33 @@ pub struct FileDetail {
     pub conversions: Vec<ConversionRecord>,
 }
 
+/// Sorting strategy for `tooned stats` ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortBy {
+    /// Order by per-file savings percentage descending.
+    #[default]
+    Savings,
+    /// Score by savings multiplied by conversion count.
+    Count,
+    /// Score by savings multiplied by a recency decay.
+    Recency,
+}
+
+/// One entry in a ranked `tooned stats` report.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RankedFile {
+    pub path: String,
+    pub json_bytes: i64,
+    pub toon_bytes: i64,
+    pub savings_pct: f64,
+    /// The computed score used for ranking; higher is better.
+    pub score: f64,
+    /// Number of conversion records aggregated into this row.
+    pub conversion_count: usize,
+    /// Most recent `computed_at` timestamp across the aggregated rows.
+    pub last_computed_at: i64,
+}
+
 /// Looks up one file's indexed record by its project-relative path.
 ///
 /// # Errors
@@ -273,27 +304,51 @@ pub fn show_file(project_root: &Path, rel_path: &str) -> Result<FileDetail, Inde
 }
 
 /// Ranked savings report: `conversions` ordered by `savings_pct` descending,
-/// limited to `top` entries (all rows if `None`) (backs `tooned stats`).
+/// limited to `top` entries (all rows if `None`) (backs `tooned stats` and the
+/// MCP `tooned_stats` tool).
 ///
 /// # Errors
 /// `IndexError::NoIndex` if no index exists yet for `project_root`.
 pub fn stats(project_root: &Path, top: Option<u32>) -> Result<Vec<ConversionRecord>, IndexError> {
+    let ranked = stats_sorted(project_root, top, SortBy::Savings)?;
+    Ok(ranked
+        .into_iter()
+        .map(|row| ConversionRecord {
+            path: row.path,
+            json_pointer: String::new(),
+            json_bytes: row.json_bytes,
+            toon_bytes: row.toon_bytes,
+            savings_pct: row.savings_pct,
+            cached_toon_text: None,
+            computed_at: row.last_computed_at,
+        })
+        .collect())
+}
+
+/// Ranked report with a selectable scoring strategy (backs `tooned stats
+/// --sort-by`).
+///
+/// - `Savings` returns one row per conversion ordered by `savings_pct` descending.
+/// - `Count` and `Recency` aggregate conversions per file, score the file, and
+///   return one row per file.
+///
+/// # Errors
+/// `IndexError::NoIndex` if no index exists yet for `project_root`.
+pub fn stats_sorted(
+    project_root: &Path,
+    top: Option<u32>,
+    sort_by: SortBy,
+) -> Result<Vec<RankedFile>, IndexError> {
     if !schema::index_exists(project_root) {
         return Err(IndexError::NoIndex(project_root.to_path_buf()));
     }
     let conn = schema::open_index(project_root)?;
-    let limit: i64 = match top {
-        Some(n) => i64::from(n),
-        None => -1, // SQLite: LIMIT -1 means "no limit".
-    };
     let mut stmt = conn.prepare(
         "SELECT path, json_pointer, json_bytes, toon_bytes, savings_pct, cached_toon_text, computed_at \
-         FROM conversions \
-         ORDER BY savings_pct DESC \
-         LIMIT ?1",
+         FROM conversions",
     )?;
     let rows = stmt
-        .query_map([limit], |row| {
+        .query_map([], |row| {
             Ok(ConversionRecord {
                 path: row.get(0)?,
                 json_pointer: row.get(1)?,
@@ -305,5 +360,164 @@ pub fn stats(project_root: &Path, top: Option<u32>) -> Result<Vec<ConversionReco
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    drop(stmt);
+    drop(conn);
+
+    let mut ranked = match sort_by {
+        SortBy::Savings => rows
+            .into_iter()
+            .map(|row| RankedFile {
+                path: row.path,
+                json_bytes: row.json_bytes,
+                toon_bytes: row.toon_bytes,
+                savings_pct: row.savings_pct,
+                score: row.savings_pct,
+                conversion_count: 1,
+                last_computed_at: row.computed_at,
+            })
+            .collect::<Vec<_>>(),
+        SortBy::Count | SortBy::Recency => {
+            let mut groups: HashMap<String, (i64, i64, f64, i64, usize)> = HashMap::new();
+            for row in rows {
+                let entry = groups.entry(row.path).or_insert((0, 0, 0.0, 0, 0));
+                entry.0 += row.json_bytes;
+                entry.1 += row.toon_bytes;
+                entry.2 += row.savings_pct;
+                entry.3 = entry.3.max(row.computed_at);
+                entry.4 += 1;
+            }
+            #[allow(clippy::manual_unwrap_or)]
+            let newest = match groups.values().map(|g| g.3).max() {
+                Some(v) => v,
+                None => 1_i64,
+            };
+            groups
+                .into_iter()
+                .map(|(path, (json_bytes, toon_bytes, savings_sum, last, count))| {
+                    let avg_savings = savings_sum / count as f64;
+                    let score = match sort_by {
+                        SortBy::Count => avg_savings * count as f64,
+                        SortBy::Recency => {
+                            let age = (newest - last) as f64;
+                            let decay = (-age / HALF_LIFE_SECONDS).exp();
+                            avg_savings * decay
+                        }
+                        SortBy::Savings => unreachable!(),
+                    };
+                    RankedFile {
+                        path,
+                        json_bytes,
+                        toon_bytes,
+                        savings_pct: avg_savings,
+                        score,
+                        conversion_count: count,
+                        last_computed_at: last,
+                    }
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+
+    #[allow(clippy::manual_unwrap_or)]
+    ranked.sort_by(|a, b| match b.score.partial_cmp(&a.score) {
+        Some(ordering) => ordering,
+        None => std::cmp::Ordering::Equal,
+    });
+    if let Some(n) = top {
+        ranked.truncate(n as usize);
+    }
+    Ok(ranked)
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn insert_file_and_conversion(
+        conn: &rusqlite::Connection,
+        json_pointer: &str,
+        path: &str,
+        json_bytes: i64,
+        toon_bytes: i64,
+        savings_pct: f64,
+        computed_at: i64,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO files (path, size_bytes, mtime_unix, content_hash, doc_type, scanned_at) \
+             VALUES (?1, ?2, ?3, 'hash', 'json', ?4)",
+            rusqlite::params![path, json_bytes, 0, 0],
+        )
+        .expect("insert file");
+        conn.execute(
+            "INSERT INTO conversions (path, json_pointer, json_bytes, toon_bytes, savings_pct, cached_toon_text, computed_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+            rusqlite::params![path, json_pointer, json_bytes, toon_bytes, savings_pct, computed_at],
+        )
+        .expect("insert conversion");
+    }
+
+    fn approx_eq(a: f64, b: f64) -> bool {
+        (a - b).abs() < f64::EPSILON
+    }
+
+    #[test]
+    fn stats_sorted_by_savings_uses_savings_pct_score() {
+        let dir = tempdir().expect("tempdir");
+        let conn = schema::open_index(dir.path()).expect("open index");
+        insert_file_and_conversion(&conn, "", "a.json", 100, 50, 50.0, 100);
+        insert_file_and_conversion(&conn, "", "b.json", 100, 10, 90.0, 100);
+
+        let ranked = stats_sorted(dir.path(), None, SortBy::Savings).expect("stats");
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked.first().expect("first").path, "b.json");
+        assert_eq!(ranked.get(1).expect("second").path, "a.json");
+    }
+
+    #[test]
+    fn stats_sorted_by_count_multiplies_by_conversion_count() {
+        let dir = tempdir().expect("tempdir");
+        let conn = schema::open_index(dir.path()).expect("open index");
+        insert_file_and_conversion(&conn, "", "a.json", 100, 50, 50.0, 100);
+        // b.json has two conversions so its count score should tie a.json's.
+        insert_file_and_conversion(&conn, "", "b.json", 100, 80, 20.0, 100);
+        insert_file_and_conversion(&conn, "/p1", "b.json", 100, 70, 30.0, 100);
+
+        let ranked = stats_sorted(dir.path(), None, SortBy::Count).expect("stats");
+        let a = ranked.iter().find(|r| r.path == "a.json").expect("a.json");
+        let b = ranked.iter().find(|r| r.path == "b.json").expect("b.json");
+        assert_eq!(a.conversion_count, 1);
+        assert_eq!(b.conversion_count, 2);
+        assert!(approx_eq(a.score, 50.0));
+        assert!(approx_eq(b.score, 50.0)); // (20 + 30) / 2 * 2
+        let first = ranked.first().expect("first");
+        assert!(first.path == "a.json" || first.path == "b.json");
+    }
+
+    #[test]
+    fn stats_sorted_by_recency_prefers_newer_files() {
+        let dir = tempdir().expect("tempdir");
+        let conn = schema::open_index(dir.path()).expect("open index");
+        insert_file_and_conversion(&conn, "", "old.json", 100, 50, 50.0, 100);
+        insert_file_and_conversion(&conn, "", "new.json", 100, 60, 50.0, 100_000);
+
+        let ranked = stats_sorted(dir.path(), None, SortBy::Recency).expect("stats");
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked.first().expect("first").path, "new.json");
+        assert_eq!(ranked.get(1).expect("second").path, "old.json");
+    }
+
+    #[test]
+    fn stats_sorted_top_truncates_results() {
+        let dir = tempdir().expect("tempdir");
+        let conn = schema::open_index(dir.path()).expect("open index");
+        insert_file_and_conversion(&conn, "", "a.json", 100, 50, 50.0, 100);
+        insert_file_and_conversion(&conn, "", "b.json", 100, 10, 90.0, 100);
+        insert_file_and_conversion(&conn, "", "c.json", 100, 80, 20.0, 100);
+
+        let ranked = stats_sorted(dir.path(), Some(1), SortBy::Savings).expect("stats");
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked.first().expect("first").path, "b.json");
+    }
 }

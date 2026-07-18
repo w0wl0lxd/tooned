@@ -50,6 +50,14 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     tooned_index::scan_full(dir.path()).expect("initial scan_full");
     let full_scan_elapsed = full_scan_start.elapsed();
 
+    // Establish a warm baseline for re-classifying every file from disk.
+    // This mirrors a naive re-hash-everything sync and is measured against the
+    // same cached filesystem state, giving a fair comparison without the noise
+    // of a cold first scan.
+    let baseline_start = Instant::now();
+    tooned_index::scan_full(dir.path()).expect("warm baseline scan_full");
+    let baseline_elapsed = baseline_start.elapsed();
+
     // Touch (content + mtime change) only a handful of files.
     let future = SystemTime::now() + Duration::from_mins(2);
     for i in 0..5 {
@@ -69,14 +77,14 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     assert_eq!(summary.unchanged, FILE_COUNT - 5);
     assert!(
         sync_elapsed < full_scan_elapsed,
-        "incremental sync ({sync_elapsed:?}) must be faster than the full scan ({full_scan_elapsed:?})"
+        "incremental sync ({sync_elapsed:?}) must be faster than the initial full scan ({full_scan_elapsed:?})"
     );
     // A generous ceiling well above what stat-first skipping should need,
-    // giving no flakiness margin issue on slower CI runners while still
-    // catching a naive re-hash-everything implementation.
+    // measured against a warm full reclassification so the comparison isn't
+    // skewed by cold filesystem-cache noise on slower CI runners.
     assert!(
-        sync_elapsed < full_scan_elapsed * 3 / 4,
-        "sync ({sync_elapsed:?}) should be markedly faster than a full scan ({full_scan_elapsed:?}), \
+        sync_elapsed < baseline_elapsed * 3 / 4,
+        "sync ({sync_elapsed:?}) should be markedly faster than a warm full reclassification ({baseline_elapsed:?}), \
          not just marginally faster -- stat-first mtime-check must actually skip re-hashing"
     );
 }
