@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Integration tests for `tooned hook run --droid`.
 //! Droid `PostToolUse` stdin carries `tool_response` as either a raw string
 //! or an object whose schema is tool-specific; `hooks/mod.rs` extracts
@@ -23,7 +25,7 @@ fn uniform_array_json(rows: usize) -> String {
     s
 }
 
-fn object_payload(output: serde_json::Value) -> String {
+fn object_payload(output: &serde_json::Value) -> String {
     serde_json::json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "Execute",
@@ -36,7 +38,7 @@ fn object_payload(output: serde_json::Value) -> String {
 #[test]
 fn convertible_output_field_prints_hook_specific_output_and_exits_0() {
     let tool_response = uniform_array_json(20);
-    let stdin = object_payload(serde_json::json!({
+    let stdin = object_payload(&serde_json::json!({
         "success": true,
         "output": tool_response,
         "error": null,
@@ -90,7 +92,7 @@ fn string_tool_response_also_works() {
 
 #[test]
 fn content_array_extracts_text_items() {
-    let stdin = object_payload(serde_json::json!({
+    let stdin = object_payload(&serde_json::json!({
         "content": [
             { "type": "text", "text": "first" },
             { "type": "text", "text": uniform_array_json(20) },
@@ -109,7 +111,7 @@ fn content_array_extracts_text_items() {
 
 #[test]
 fn content_array_with_only_json_text_item_converts() {
-    let stdin = object_payload(serde_json::json!({
+    let stdin = object_payload(&serde_json::json!({
         "content": [{ "type": "text", "text": uniform_array_json(20) }],
     }));
 
@@ -127,7 +129,7 @@ fn content_array_with_only_json_text_item_converts() {
 
 #[test]
 fn non_json_tool_response_produces_no_stdout_and_exits_0() {
-    let stdin = object_payload(serde_json::json!({
+    let stdin = object_payload(&serde_json::json!({
         "success": true,
         "output": "just some prose, nothing structured here",
     }));
