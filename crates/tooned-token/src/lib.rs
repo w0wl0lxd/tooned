@@ -28,6 +28,9 @@ use std::sync::OnceLock;
 use tiktoken_rs::CoreBPE;
 use tooned_types::TokenizerProfile;
 
+pub mod cost;
+pub use cost::{ModelPricing, TokenKind, cost_savings_usd, estimate_cost_usd, pricing_for};
+
 /// Bytes-per-token assumption used by the heuristic profile and by the rest of
 /// the workspace's default savings math (`tooned-metrics::BYTES_PER_TOKEN`).
 const BYTES_PER_TOKEN: usize = 4;
