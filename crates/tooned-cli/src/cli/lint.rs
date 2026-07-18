@@ -19,17 +19,17 @@ pub struct LintArgs {
     pub input: PathBuf,
 
     /// Maximum input size in bytes before rejection (default 2 MiB).
-    #[arg(long = "max-bytes")]
+    #[arg(short = 'b', long = "max-bytes")]
     pub max_bytes: Option<u64>,
 
     /// Path to a tooned config file.
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
 }
 
 pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(None, args.max_bytes, None, None);
+    let opts = config.conversion_options(None, args.max_bytes, None, None, None, None, None, None);
 
     let mut reader = open_input(&args.input).map_err(|err| {
         anyhow::anyhow!("tooned lint: failed to read {}: {err}", args.input.display())
