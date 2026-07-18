@@ -167,8 +167,12 @@ pub fn watch_with_stop(
 /// Watch `project_root` until the process is interrupted. Backs the
 /// `tooned index watch` CLI; for tests or other callers that need to
 /// stop the loop, use [`watch_with_stop`].
-pub fn watch(project_root: &Path, debounce_ms: u64) -> Result<(), IndexError> {
-    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), &IndexFilter::default())
+pub fn watch(
+    project_root: &Path,
+    debounce_ms: u64,
+    filter: &IndexFilter,
+) -> Result<(), IndexError> {
+    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), filter)
 }
 
 fn build_gitignore_filter(
@@ -204,6 +208,7 @@ fn is_ignored(
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum IndexError {
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
@@ -223,6 +228,8 @@ pub enum IndexError {
     ScanTooLarge(usize),
     #[error("unsupported schema version: {0}; delete or migrate the index database")]
     UnsupportedSchemaVersion(String),
+    #[error("failed to compile ignore/exclude pattern: {0}")]
+    Gitignore(#[from] ignore::Error),
 }
 
 /// `tooned index status` report: whether an index exists, how many files
