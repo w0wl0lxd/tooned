@@ -1,0 +1,21 @@
+[package]
+name = "tooned-token"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Model-aware tokenizer counting for the tooned workspace (F1/F2)"
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tiktoken-rs = "0.12"
+tooned-types = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true
