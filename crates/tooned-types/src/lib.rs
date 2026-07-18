@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Supported source document types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DocType {
     Json,
     NdJson,
@@ -185,7 +186,7 @@ impl CriticalFieldPolicy {
 /// Why conversion did not surface a `Toon` conversion (or, when it did,
 /// the internal decision path an equivalent `PassthroughReason` would have
 /// taken).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum PassthroughReason {
     /// `detect` could not sniff a supported doctype from the content, and no
     /// `format_hint` was given.
@@ -224,7 +225,7 @@ pub enum ToonedError {
 }
 
 /// Dry-run diagnostic report (contract: never carries TOON text).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InspectReport {
     pub doc_type: Option<DocType>,
     pub shape: ShapeClass,
@@ -254,7 +255,7 @@ pub enum Conversion {
 
 /// Diagnostic detail attached to a successful `Conversion::Toon`
 /// (data-model.md).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ConversionReport {
     pub doc_type: DocType,
     pub shape: ShapeClass,
@@ -273,7 +274,7 @@ pub struct ConversionReport {
 /// Descriptive/diagnostic only -- per data-model, this does
 /// NOT gate the conversion decision on its own; the byte-size comparison is
 /// the sole gate.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ShapeClass {
     UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
     Irregular,

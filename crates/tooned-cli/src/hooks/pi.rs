@@ -112,6 +112,10 @@ pub fn status() -> bool {
     super::plugin::status(&AGENT)
 }
 
+pub(crate) fn target_path(scope: Option<Scope>) -> Result<std::path::PathBuf, InstallError> {
+    super::plugin::settings_path(&AGENT, super::plugin::default_scope(scope))
+}
+
 pub(crate) fn doctor_report() -> serde_json::Value {
     super::plugin::doctor_report(&AGENT)
 }

@@ -4,6 +4,7 @@
 //! `index`, `stats`. See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 
 pub mod check;
+pub mod config_cmd;
 pub mod convert;
 pub mod dashboard;
 pub mod diff;

@@ -10,6 +10,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use serde::Serialize;
 use similar::TextDiff;
 
 #[derive(Debug, Args)]
@@ -20,6 +21,19 @@ pub struct DiffArgs {
     /// Number of context lines in the unified diff.
     #[arg(long, default_value = "3")]
     pub context: usize,
+
+    /// Emit the result as machine-readable JSON.
+    #[arg(short = 'j', long)]
+    pub json: bool,
+}
+
+#[derive(Serialize)]
+struct DiffResult {
+    equal: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diff: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
@@ -29,7 +43,18 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
     let toon_text = match tooned_core::maybe_tooned(&bytes, &opts) {
         Ok(tooned_core::Conversion::Toon { text, .. }) => text,
         Ok(tooned_core::Conversion::Passthrough { reason, .. }) => {
-            eprintln!("tooned diff: input was not converted: {reason:?}");
+            if args.json {
+                println!(
+                    "{}",
+                    sonic_rs::to_string(&DiffResult {
+                        equal: false,
+                        diff: None,
+                        error: Some(format!("input was not converted: {reason:?}")),
+                    })?
+                );
+            } else {
+                eprintln!("tooned diff: input was not converted: {reason:?}");
+            }
             std::process::exit(2);
         }
         Err(err) => return Err(err.into()),
@@ -49,17 +74,32 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
     let right = sonic_rs::to_string_pretty(&roundtrip)?;
 
     if left == right {
-        println!("no diff");
+        if args.json {
+            println!(
+                "{}",
+                sonic_rs::to_string(&DiffResult { equal: true, diff: None, error: None })?
+            );
+        } else {
+            println!("no diff");
+        }
         return Ok(());
     }
 
     let diff = TextDiff::from_lines(&left, &right);
-    print!(
-        "{}",
-        diff.unified_diff()
-            .context_radius(args.context)
-            .header(&args.file.display().to_string(), "toon-roundtrip")
-    );
+    let diff_text = diff
+        .unified_diff()
+        .context_radius(args.context)
+        .header(&args.file.display().to_string(), "toon-roundtrip")
+        .to_string();
 
-    Ok(())
+    if args.json {
+        println!(
+            "{}",
+            sonic_rs::to_string(&DiffResult { equal: false, diff: Some(diff_text), error: None })?
+        );
+    } else {
+        print!("{diff_text}");
+    }
+
+    std::process::exit(3);
 }
