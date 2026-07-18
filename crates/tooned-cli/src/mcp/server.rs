@@ -137,6 +137,9 @@ fn build_options(
     let mut opts = ConversionOptions {
         format_hint: parse_doc_type_hint(format_hint),
         margin_pct: margin_pct.unwrap_or_else(|| ConversionOptions::default().margin_pct),
+        dict_enabled: true,
+        auto_margin: true,
+        entropy_gate: true,
         ..ConversionOptions::default()
     };
     if let Some(d) = dict_enabled {
@@ -151,9 +154,16 @@ fn build_options(
     if let Some(keys) = protect
         && !keys.is_empty()
     {
+        let default = tooned_types::CriticalFieldPolicy::default_policy();
+        let mut protected = default.protected.clone();
+        for key in keys {
+            if !protected.iter().any(|p| p.eq_ignore_ascii_case(&key)) {
+                protected.push(key.to_lowercase());
+            }
+        }
         opts.critical_policy = tooned_types::CriticalFieldPolicy {
-            protected: keys,
-            ..tooned_types::CriticalFieldPolicy::default_policy()
+            protected,
+            min_benefit_bytes: default.min_benefit_bytes,
         };
     }
     opts

@@ -114,17 +114,16 @@ pub struct ConvertArgs {
     pub config: Option<PathBuf>,
 }
 
-/// Collapse the `--flag` / `--no-flag` pair into a single `bool`, falling
-/// back to `default` when neither is supplied. The encoder-win tiers default
-/// ON at the CLI surface (per the "on by default, auto" directive) while the
-/// library `ConversionOptions` stays conservative.
-fn flag_default(yes: bool, no: bool, default: bool) -> bool {
+/// Collapse the `--flag` / `--no-flag` pair into a single `Option<bool>`.
+/// `None` when neither is supplied lets the configured default apply;
+/// an explicit `Some(true)` / `Some(false)` always overrides it.
+fn flag_value(yes: bool, no: bool) -> Option<bool> {
     if no {
-        false
+        Some(false)
     } else if yes {
-        true
+        Some(true)
     } else {
-        default
+        None
     }
 }
 
@@ -313,9 +312,9 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 args.max_bytes,
                 format_hint,
                 None,
-                Some(flag_default(args.dict, args.no_dict, true)),
-                Some(flag_default(args.auto_margin, args.no_auto_margin, true)),
-                Some(flag_default(args.entropy_gate, args.no_entropy_gate, true)),
+                flag_value(args.dict, args.no_dict),
+                flag_value(args.auto_margin, args.no_auto_margin),
+                flag_value(args.entropy_gate, args.no_entropy_gate),
                 if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
             );
             // `--to toon` forces conversion with no savings margin.
@@ -328,9 +327,9 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 args.max_bytes,
                 format_hint,
                 None,
-                Some(flag_default(args.dict, args.no_dict, true)),
-                Some(flag_default(args.auto_margin, args.no_auto_margin, true)),
-                Some(flag_default(args.entropy_gate, args.no_entropy_gate, true)),
+                flag_value(args.dict, args.no_dict),
+                flag_value(args.auto_margin, args.no_auto_margin),
+                flag_value(args.entropy_gate, args.no_entropy_gate),
                 if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
             );
 
