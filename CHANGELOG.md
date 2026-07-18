@@ -188,6 +188,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory. Tests now match Devin's real `PostToolUse` payload (no
   `hook_event_name`) and cover status, doctor, coexistence, and concurrent
   install atomicity. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
+- **tooned-cli:** `tooned hook install` no longer appends a duplicate
+  `PostToolUse` entry when `tooned` later moves on `PATH` (e.g. after a
+  reinstall to a new binary location). The merge now also collapses an existing
+  entry by its tooned-owned command *suffix* (path-independent), so a prior
+  entry with a different absolute prefix is deduplicated instead of duplicated.
+- **tooned-index:** `tooned index sync` no longer prunes rows for files that
+  are still present on disk but were briefly unreadable: unreadable walk
+  entries, entries with no resolvable file type, non-UTF-8 paths, tooned's own
+  internal files, and transient metadata failures are all recorded as `seen`
+  rather than treated as deleted, so the prune pass keeps their rows intact.
 
 - **tooned-cli:** `tooned dashboard` now fails gracefully with a clear error
   instead of panicking when stdout is not a terminal.
@@ -195,6 +205,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **tooned-cli:** `convert --to json` no longer materializes an arbitrarily
+  large file in memory before its decoder's `max_input_bytes` cap is
+  consulted. The decode direction now reads through the new bounded
+  `read_input_bounded` (capped at `ConversionOptions.max_input_bytes`) instead
+  of the unbounded `read_input`, closing a local denial-of-memory vector.
 - **tooned-index:** hardened `.tooned/index.db` and `.gitignore` temp-file
   paths against symlink redirection by refusing to follow symlinks and using
   same-directory temp-file-then-rename writes. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))
