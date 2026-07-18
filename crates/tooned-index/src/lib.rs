@@ -7,6 +7,7 @@
 //! `tooned index` / `tooned index sync` / `tooned stats`: never on the
 //! hot hook path (see `tooned-core` for that).
 
+mod filter;
 mod gitignore;
 mod scan;
 mod schema;
@@ -24,6 +25,7 @@ const HALF_LIFE_SECONDS: f64 = 86_400.0;
 use notify::RecursiveMode;
 use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent, new_debouncer};
 
+pub use filter::{DocTypeFilter, IndexFilter};
 pub use scan::{ScanSummary, scan_full};
 pub use schema::{ConversionRecord, FileRecord, ShapeRecord, index_db_path, index_exists};
 pub use sync::{SyncSummary, sync};
@@ -51,6 +53,7 @@ pub fn watch_with_stop(
     project_root: &Path,
     debounce_ms: u64,
     stop: &AtomicBool,
+    filter: &IndexFilter,
 ) -> Result<(), IndexError> {
     if !schema::index_exists(project_root) {
         return Err(IndexError::NoIndex(project_root.to_path_buf()));
@@ -65,7 +68,7 @@ pub fn watch_with_stop(
     })?;
     debouncer.watcher().watch(project_root, RecursiveMode::Recursive)?;
 
-    let filter = build_gitignore_filter(project_root).unwrap_or_else(|_| {
+    let gitignore_filter = build_gitignore_filter(project_root).unwrap_or_else(|_| {
         // If we cannot read the gitignore file, still fall back to the
         // hard-coded ignores so `.tooned/` updates don't self-trigger.
         ignore::gitignore::Gitignore::empty()
@@ -79,12 +82,13 @@ pub fn watch_with_stop(
 
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(events)) => {
-                let relevant = events.iter().any(|event| !is_ignored(event, project_root, &filter));
+                let relevant =
+                    events.iter().any(|event| !is_ignored(event, project_root, &gitignore_filter));
                 if !relevant {
                     continue;
                 }
                 count += 1;
-                match sync(project_root) {
+                match sync(project_root, filter) {
                     Ok(summary) => println!(
                         "[watch #{count}] synced {}: +{} ~{} -{} ({} unchanged)",
                         project_root.display(),
@@ -111,7 +115,7 @@ pub fn watch_with_stop(
 /// `tooned index watch` CLI; for tests or other callers that need to
 /// stop the loop, use [`watch_with_stop`].
 pub fn watch(project_root: &Path, debounce_ms: u64) -> Result<(), IndexError> {
-    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false))
+    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), &IndexFilter::default())
 }
 
 fn build_gitignore_filter(
@@ -309,8 +313,12 @@ pub fn show_file(project_root: &Path, rel_path: &str) -> Result<FileDetail, Inde
 ///
 /// # Errors
 /// `IndexError::NoIndex` if no index exists yet for `project_root`.
-pub fn stats(project_root: &Path, top: Option<u32>) -> Result<Vec<ConversionRecord>, IndexError> {
-    let ranked = stats_sorted(project_root, top, SortBy::Savings)?;
+pub fn stats(
+    project_root: &Path,
+    top: Option<u32>,
+    filter: &IndexFilter,
+) -> Result<Vec<ConversionRecord>, IndexError> {
+    let ranked = stats_sorted(project_root, top, SortBy::Savings, filter)?;
     Ok(ranked
         .into_iter()
         .map(|row| ConversionRecord {
@@ -338,35 +346,49 @@ pub fn stats_sorted(
     project_root: &Path,
     top: Option<u32>,
     sort_by: SortBy,
+    filter: &IndexFilter,
 ) -> Result<Vec<RankedFile>, IndexError> {
     if !schema::index_exists(project_root) {
         return Err(IndexError::NoIndex(project_root.to_path_buf()));
     }
     let conn = schema::open_index(project_root)?;
+
+    // Join conversions with files to get doc_type for filtering
     let mut stmt = conn.prepare(
-        "SELECT path, json_pointer, json_bytes, toon_bytes, savings_pct, cached_toon_text, computed_at \
-         FROM conversions",
+        "SELECT c.path, c.json_pointer, c.json_bytes, c.toon_bytes, c.savings_pct, c.cached_toon_text, c.computed_at, f.doc_type \
+         FROM conversions c \
+         JOIN files f ON c.path = f.path",
     )?;
     let rows = stmt
         .query_map([], |row| {
-            Ok(ConversionRecord {
-                path: row.get(0)?,
-                json_pointer: row.get(1)?,
-                json_bytes: row.get(2)?,
-                toon_bytes: row.get(3)?,
-                savings_pct: row.get(4)?,
-                cached_toon_text: row.get(5)?,
-                computed_at: row.get(6)?,
-            })
+            let doc_type: Option<String> = row.get(7)?;
+            Ok((
+                ConversionRecord {
+                    path: row.get(0)?,
+                    json_pointer: row.get(1)?,
+                    json_bytes: row.get(2)?,
+                    toon_bytes: row.get(3)?,
+                    savings_pct: row.get(4)?,
+                    cached_toon_text: row.get(5)?,
+                    computed_at: row.get(6)?,
+                },
+                doc_type,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(stmt);
     drop(conn);
 
+    // Filter by type
+    let filtered: Vec<_> = rows
+        .into_iter()
+        .filter(|(_, doc_type)| filter.matches_type_str(doc_type.as_deref()))
+        .collect();
+
     let mut ranked = match sort_by {
-        SortBy::Savings => rows
+        SortBy::Savings => filtered
             .into_iter()
-            .map(|row| RankedFile {
+            .map(|(row, _)| RankedFile {
                 path: row.path,
                 json_bytes: row.json_bytes,
                 toon_bytes: row.toon_bytes,
@@ -378,7 +400,7 @@ pub fn stats_sorted(
             .collect::<Vec<_>>(),
         SortBy::Count | SortBy::Recency => {
             let mut groups: HashMap<String, (i64, i64, f64, i64, usize)> = HashMap::new();
-            for row in rows {
+            for (row, _) in filtered {
                 let entry = groups.entry(row.path).or_insert((0, 0, 0.0, 0, 0));
                 entry.0 += row.json_bytes;
                 entry.1 += row.toon_bytes;
@@ -434,6 +456,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+    use crate::filter::DocTypeFilter;
 
     fn insert_file_and_conversion(
         conn: &rusqlite::Connection,
@@ -444,10 +467,32 @@ mod tests {
         savings_pct: f64,
         computed_at: i64,
     ) {
+        insert_file_and_conversion_with_doc_type(
+            conn,
+            json_pointer,
+            path,
+            json_bytes,
+            toon_bytes,
+            savings_pct,
+            computed_at,
+            "json",
+        );
+    }
+
+    fn insert_file_and_conversion_with_doc_type(
+        conn: &rusqlite::Connection,
+        json_pointer: &str,
+        path: &str,
+        json_bytes: i64,
+        toon_bytes: i64,
+        savings_pct: f64,
+        computed_at: i64,
+        doc_type: &str,
+    ) {
         conn.execute(
             "INSERT OR IGNORE INTO files (path, size_bytes, mtime_unix, content_hash, doc_type, scanned_at) \
-             VALUES (?1, ?2, ?3, 'hash', 'json', ?4)",
-            rusqlite::params![path, json_bytes, 0, 0],
+             VALUES (?1, ?2, ?3, 'hash', ?4, ?5)",
+            rusqlite::params![path, json_bytes, 0, doc_type, 0],
         )
         .expect("insert file");
         conn.execute(
@@ -469,7 +514,8 @@ mod tests {
         insert_file_and_conversion(&conn, "", "a.json", 100, 50, 50.0, 100);
         insert_file_and_conversion(&conn, "", "b.json", 100, 10, 90.0, 100);
 
-        let ranked = stats_sorted(dir.path(), None, SortBy::Savings).expect("stats");
+        let ranked = stats_sorted(dir.path(), None, SortBy::Savings, &IndexFilter::default())
+            .expect("stats");
         assert_eq!(ranked.len(), 2);
         assert_eq!(ranked.first().expect("first").path, "b.json");
         assert_eq!(ranked.get(1).expect("second").path, "a.json");
@@ -484,7 +530,8 @@ mod tests {
         insert_file_and_conversion(&conn, "", "b.json", 100, 80, 20.0, 100);
         insert_file_and_conversion(&conn, "/p1", "b.json", 100, 70, 30.0, 100);
 
-        let ranked = stats_sorted(dir.path(), None, SortBy::Count).expect("stats");
+        let ranked =
+            stats_sorted(dir.path(), None, SortBy::Count, &IndexFilter::default()).expect("stats");
         let a = ranked.iter().find(|r| r.path == "a.json").expect("a.json");
         let b = ranked.iter().find(|r| r.path == "b.json").expect("b.json");
         assert_eq!(a.conversion_count, 1);
@@ -502,7 +549,8 @@ mod tests {
         insert_file_and_conversion(&conn, "", "old.json", 100, 50, 50.0, 100);
         insert_file_and_conversion(&conn, "", "new.json", 100, 60, 50.0, 100_000);
 
-        let ranked = stats_sorted(dir.path(), None, SortBy::Recency).expect("stats");
+        let ranked = stats_sorted(dir.path(), None, SortBy::Recency, &IndexFilter::default())
+            .expect("stats");
         assert_eq!(ranked.len(), 2);
         assert_eq!(ranked.first().expect("first").path, "new.json");
         assert_eq!(ranked.get(1).expect("second").path, "old.json");
@@ -516,8 +564,22 @@ mod tests {
         insert_file_and_conversion(&conn, "", "b.json", 100, 10, 90.0, 100);
         insert_file_and_conversion(&conn, "", "c.json", 100, 80, 20.0, 100);
 
-        let ranked = stats_sorted(dir.path(), Some(1), SortBy::Savings).expect("stats");
+        let ranked = stats_sorted(dir.path(), Some(1), SortBy::Savings, &IndexFilter::default())
+            .expect("stats");
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked.first().expect("first").path, "b.json");
+    }
+
+    #[test]
+    fn stats_with_type_filter_only_returns_matching_types() {
+        let dir = tempdir().expect("tempdir");
+        let conn = schema::open_index(dir.path()).expect("open index");
+        insert_file_and_conversion_with_doc_type(&conn, "", "a.json", 100, 50, 50.0, 100, "json");
+        insert_file_and_conversion_with_doc_type(&conn, "", "b.toml", 100, 10, 90.0, 100, "toml");
+
+        let filter = IndexFilter { type_filter: Some(DocTypeFilter::Json), excludes: vec![] };
+        let ranked = stats_sorted(dir.path(), None, SortBy::Savings, &filter).expect("stats");
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked.first().expect("first").path, "a.json");
     }
 }
