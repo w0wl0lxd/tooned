@@ -372,6 +372,59 @@ fn adaptive_bounded_chooses_toon_for_single_row_ndjson() {
         .stdout(predicate::str::contains("[1]{"));
 }
 
+#[test]
+fn dict_tier_engages_by_default_and_respects_protect_and_no_dict() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Repetitive payload: `role` is always "member"; `status` alternates.
+    let mut json = String::from("[");
+    for i in 0..50 {
+        if i > 0 {
+            json.push(',');
+        }
+        let status = if i % 2 == 0 { "active" } else { "inactive" };
+        let _ = write!(
+            json,
+            r#"{{"id":{i},"status":"{status}","name":"user_{i:03}","role":"member"}}"#
+        );
+    }
+    json.push(']');
+    let path = write_fixture(&dir, "input.json", &json);
+
+    let legend = "\u{E000}legend:";
+    let member_sentinel = format!("\u{E000}1");
+
+    // Default: dict tier engages -- legend present, `member` abbreviated
+    // (no verbatim `,member,` in any data row).
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(legend))
+        .stdout(predicate::str::contains(&member_sentinel))
+        .stdout(predicate::str::contains(",member").not());
+
+    // `--no-dict`: no legend, `member` stays verbatim.
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--no-dict"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(legend).not())
+        .stdout(predicate::str::contains(",member"));
+
+    // `--protect role`: `member` kept verbatim, but `active`/`inactive`
+    // are still abbreviated (legend still present for them).
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .args(["convert", path.to_str().expect("utf8 path"), "--protect", "role"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(legend))
+        .stdout(predicate::str::contains(",member"))
+        .stdout(predicate::str::contains(",active,").not());
+}
+
 #[allow(clippy::expect_used)]
 fn write_bytes_fixture(dir: &tempfile::TempDir, name: &str, contents: &[u8]) -> std::path::PathBuf {
     let path = dir.path().join(name);

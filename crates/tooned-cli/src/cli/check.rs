@@ -21,23 +21,23 @@ pub struct CheckArgs {
     pub input: PathBuf,
 
     /// Additionally report BPE-token-based savings (opt-in, FR-023).
-    #[arg(long)]
+    #[arg(short = 'p', long)]
     pub precise: bool,
 
     /// Force the parser's doc type instead of relying on content-sniffing.
-    #[arg(long = "format-hint", value_enum)]
+    #[arg(short = 'f', long = "format-hint", value_enum)]
     pub format_hint: Option<FormatHint>,
 
     /// Minimum savings margin, as a percentage, required to convert (default 2%).
-    #[arg(long)]
+    #[arg(short = 'm', long)]
     pub margin: Option<f64>,
 
     /// Maximum input size in bytes before hard passthrough (default 2 MiB).
-    #[arg(long = "max-bytes")]
+    #[arg(short = 'b', long = "max-bytes")]
     pub max_bytes: Option<u64>,
 
     /// Path to a tooned config file.
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
 }
 
@@ -57,7 +57,16 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
             .and_then(crate::cli::format_hint_from_extension)
     });
     let precise = Some(args.precise || matches!(config.precise_tokens, Some(true)));
-    let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, precise);
+    let opts = config.conversion_options(
+        args.margin,
+        args.max_bytes,
+        format_hint,
+        precise,
+        None,
+        None,
+        None,
+        None,
+    );
 
     let mut reader = match open_input(&args.input) {
         Ok(reader) => reader,
