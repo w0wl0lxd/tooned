@@ -54,11 +54,11 @@ The files listed below were used in the cross-format run. Whether `tooned` itsel
 | `agent-test/records_20.xml` | yes (48.2% byte savings) | XML attributes |
 | `agent-test/config.yaml` | yes (11.7%) | YAML |
 | `agent-test/settings.toml` | no — round-trip mismatch | TOML |
-| `agent-test/sample.json5` | no — not detected as structured data | JSON5 |
+| `agent-test/sample.json5` | no — TOON 2.5% larger | JSON5 |
 | `agent-test/orders_100.ndjson` | no — round-trip mismatch | NDJSON |
 | `agent-test/events_100.ndjson` | yes (52.4%) | NDJSON |
-| `agent-test/products_20.cbor` | no — binary not detected | CBOR |
-| `agent-test/users_20.msgpack` | no — binary not detected | MessagePack |
+| `agent-test/products_20.cbor` | yes (48.6% byte savings) | CBOR |
+| `agent-test/users_20.msgpack` | yes (47.5% byte savings) | MessagePack |
 | `agent-test/data_20.csv` | yes (53.7%) | CSV |
 | `agent-test/data_20.tsv` | yes (53.7%) | TSV |
 | `agent-test/nested_config.json` | yes (3.9%) | nested JSON |

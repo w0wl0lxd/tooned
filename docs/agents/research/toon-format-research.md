@@ -38,11 +38,11 @@ Sources:
 - [toonformat.dev format overview](https://toonformat.dev/guide/format-overview.html)
 - [crates.io: toon-lsp](https://crates.io/crates/toon-lsp)
 
-## Why the complex fixtures did not convert
+## Why the complex fixtures behave as they do
 
 The `tooned check` results below are from the current build:
 
-| Fixture | `tooned check` result | Why it did not convert |
+| Fixture | `tooned check` result | Why it behaves this way |
 |---|---|---|
 | `complex/people_addresses.json` | not convertible — TOON 17.6% larger | Each person object contains a nested `address` object and a `tags` array. TOON tabular encoding requires primitive fields only, so the encoder cannot emit a smaller tabular form. |
 | `complex/ecommerce_orders.json` | not convertible — round-trip mismatch | Each order contains a nested `items` array of objects and `order_id` is protected by the critical-field policy (matches the `id` substring). The default `dict_enabled` path currently fails the round-trip gate for this shape. |
@@ -52,7 +52,7 @@ The `tooned check` results below are from the current build:
 | `complex/mixed_schema.json` | not convertible — TOON 6.9% larger | Irregular, mixed-schema array; TOON cannot beat compact JSON. |
 | `complex/geo_markers.json` | not convertible — TOON 14.3% larger | Variable tags make the objects non-uniform. |
 | `complex/webhooks.toml` | not convertible — TOON 0.7% larger | Array of TOML tables; the difference is within the margin and TOON is slightly larger. |
-| `complex/sample_complex.json5` | not convertible — parse failed | JSON5 is not converted by the default adaptive path. |
+| `complex/sample_complex.json5` | not convertible — TOON 2.5% larger | JSON5 is detected and parsed; the small fixture is slightly larger in TOON, so the size gate keeps the original JSON5. |
 
 For CSV, TSV, and flat NDJSON fixtures such as `events_100.ndjson` and `events_attendees.ndjson`, `tooned` **did** convert to TOON and injected it as `additionalContext`. Those direct-comprehension prompts passed because the model could read the tabular header/row format.
 

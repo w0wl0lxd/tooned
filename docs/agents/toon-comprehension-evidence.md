@@ -1,6 +1,6 @@
 # TOON comprehension evidence
 
-This document backs the claim in [`README.md`](../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
+This document backs the claim in [`README.md`](../../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
 
 ## What is being claimed
 
@@ -52,11 +52,11 @@ Whether `tooned` itself can convert the original file to TOON is irrelevant here
 | `records_20.xml` | XML attributes | yes (48.2% savings) | `SKU-1001` | Direct |
 | `config.yaml` | YAML | yes (11.7%) | `SKU-1001` | Direct |
 | `settings.toml` | TOML | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
-| `sample.json5` | JSON5 | no — not detected as structured data | `SKU-1001` | Direct, original not converted |
+| `sample.json5` | JSON5 | no — TOON 2.5% larger | `SKU-1001` | Direct, original not converted |
 | `orders_100.ndjson` | NDJSON | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
 | `events_100.ndjson` | NDJSON | yes (52.4%) | `SKU-1001` | Direct |
-| `products_20.cbor` | CBOR (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
-| `users_20.msgpack` | MessagePack (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
+| `products_20.cbor` | CBOR (binary) | yes (48.6% savings) | `SKU-1001` | Direct |
+| `users_20.msgpack` | MessagePack (binary) | yes (47.5% savings) | `SKU-1001` | Direct |
 | `data_20.csv` | CSV | yes (53.7%) | `SKU-1001` | Direct |
 | `data_20.tsv` | TSV | yes (53.7%) | `SKU-1001` | Direct |
 | `nested_config.json` | Nested JSON | yes (3.9%) | `SKU-1001` | Direct |
@@ -98,7 +98,7 @@ All 19 prompts produced a correct answer in the tested run. For fixtures marked 
 The same complex fixtures were tested with a mismatch hook that always injected the TOON of `agent-test/products_20.json`.
 
 | # | Fixture | Prompt | Expected | Result | Notes |
-|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | SKU of first product | `SKU-1001` | PASS | — |
 | 2 | `complex/ecommerce_orders.json` | SKU of first product | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; model answered from original JSON |
 | 3 | `complex/company_org.json` | SKU of first product | `SKU-1001` | PASS | — |
