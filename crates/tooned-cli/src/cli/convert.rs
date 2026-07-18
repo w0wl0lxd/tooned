@@ -89,7 +89,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             // to materialize an arbitrarily large file in memory before the cap
             // is consulted (finding: the decode direction previously used the
             // unbounded `read_input`, a local denial-of-memory vector).
-            let cap = ConversionOptions::default().max_input_bytes;
+            let cap = config.conversion_options(None, args.max_bytes, None, None).max_input_bytes;
             let bytes = match crate::cli::io::read_input_bounded(&args.input, cap) {
                 Ok(bytes) => bytes,
                 Err(err) => {

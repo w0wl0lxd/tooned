@@ -325,21 +325,27 @@ pub(crate) fn merge_post_tool_use_entry(
         return false;
     };
 
-    if arr.iter().any(|entry| entry_has_command(entry, command)) {
-        return false;
-    }
-
-    // Also skip insertion if an existing entry is already one of tooned's own
-    // (matched by its command suffix, which is path-independent -- see the
-    // `*_COMMAND_SUFFIX` constants). A reinstall after `tooned` moves on PATH
-    // produces a command string with a different absolute prefix, so the exact
-    // command match above would miss it and append a duplicate; collapsing it
-    // here keeps a single entry while still never touching a foreign tool's
-    // entry (finding: duplicate PostToolUse entries on reinstall).
-    if let Some(suffix) = command_suffix_for(command)
-        && arr.iter().any(|entry| entry_command_ends_with(entry, suffix))
-    {
-        return false;
+    for entry in arr.iter_mut() {
+        let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            continue;
+        };
+        for h in hooks.iter_mut() {
+            let Some(existing) = h.get("command").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if existing == command {
+                return false;
+            }
+            if let Some(suffix) = command_suffix_for(command) {
+                if existing.ends_with(suffix) {
+                    // Reinstall or PATH change: update the existing entry to the
+                    // new binary path in-place rather than leaving a stale path
+                    // behind (finding: duplicate PostToolUse entries on reinstall).
+                    h["command"] = serde_json::json!(command);
+                    return false;
+                }
+            }
+        }
     }
 
     arr.push(serde_json::json!({
@@ -349,6 +355,7 @@ pub(crate) fn merge_post_tool_use_entry(
     true
 }
 
+/// True if any inner `hooks[].command` of `entry` exactly matches `command`.
 fn entry_has_command(entry: &serde_json::Value, command: &str) -> bool {
     entry.get("hooks").and_then(serde_json::Value::as_array).is_some_and(|inner| {
         inner.iter().any(|h| h.get("command").and_then(serde_json::Value::as_str) == Some(command))
@@ -951,8 +958,8 @@ mod tests {
         assert_eq!(arr.len(), 1, "exactly one tooned entry should remain");
         assert_eq!(
             arr[0]["hooks"][0]["command"].as_str().expect("command"),
-            OLD_PATH,
-            "the pre-existing entry must be left untouched"
+            NEW_PATH,
+            "the pre-existing entry must be updated to the new path"
         );
     }
 

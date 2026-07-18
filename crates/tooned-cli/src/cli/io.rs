@@ -34,26 +34,28 @@ pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
 /// converted, so there is no reason to buffer the whole file first. Returns an
 /// error if the input exceeds `cap`.
 pub fn read_input_bounded(path: &Path, cap: usize) -> io::Result<Vec<u8>> {
-    if path == Path::new("-") {
-        let mut buf = Vec::new();
-        let mut reader = io::stdin();
-        (&mut reader).take((cap as u64).saturating_add(1)).read_to_end(&mut buf)?;
-        if buf.len() > cap {
+    // For regular files we can short-circuit on the metadata size, but for
+    // stdin, FIFOs, device files, and files that may grow between the stat
+    // and the read, we still enforce the cap while reading.
+    if path != Path::new("-") {
+        let meta = std::fs::metadata(path)?;
+        if meta.is_file() && meta.len() > cap as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::OutOfMemory,
                 "input exceeds the decode size cap",
             ));
         }
-        return Ok(buf);
     }
-    let meta = std::fs::metadata(path)?;
-    if meta.len() > cap as u64 {
+    let reader = open_input(path)?;
+    let mut buf = Vec::new();
+    reader.take((cap as u64).saturating_add(1)).read_to_end(&mut buf)?;
+    if buf.len() > cap {
         return Err(io::Error::new(
             io::ErrorKind::OutOfMemory,
             "input exceeds the decode size cap",
         ));
     }
-    std::fs::read(path)
+    Ok(buf)
 }
 
 /// Writes `bytes` to `out`, or to stdout when `out` is `None` or `Some("-")`.

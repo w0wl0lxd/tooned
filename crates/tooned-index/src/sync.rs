@@ -56,10 +56,16 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
         visited += 1;
         enforce_walk_cap(visited)?;
 
-        let Ok(entry) = entry else {
-            // A yielded entry we can't read is transient; record it as seen so
-            // the prune pass does not delete a row for a file that still exists.
-            continue;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                // A yielded entry we can't read is transient; record it as seen so
+                // the prune pass does not delete a row for a file that still exists.
+                if let ignore::Error::WithPath { path, .. } = err {
+                    seen.insert(path.to_string_lossy().into_owned());
+                }
+                continue;
+            }
         };
         let Some(file_type) = entry.file_type() else {
             // No file type (rare); treat as seen so the prune pass does not
