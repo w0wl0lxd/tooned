@@ -3373,6 +3373,8 @@ dependencies = [
  "tooned-core",
  "tooned-index",
  "tooned-metrics",
+ "tooned-token",
+ "tooned-types",
  "tui-bar-graph",
  "tui-big-text",
  "winapi-util",
@@ -3473,6 +3475,7 @@ dependencies = [
  "sonic-rs",
  "tempfile",
  "thiserror 2.0.18",
+ "tooned-types",
 ]
 
 [[package]]
@@ -3480,6 +3483,17 @@ name = "tooned-parse"
 version = "0.1.1"
 dependencies = [
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tooned-token"
+version = "0.1.1"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "tooned-types",
 ]
 
 [[package]]
@@ -3505,6 +3519,7 @@ dependencies = [
 name = "tooned-types"
 version = "0.1.1"
 dependencies = [
+ "serde",
  "thiserror 2.0.18",
 ]
 
