@@ -2,11 +2,13 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! Contract test for `tooned stats [path] [--top N]` (T053).
+//! Contract test for `tooned stats [path] [--top N] [--sort-by savings|count|recency]` (T053).
 //! See `specs/001-adaptive-toon-conversion/contracts/cli.md`.
 
 use std::fmt::Write as _;
 use std::fs;
+use std::thread;
+use std::time::Duration;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -176,4 +178,54 @@ fn stats_json_top_n_limits_result_count() {
             .expect("path string"),
         "c.json"
     );
+}
+
+#[test]
+fn stats_sort_by_savings_flag_matches_default_ordering() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("low.json"), uniform_array_json(20, 2)).expect("write low.json");
+    fs::write(dir.path().join("mid.json"), uniform_array_json(20, 10)).expect("write mid.json");
+    fs::write(dir.path().join("high.json"), uniform_array_json(20, 30)).expect("write high.json");
+    run_index(dir.path()).expect("run_index");
+
+    let output = Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["stats", "--sort-by", "savings", "--json"])
+        .output()
+        .expect("run stats --sort-by savings");
+    assert!(output.status.success());
+    let parsed: Vec<Value> =
+        serde_json::from_str(&String::from_utf8(output.stdout).expect("utf8")).expect("valid JSON");
+    assert_eq!(parsed.first().expect("first").get("path").unwrap().as_str().unwrap(), "high.json");
+}
+
+#[test]
+fn stats_sort_by_recency_prefers_newer_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("old.json"), uniform_array_json(20, 10)).expect("write old.json");
+    run_index(dir.path()).expect("run_index");
+
+    thread::sleep(Duration::from_secs(1));
+
+    fs::write(dir.path().join("new.json"), uniform_array_json(20, 10)).expect("write new.json");
+    Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["index", "sync"])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("tooned")
+        .expect("binary exists")
+        .current_dir(dir.path())
+        .args(["stats", "--sort-by", "recency", "--json"])
+        .output()
+        .expect("run stats --sort-by recency");
+    assert!(output.status.success());
+    let parsed: Vec<Value> =
+        serde_json::from_str(&String::from_utf8(output.stdout).expect("utf8")).expect("valid JSON");
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed.first().unwrap().get("path").unwrap().as_str().unwrap(), "new.json");
+    assert_eq!(parsed.get(1).expect("second").get("path").unwrap().as_str().unwrap(), "old.json");
 }
