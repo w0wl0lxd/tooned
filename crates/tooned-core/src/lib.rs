@@ -45,13 +45,18 @@ pub mod xml {
 use std::path::{Path, PathBuf};
 
 /// Nearest ancestor of (or including) `start` that contains a `.tooned/`
-/// directory, used to locate a project-scoped index or metrics ledger.
-/// Falls back to `start` itself when no ancestor qualifies (so callers can
-/// still operate on a cwd that has not been indexed yet).
+/// directory or a `flake.nix` file, used to locate a project-scoped index or
+/// metrics ledger. Flake roots are treated as project roots so `tooned index`
+/// works out of the box in Nix flake repositories. Falls back to `start`
+/// itself when no ancestor qualifies (so callers can still operate on a cwd
+/// that has not been indexed yet).
 pub fn project_root(start: &Path) -> PathBuf {
     let mut dir = start;
     loop {
         if dir.join(".tooned").is_dir() {
+            return dir.to_path_buf();
+        }
+        if dir.join("flake.nix").is_file() {
             return dir.to_path_buf();
         }
         match dir.parent() {

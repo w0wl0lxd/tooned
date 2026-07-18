@@ -30,6 +30,10 @@ pub struct IndexArgs {
     #[arg(long, value_name = "GLOB")]
     pub exclude: Vec<String>,
 
+    /// Also index local `path`-type flake inputs discovered in `flake.lock`.
+    #[arg(long)]
+    pub include_flake_inputs: bool,
+
     #[command(subcommand)]
     pub command: Option<IndexSubcommand>,
 }
@@ -45,6 +49,9 @@ pub enum IndexSubcommand {
         /// Exclude paths matching these gitignore-style globs (repeatable).
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
+        /// Also index local `path`-type flake inputs discovered in `flake.lock`.
+        #[arg(long)]
+        include_flake_inputs: bool,
     },
     /// Reports index existence, file count, last scan time.
     Status { path: Option<PathBuf> },
@@ -65,14 +72,18 @@ pub enum IndexSubcommand {
         /// Exclude paths matching these gitignore-style globs (repeatable).
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
+        /// Also index local `path`-type flake inputs discovered in `flake.lock`.
+        #[arg(long)]
+        include_flake_inputs: bool,
     },
 }
 
 fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
-    match path {
+    let start = match path {
         Some(p) => p.clone(),
         None => PathBuf::from("."),
-    }
+    };
+    tooned_core::project_root(&start)
 }
 
 fn build_filter(type_filter: Option<&String>, exclude: &[String]) -> anyhow::Result<IndexFilter> {
@@ -91,18 +102,24 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
     match &args.command {
         None => {
             let filter = build_filter(args.type_filter.as_ref(), &args.exclude)?;
-            run_scan(&resolve_project_root(args.path.as_ref()), &filter)
+            run_scan(&resolve_project_root(args.path.as_ref()), &filter, args.include_flake_inputs)
         }
-        Some(IndexSubcommand::Sync { path, type_filter, exclude }) => {
+        Some(IndexSubcommand::Sync { path, type_filter, exclude, include_flake_inputs }) => {
             let filter = build_filter(type_filter.as_ref(), exclude)?;
-            run_sync(&resolve_project_root(path.as_ref()), &filter)
+            run_sync(&resolve_project_root(path.as_ref()), &filter, *include_flake_inputs)
         }
         Some(IndexSubcommand::Status { path }) => run_status(&resolve_project_root(path.as_ref())),
         Some(IndexSubcommand::Show { file }) => run_show(file),
         Some(IndexSubcommand::Compact { path }) => {
             run_compact(&resolve_project_root(path.as_ref()))
         }
-        Some(IndexSubcommand::Watch { path, debounce_ms, type_filter, exclude }) => {
+        Some(IndexSubcommand::Watch {
+            path,
+            debounce_ms,
+            type_filter,
+            exclude,
+            include_flake_inputs,
+        }) => {
             let config = Config::load(None)?;
             let configured_debounce = config.watch.as_ref().and_then(|w| w.debounce_ms);
             // `clippy::disallowed_methods` forbids `unwrap_or` (silent default),
@@ -114,18 +131,38 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
                 None => 1000,
             };
             let _filter = build_filter(type_filter.as_ref(), exclude)?;
+            if *include_flake_inputs {
+                eprintln!(
+                    "tooned index watch: --include-flake-inputs is not yet supported for watch mode"
+                );
+            }
             Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), debounce)?)
         }
     }
 }
 
-fn run_scan(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
+fn run_scan(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> anyhow::Result<()> {
     if !root.is_dir() {
         eprintln!("tooned index: path not found: {}", root.display());
         std::process::exit(2);
     }
 
-    let summary = tooned_index::scan_full(root, filter)?;
+    let mut summary = tooned_index::scan_full(root, filter)?;
+    if include_flake_inputs {
+        for input in tooned_index::flake_inputs(root) {
+            if input.is_dir() {
+                match tooned_index::scan_full(&input, filter) {
+                    Ok(s) => {
+                        summary.files_scanned += s.files_scanned;
+                        summary.files_classified += s.files_classified;
+                    }
+                    Err(err) => {
+                        eprintln!("tooned index: skipping flake input {}: {err}", input.display());
+                    }
+                }
+            }
+        }
+    }
     println!(
         "Indexed {} file(s) ({} classified) at {}",
         summary.files_scanned,
@@ -136,23 +173,9 @@ fn run_scan(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_sync(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
-    match tooned_index::sync(root, filter) {
-        Ok(summary) => {
-            println!(
-                "Synced {}: {} added, {} updated, {} unchanged, {} removed",
-                root.display(),
-                summary.added,
-                summary.updated,
-                summary.unchanged,
-                summary.removed
-            );
-            crate::metrics_recorder::record_activity(
-                crate::metrics_recorder::CliSurface::Index,
-                "sync",
-            );
-            Ok(())
-        }
+fn run_sync(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> anyhow::Result<()> {
+    let mut summary = match tooned_index::sync(root, filter) {
+        Ok(summary) => summary,
         Err(tooned_index::IndexError::NoIndex(path)) => {
             eprintln!(
                 "tooned index sync: no existing index at {}; run `tooned index` first",
@@ -160,8 +183,51 @@ fn run_sync(root: &Path, filter: &IndexFilter) -> anyhow::Result<()> {
             );
             std::process::exit(1);
         }
-        Err(other) => Err(other.into()),
+        Err(other) => return Err(other.into()),
+    };
+
+    if include_flake_inputs {
+        for input in tooned_index::flake_inputs(root) {
+            if !input.is_dir() {
+                continue;
+            }
+            match tooned_index::sync(&input, filter) {
+                Ok(s) => {
+                    summary.added += s.added;
+                    summary.updated += s.updated;
+                    summary.unchanged += s.unchanged;
+                    summary.removed += s.removed;
+                }
+                Err(tooned_index::IndexError::NoIndex(_)) => {
+                    match tooned_index::scan_full(&input, filter) {
+                        Ok(s) => {
+                            summary.added += s.files_scanned;
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "tooned index sync: skipping flake input {}: {err}",
+                                input.display()
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!("tooned index sync: skipping flake input {}: {err}", input.display());
+                }
+            }
+        }
     }
+
+    println!(
+        "Synced {}: {} added, {} updated, {} unchanged, {} removed",
+        root.display(),
+        summary.added,
+        summary.updated,
+        summary.unchanged,
+        summary.removed
+    );
+    crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Index, "sync");
+    Ok(())
 }
 
 fn run_status(root: &Path) -> anyhow::Result<()> {
