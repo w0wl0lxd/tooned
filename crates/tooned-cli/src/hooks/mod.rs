@@ -336,14 +336,14 @@ pub(crate) fn merge_post_tool_use_entry(
             if existing == command {
                 return false;
             }
-            if let Some(suffix) = command_suffix_for(command) {
-                if existing.ends_with(suffix) {
-                    // Reinstall or PATH change: update the existing entry to the
-                    // new binary path in-place rather than leaving a stale path
-                    // behind (finding: duplicate PostToolUse entries on reinstall).
-                    h["command"] = serde_json::json!(command);
-                    return false;
-                }
+            if let Some(suffix) = command_suffix_for(command)
+                && existing.ends_with(suffix)
+            {
+                // Reinstall or PATH change: update the existing entry to the
+                // new binary path in-place rather than leaving a stale path
+                // behind (finding: duplicate PostToolUse entries on reinstall).
+                h["command"] = serde_json::json!(command);
+                return false;
             }
         }
     }
