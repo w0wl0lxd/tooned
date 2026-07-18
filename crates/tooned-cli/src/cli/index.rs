@@ -53,10 +53,10 @@ pub enum IndexSubcommand {
     Sync {
         path: Option<PathBuf>,
         /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
-        #[arg(long, value_name = "TYPE")]
+        #[arg(short = 't', long, value_name = "TYPE")]
         type_filter: Option<String>,
         /// Exclude paths matching these gitignore-style globs (repeatable).
-        #[arg(long, value_name = "GLOB")]
+        #[arg(short = 'x', long, value_name = "GLOB")]
         exclude: Vec<String>,
         /// Emit the result as machine-readable JSON.
         #[arg(short = 'j', long)]
@@ -105,9 +105,6 @@ pub enum IndexSubcommand {
         /// Exclude paths matching these gitignore-style globs (repeatable).
         #[arg(short = 'x', long, value_name = "GLOB")]
         exclude: Vec<String>,
-        /// Emit the result as machine-readable JSON.
-        #[arg(short = 'j', long)]
-        json: bool,
         /// Also index local `path`-type flake inputs discovered in `flake.lock`.
         #[arg(long)]
         include_flake_inputs: bool,
@@ -228,7 +225,6 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
             debounce_ms,
             type_filter,
             exclude,
-            json,
             include_flake_inputs,
         }) => {
             let config = Config::load(None)?;
@@ -242,8 +238,6 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
                 None => 1000,
             };
             let _filter = build_filter(type_filter.as_ref(), exclude)?;
-            // `watch` runs continuously; JSON is a no-op here.
-            let _ = json;
             if *include_flake_inputs {
                 eprintln!(
                     "tooned index watch: --include-flake-inputs is not yet supported for watch mode"

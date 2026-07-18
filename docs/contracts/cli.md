@@ -67,8 +67,10 @@ So `--margin 5` always overrides `margin_pct = 2.0` in a config file.
 ### `tooned diff <file>`
 
 - Compares the original structured value with the TOON round-trip.
-- Exits `0` when identical, `2` when TOON is not produced or round-trips
-  differently, `3` on a round-trip mismatch.
+- Exits `0` when identical.
+- Exits `2` when the input is not convertible to TOON (passthrough) or TOON is
+  not produced.
+- Exits `3` when the TOON round-trip produces a different structured value.
 - `--json` emits `{"equal": true|false, "diff": "..."}`.
 
 ### `tooned lint <file|->`
@@ -93,6 +95,10 @@ So `--margin 5` always overrides `margin_pct = 2.0` in a config file.
 - `--metric tokens|bytes` controls the displayed unit.
 - `--since` and `--until` filter the window; the default window is the last
   365 days.
+- `export` supports `--format json|csv|prometheus|otel` (default `json`) and
+  writes to stdout or `--out <path>`. With `--push-url`, it pushes the formatted
+  metrics to the given endpoint on `--push-interval` seconds (default `60`)
+  using `curl` and loops until interrupted.
 
 ### `tooned heatmap` / `tooned dashboard`
 
