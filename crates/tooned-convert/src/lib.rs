@@ -233,15 +233,17 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // Dict tier (#1): inline repeated cell values behind a legend. Only
     // engaged when it strictly shrinks the output (net-win gate inside
     // `apply_dict`), and never for keys matched by the critical-field policy
-    // (#3) so semantically-load-bearing columns stay verbatim.
-    let protected_keys = extract_protected_keys(&value, &opts.critical_policy);
-    let encoded = if opts.dict_enabled {
-        match apply_dict(&encoded, &protected_keys) {
+    // (#3) so semantically-load-bearing columns stay verbatim. Avoid computing
+    // protected keys entirely when the dictionary tier is disabled.
+    let (encoded, protected_keys) = if opts.dict_enabled {
+        let protected_keys = extract_protected_keys(&value, &opts.critical_policy);
+        let encoded = match apply_dict(&encoded, &protected_keys) {
             Some(dict_encoded) => dict_encoded,
             None => encoded,
-        }
+        };
+        (encoded, protected_keys)
     } else {
-        encoded
+        (encoded, Vec::new())
     };
     let toon_bytes = encoded.len();
 
@@ -347,12 +349,16 @@ pub(crate) fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
 /// critical-field policy (#3) protects from TOON's dict-tier inlining, so
 /// semantically-load-bearing fields always decode verbatim.
 fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<String> {
-    let mut keys = Vec::new();
+    if policy.protected.is_empty() {
+        return Vec::new();
+    }
+
+    let mut keys = std::collections::HashSet::new();
     match value {
         Value::Object(map) => {
             for k in map.keys() {
                 if policy.is_protected(k) {
-                    keys.push(k.clone());
+                    keys.insert(k.clone());
                 }
             }
         }
@@ -360,8 +366,8 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
             for item in arr {
                 if let Value::Object(map) = item {
                     for k in map.keys() {
-                        if policy.is_protected(k) && !keys.contains(k) {
-                            keys.push(k.clone());
+                        if policy.is_protected(k) {
+                            keys.insert(k.clone());
                         }
                     }
                 }
@@ -369,7 +375,7 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
         }
         _ => {}
     }
-    keys
+    keys.into_iter().collect()
 }
 
 /// Recursively sort the keys of every object in `value` (F4). Returns a new

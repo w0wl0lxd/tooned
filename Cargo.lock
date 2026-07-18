@@ -3370,6 +3370,7 @@ dependencies = [
  "tokio",
  "toml",
  "tooned-core",
+ "tooned-detect",
  "tooned-index",
  "tooned-metrics",
  "tooned-token",
