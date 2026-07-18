@@ -46,19 +46,18 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
         )));
     }
 
-    let headers = headers.clone();
+    // Convert header names to owned `String`s once; do not re-convert them
+    // for every row and field.
+    let header_keys: Vec<String> = headers.iter().map(ToString::to_string).collect();
 
     #[allow(clippy::naive_bytecount)]
     let estimated_rows = input.iter().filter(|&&b| b == b'\n').count() + 1;
     let mut rows = Vec::with_capacity(estimated_rows);
     for record in reader.records() {
         let record = record.map_err(|e| ParseError::Csv(e.to_string()))?;
-        let mut map = Map::new();
+        let mut map = Map::with_capacity(header_keys.len());
         for (i, field) in record.iter().enumerate() {
-            let key = match headers.get(i) {
-                Some(k) => k.to_string(),
-                None => format!("field_{i}"),
-            };
+            let key = header_keys.get(i).cloned().unwrap_or_else(|| format!("field_{i}"));
             map.insert(key, Value::String(field.to_string()));
         }
         rows.push(Value::Object(map));
@@ -131,12 +130,9 @@ impl<R: BufRead> Iterator for CsvStream<R> {
             None => return None,
         };
 
-        let mut map = Map::new();
+        let mut map = Map::with_capacity(headers.len());
         for (i, field) in record.iter().enumerate() {
-            let key = match headers.get(i) {
-                Some(k) => k.clone(),
-                None => format!("field_{i}"),
-            };
+            let key = headers.get(i).cloned().unwrap_or_else(|| format!("field_{i}"));
             map.insert(key, Value::String(field.to_string()));
         }
         Some(Ok(Value::Object(map)))
@@ -200,12 +196,9 @@ impl<R: BufRead> Iterator for TsvStream<R> {
             None => return None,
         };
 
-        let mut map = Map::new();
+        let mut map = Map::with_capacity(headers.len());
         for (i, field) in record.iter().enumerate() {
-            let key = match headers.get(i) {
-                Some(k) => k.clone(),
-                None => format!("field_{i}"),
-            };
+            let key = headers.get(i).cloned().unwrap_or_else(|| format!("field_{i}"));
             map.insert(key, Value::String(field.to_string()));
         }
         Some(Ok(Value::Object(map)))

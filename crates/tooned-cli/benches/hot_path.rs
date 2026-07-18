@@ -10,7 +10,8 @@ use std::fmt::Write as _;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use tooned_core::{ConversionOptions, maybe_tooned};
+use tooned_core::{ConversionOptions, DocType, maybe_tooned, parse_to_value};
+use tooned_detect::detect;
 
 // --- payload generators ------------------------------------------------------
 
@@ -238,7 +239,74 @@ fn bench_challenging_shapes(c: &mut Criterion) {
         let opts = ConversionOptions::default();
         b.iter(|| maybe_tooned(black_box(p), black_box(&opts)));
     });
+    group.finish();
+}
 
+fn bench_csv_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("csv_sizes");
+    for rows in [100, 500, 1750, 5000, 10_000] {
+        let payload = uniform_csv(rows);
+        group.throughput(Throughput::Bytes(payload.len() as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(rows), &payload, |b, p| {
+            let opts = ConversionOptions::default();
+            b.iter(|| maybe_tooned(black_box(p), black_box(&opts)));
+        });
+    }
+    group.finish();
+}
+
+fn bench_ndjson_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ndjson_sizes");
+    for rows in [100, 500, 1750, 5000, 10_000] {
+        let payload = uniform_ndjson(rows);
+        group.throughput(Throughput::Bytes(payload.len() as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(rows), &payload, |b, p| {
+            let opts = ConversionOptions::default();
+            b.iter(|| maybe_tooned(black_box(p), black_box(&opts)));
+        });
+    }
+    group.finish();
+}
+
+fn bench_parse_only(c: &mut Criterion) {
+    let payloads: Vec<(&str, DocType, Vec<u8>)> = vec![
+        ("json", DocType::Json, uniform_json(1750)),
+        ("ndjson", DocType::NdJson, uniform_ndjson(1750)),
+        ("csv", DocType::Csv, uniform_csv(3500)),
+        ("tsv", DocType::Tsv, uniform_tsv(3500)),
+        ("xml", DocType::Xml, uniform_xml(1650)),
+        ("toml", DocType::Toml, toml_tables(2500)),
+        ("yaml", DocType::Yaml, yaml_list(2500)),
+    ];
+
+    let mut group = c.benchmark_group("parse_only_100kib");
+    for (name, doc_type, payload) in payloads {
+        group.throughput(Throughput::Bytes(payload.len() as u64));
+        group.bench_with_input(BenchmarkId::new("parse_to_value", name), &payload, |b, p| {
+            b.iter(|| parse_to_value(black_box(p), black_box(Some(doc_type))));
+        });
+    }
+    group.finish();
+}
+
+fn bench_detect(c: &mut Criterion) {
+    let payloads: Vec<(&str, Vec<u8>)> = vec![
+        ("json", uniform_json(1750)),
+        ("ndjson", uniform_ndjson(1750)),
+        ("csv", uniform_csv(3500)),
+        ("tsv", uniform_tsv(3500)),
+        ("xml", uniform_xml(1650)),
+        ("toml", toml_tables(2500)),
+        ("yaml", yaml_list(2500)),
+    ];
+
+    let mut group = c.benchmark_group("detect_100kib");
+    for (name, payload) in payloads {
+        group.throughput(Throughput::Bytes(payload.len() as u64));
+        group.bench_with_input(BenchmarkId::new("detect", name), &payload, |b, p| {
+            b.iter(|| detect(black_box(p), black_box(None)));
+        });
+    }
     group.finish();
 }
 
@@ -246,7 +314,11 @@ criterion_group!(
     benches,
     bench_formats_100kib,
     bench_json_sizes,
+    bench_csv_sizes,
+    bench_ndjson_sizes,
     bench_json_options,
-    bench_challenging_shapes
+    bench_challenging_shapes,
+    bench_parse_only,
+    bench_detect
 );
 criterion_main!(benches);

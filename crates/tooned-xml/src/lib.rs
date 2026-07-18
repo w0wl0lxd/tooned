@@ -311,8 +311,7 @@ fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, Par
             Event::Empty(e) => {
                 let name = local_name(&e, opts)?;
                 let attrs = collect_attrs(&e, opts, version)?;
-                let frame = ElementFrame { name: name.clone(), attrs, children: Vec::new() };
-                let value = finalize_element(frame, opts);
+                let value = finalize_element(Vec::new(), attrs, opts);
                 insert_child_or_root(&mut stack, &mut root, name, value)?;
             }
             Event::End(e) => {
@@ -326,8 +325,8 @@ fn parse_with_options(input: &[u8], opts: &XmlParseOptions) -> Result<Value, Par
                         frame.name
                     )));
                 }
-                let name = frame.name.clone();
-                let value = finalize_element(frame, opts);
+                let name = frame.name;
+                let value = finalize_element(frame.children, frame.attrs, opts);
                 insert_child_or_root(&mut stack, &mut root, name, value)?;
             }
             Event::Text(e) => {
@@ -461,16 +460,19 @@ fn cdata_value(e: &quick_xml::events::BytesCData<'_>) -> Result<String, ParseErr
     Ok(value.into_owned())
 }
 
-fn finalize_element(frame: ElementFrame, opts: &XmlParseOptions) -> Value {
-    let has_text = frame.children.iter().any(|c| matches!(c, ChildNode::Text(_)));
-    let has_elements = frame.children.iter().any(|c| matches!(c, ChildNode::Element(_, _)));
+fn finalize_element(
+    children: Vec<ChildNode>,
+    attrs: Map<String, Value>,
+    opts: &XmlParseOptions,
+) -> Value {
+    let has_text = children.iter().any(|c| matches!(c, ChildNode::Text(_)));
+    let has_elements = children.iter().any(|c| matches!(c, ChildNode::Element(_, _)));
 
     if has_elements && has_text {
         // Mixed content: preserve order as an array of {"#text": ...} and
         // {"tag": value} nodes. If attributes are present, wrap them around a
         // "$mixed" array so the JSON shape stays unambiguous.
-        let mixed: Vec<Value> = frame
-            .children
+        let mixed: Vec<Value> = children
             .into_iter()
             .map(|c| match c {
                 ChildNode::Text(t) => {
@@ -485,45 +487,44 @@ fn finalize_element(frame: ElementFrame, opts: &XmlParseOptions) -> Value {
                 }
             })
             .collect();
-        if frame.attrs.is_empty() {
+        if attrs.is_empty() {
             Value::Array(mixed)
         } else {
-            let mut obj = frame.attrs;
+            let mut obj = attrs;
             obj.insert("$mixed".to_string(), Value::Array(mixed));
             Value::Object(obj)
         }
     } else if has_elements {
         let mut grouped: Map<String, Value> = Map::new();
-        for child in frame.children {
+        for child in children {
             if let ChildNode::Element(tag, value) = child {
                 append_or_insert(&mut grouped, tag, value);
             }
         }
-        let mut obj = frame.attrs;
+        let mut obj = attrs;
         for (k, v) in grouped {
             obj.insert(k, v);
         }
         Value::Object(obj)
     } else if has_text {
-        let text: String = frame
-            .children
+        let text: String = children
             .into_iter()
             .filter_map(|c| match c {
                 ChildNode::Text(t) => Some(t),
                 ChildNode::Element(_, _) => None,
             })
             .collect();
-        if frame.attrs.is_empty() {
+        if attrs.is_empty() {
             Value::String(text)
         } else {
-            let mut obj = frame.attrs;
+            let mut obj = attrs;
             obj.insert(opts.text_key.clone(), Value::String(text));
             Value::Object(obj)
         }
-    } else if frame.attrs.is_empty() {
+    } else if attrs.is_empty() {
         Value::Object(Map::new())
     } else {
-        Value::Object(frame.attrs)
+        Value::Object(attrs)
     }
 }
 

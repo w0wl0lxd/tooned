@@ -56,6 +56,17 @@ fn bench_apply_dict(c: &mut Criterion) {
         },
     );
 
+    let protected_table = uniform_table(1000, "this_is_a_very_long_repeated_value");
+    group.throughput(Throughput::Bytes(protected_table.len() as u64));
+    group.bench_with_input(
+        BenchmarkId::new("protected_table", "1000"),
+        &protected_table,
+        |b, toon| {
+            let protected: Vec<String> = vec!["role".to_string()];
+            b.iter(|| apply_dict(black_box(toon), black_box(&protected)));
+        },
+    );
+
     group.finish();
 }
 
@@ -72,5 +83,17 @@ fn bench_expand_legend(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_apply_dict, bench_expand_legend);
+fn bench_expand_legend_object(c: &mut Criterion) {
+    let Some(toon) = apply_dict(&object_document("this_is_a_very_long_repeated_value"), &[]) else {
+        return;
+    };
+    let mut group = c.benchmark_group("expand_legend_object");
+    group.throughput(Throughput::Bytes(toon.len() as u64));
+    group.bench_function("expand_legend_object", |b| {
+        b.iter(|| expand_legend(black_box(&toon), black_box(usize::MAX)));
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_apply_dict, bench_expand_legend, bench_expand_legend_object);
 criterion_main!(benches);
