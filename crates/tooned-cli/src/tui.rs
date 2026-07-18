@@ -704,3 +704,71 @@ pub fn run(path: &Path, window: &MetricsWindow, global: bool) -> anyhow::Result<
     ratatui::restore();
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use tooned_metrics::{EventKind, Metric, QueryOpts, RecordBuilder, Store};
+
+    fn sample_window() -> MetricsWindow {
+        MetricsWindow { since: None, until: None, metric: None, opportunity: false, surface: None }
+    }
+
+    fn seed_store(path: &std::path::Path) -> Store {
+        let store = Store::open(path).expect("open temp metrics db");
+        let event = RecordBuilder::new("hook:claude")
+            .kind(EventKind::Actual)
+            .at(tooned_metrics::store::now_unix())
+            .sizes(1000, 500)
+            .converted(true)
+            .source_label(Some("src/main.rs".into()))
+            .build();
+        store.record(&event).expect("record sample event");
+        store
+    }
+
+    #[test]
+    fn dashboard_renders_summary_and_agents_tabs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = seed_store(&db);
+        let data =
+            DashboardData::load(&store, Metric::Tokens, &QueryOpts::default()).expect("load data");
+        let mut app = App::new(db, sample_window(), false, data);
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+
+        terminal.draw(|frame| app.draw(frame)).expect("draw summary");
+        let buffer = terminal.backend().buffer();
+        let text: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Summary"), "rendered dashboard should contain Summary tab: {text}");
+
+        app.handle_key(KeyEvent::from(KeyCode::Char('4'))).expect("switch to Agents");
+        terminal.draw(|frame| app.draw(frame)).expect("draw agents");
+        let buffer = terminal.backend().buffer();
+        let text: String = buffer.content().iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Per-agent breakdown"), "rendered Agents tab should exist: {text}");
+        assert!(text.contains("hook"), "rendered Agents tab should list the surface: {text}");
+    }
+
+    #[test]
+    fn dashboard_cycles_tabs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = seed_store(&db);
+        let data =
+            DashboardData::load(&store, Metric::Tokens, &QueryOpts::default()).expect("load data");
+        let mut app = App::new(db, sample_window(), false, data);
+
+        let key = KeyEvent::from(KeyCode::Char('4'));
+        app.handle_key(key).expect("handle key");
+        assert_eq!(app.tab, Tab::Agents, "key '4' should switch to Agents tab");
+
+        let key = KeyEvent::from(KeyCode::Char('6'));
+        app.handle_key(key).expect("handle key");
+        assert_eq!(app.tab, Tab::Heatmap, "key '6' should switch to Heatmap tab");
+    }
+}
