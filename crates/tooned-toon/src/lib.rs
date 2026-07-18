@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! TOON encode/decode wrapper.
+//!
+//! The underlying codec lives in [`toon_lsp::toon`]; this crate layers on the
+//! lossless dictionary tier and a fail-closed round-trip gate used by the
+//! conversion pipeline.
 
 pub mod dict;
 pub use dict::{apply_dict, expand_legend};
@@ -10,34 +14,47 @@ use toon_lsp::toon::{Delimiter, ToonConfig, decode_with_config, encode_with_conf
 use tooned_parse::exceeds_max_structural_depth;
 use tooned_types::{ConversionOptions, ToonedError};
 
-/// TOON codec configuration used by tooned: key folding is enabled for more
-/// compact nested objects, and path expansion is enabled so the inverse decode
-/// reconstructs the original structure.
-const TOON_CFG: ToonConfig = ToonConfig {
-    indent: 2,
-    delimiter: Delimiter::Comma,
-    fold_keys: true,
-    flatten_keys: false,
-    expand_paths: true,
-    preserve_number_types: true,
-};
+/// Build a [`ToonConfig`] from [`ConversionOptions`].
+///
+/// The tooned defaults prefer compact nested-object output while remaining
+/// lossless: key folding is on, path expansion is on so the inverse decode
+/// reconstructs the original structure, and numeric types are preserved.
+#[must_use]
+pub fn toon_config(opts: &ConversionOptions) -> ToonConfig {
+    ToonConfig {
+        indent: 2,
+        delimiter: Delimiter::Comma,
+        fold_keys: opts.fold_keys,
+        flatten_keys: opts.flatten_keys,
+        expand_paths: opts.expand_paths,
+        preserve_number_types: opts.preserve_number_types,
+    }
+}
 
-/// Encodes a `serde_json::Value` into TOON format.
+/// Encodes a `serde_json::Value` into TOON format using the default options.
 ///
 /// Enforces the round-trip fidelity guarantee the conversion pipeline relies on
 /// (`attempt`/`maybe_onto`/`maybe_tron` all assert `decode(encode(x)) == x`):
 /// after encoding it decodes the result and compares it to the original
 /// `value`, returning [`ToonedError::DecodeFailed`] when they differ.
 pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
-    let encoded = encode_with_config(value, &TOON_CFG)
-        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-    let round_trip_ok =
-        match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
-            Ok(decoded) => decoded == *value,
-            // A decode failure means the encoding is not faithfully reversible, so
-            // it is not lossless -- fail closed (refuse to emit).
-            Err(_) => false,
-        };
+    encode_toon_with_options(value, &ConversionOptions::default())
+}
+
+/// Encodes a `serde_json::Value` into TOON format with caller-supplied options.
+///
+/// Fails closed when the result does not round-trip under the same options.
+pub fn encode_toon_with_options(
+    value: &Value,
+    opts: &ConversionOptions,
+) -> Result<String, ToonedError> {
+    let encoded = encode_toon_raw_with_options(value, opts)?;
+    let round_trip_ok = match decode_toon_with_options(&encoded, opts) {
+        Ok(decoded) => decoded == *value,
+        // A decode failure means the encoding is not faithfully reversible, so
+        // it is not lossless -- fail closed (refuse to emit).
+        Err(_) => false,
+    };
     if !round_trip_ok {
         return Err(ToonedError::DecodeFailed(
             "TOON encoding is not lossless for this value; refusing to emit a corrupt encoding"
@@ -56,7 +73,16 @@ pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
 /// Direct callers that do NOT perform their own round-trip check should use
 /// [`encode_toon`] instead, which fails closed on lossy values.
 pub fn encode_toon_raw(value: &Value) -> Result<String, ToonedError> {
-    encode_with_config(value, &TOON_CFG).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    encode_toon_raw_with_options(value, &ConversionOptions::default())
+}
+
+/// Raw TOON encode with caller-supplied options and no round-trip fidelity check.
+pub fn encode_toon_raw_with_options(
+    value: &Value,
+    opts: &ConversionOptions,
+) -> Result<String, ToonedError> {
+    encode_with_config(value, &toon_config(opts))
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
 /// Decodes a TOON document back into a structured [`serde_json::Value`].
@@ -76,7 +102,28 @@ pub fn encode_toon_raw(value: &Value) -> Result<String, ToonedError> {
 /// `max_input_bytes` cap, [`ToonedError::DecodeFailed`] when `text` exceeds
 /// the safe structural-nesting depth or is otherwise not valid TOON.
 pub fn decode_toon(text: &str) -> Result<Value, ToonedError> {
-    decode_toon_with_limit(text, ConversionOptions::default().max_input_bytes)
+    decode_toon_with_options(text, &ConversionOptions::default())
+}
+
+/// Decodes a TOON document using caller-supplied options.
+pub fn decode_toon_with_options(
+    text: &str,
+    opts: &ConversionOptions,
+) -> Result<Value, ToonedError> {
+    if text.len() > opts.max_input_bytes {
+        return Err(ToonedError::InputTooLarge);
+    }
+    // Reverse any dictionary `legend:` block before the external codec ever
+    // sees the text. The legend is purely a tooned addition layered on top of
+    // standard TOON, so `toon-lsp` must receive plain TOON.
+    let text = expand_legend(text, opts.max_input_bytes)?;
+    if exceeds_max_structural_depth(text.as_bytes()) {
+        return Err(ToonedError::DecodeFailed(
+            "input nesting exceeds the safe structural-depth limit".to_string(),
+        ));
+    }
+    decode_with_config(&text, &toon_config(opts))
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
 /// Decodes a TOON document with a caller-supplied byte-size cap.
@@ -87,20 +134,10 @@ pub fn decode_toon(text: &str) -> Result<Value, ToonedError> {
 /// JSON (TOON is normally smaller, but callers can raise the cap above the
 /// default).
 pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Value, ToonedError> {
-    // Reverse any dictionary `legend:` block before the external codec ever
-    // sees the text. The legend is purely a tooned addition layered on top of
-    // standard TOON, so `toon-lsp` must receive plain TOON. Enforce the
-    // caller's byte cap both before and during expansion.
-    if text.len() > max_input_bytes {
-        return Err(ToonedError::InputTooLarge);
-    }
-    let text = expand_legend(text, max_input_bytes)?;
-    if exceeds_max_structural_depth(text.as_bytes()) {
-        return Err(ToonedError::DecodeFailed(
-            "input nesting exceeds the safe structural-depth limit".to_string(),
-        ));
-    }
-    decode_with_config(&text, &TOON_CFG).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    decode_toon_with_options(
+        text,
+        &ConversionOptions { max_input_bytes, ..ConversionOptions::default() },
+    )
 }
 
 #[cfg(test)]
@@ -160,8 +197,7 @@ mod tests {
 
     #[test]
     fn full_ecommerce_round_trips() {
-        let text =
-            std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let text = std::fs::read_to_string("tests/fixtures/ecommerce_orders.json").unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         let toon = encode_toon_raw(&value).unwrap();
         let decoded = decode_toon(&toon).unwrap();
@@ -172,8 +208,7 @@ mod tests {
     fn full_ecommerce_round_trips_with_dict() {
         use crate::dict::apply_dict;
 
-        let text =
-            std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let text = std::fs::read_to_string("tests/fixtures/ecommerce_orders.json").unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         let toon = encode_toon_raw(&value).unwrap();
         let dict_toon = match apply_dict(&toon, &[]) {
