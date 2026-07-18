@@ -68,8 +68,9 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let encoded = tooned_toon::encode_toon(&value)
         .map_err(|err| anyhow::anyhow!("tooned lint: re-encode failed: {err:?}"))?;
 
-    let round_trip = tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes)
-        .map_err(|err| anyhow::anyhow!("tooned lint: round-trip decode failed: {err:?}"))?;
+    let round_trip =
+        tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes.max(encoded.len()))
+            .map_err(|err| anyhow::anyhow!("tooned lint: round-trip decode failed: {err:?}"))?;
 
     if round_trip != value {
         anyhow::bail!(
@@ -88,10 +89,11 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
                 first.keys().map(String::as_str).collect();
             let first_len = first.len();
             let inconsistent = array.iter().skip(1).any(|v| {
-                v.as_object().is_none_or(|obj| {
-                    obj.len() != first_len
-                        || !obj.keys().map(String::as_str).all(|k| first_keys.contains(k))
-                })
+                let Some(obj) = v.as_object() else {
+                    return true;
+                };
+                obj.len() != first_len
+                    || !obj.keys().map(String::as_str).all(|k| first_keys.contains(k))
             });
             if inconsistent {
                 warnings.push("top-level array rows have inconsistent key sets");
