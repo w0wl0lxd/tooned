@@ -735,7 +735,7 @@ mod tests {
 
     #[test]
     fn ecommerce_orders_convert() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 0.0,
             entropy_gate: false,
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn ecommerce_orders_convert_with_cli_defaults() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 2.0,
             auto_margin: true,
@@ -760,7 +760,7 @@ mod tests {
 
     #[test]
     fn inspect_ecommerce_orders() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 2.0,
             auto_margin: true,
