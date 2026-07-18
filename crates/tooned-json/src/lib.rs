@@ -492,7 +492,9 @@ mod tests {
         let input = format!("[{}]", element);
         let stream = parse_json_stream(input.as_bytes());
         let result: Vec<Result<Value, ParseError>> = stream.collect();
-        assert!(result.len() == 1);
-        assert!(matches!(result[0], Err(ParseError::TooDeep)));
+        assert_eq!(result.len(), 1);
+        let Some(Err(ParseError::TooDeep)) = result.first() else {
+            panic!("expected a single TooDeep error");
+        };
     }
 }
