@@ -44,7 +44,16 @@ proptest! {
         max_input_bytes in 0usize..64,
         precise_tokens in any::<bool>(),
     ) {
-        let opts = ConversionOptions { margin_pct, max_input_bytes, format_hint: None, precise_tokens };
+        let opts = ConversionOptions {
+            margin_pct,
+            max_input_bytes,
+            format_hint: None,
+            precise_tokens,
+            auto_margin: false,
+            dict_enabled: true,
+            critical_policy: tooned_types::CriticalFieldPolicy::default_policy(),
+            tokenizer: None,
+        };
         let _ = maybe_tooned(&bytes, &opts);
         let _ = inspect(&bytes, &opts);
     }

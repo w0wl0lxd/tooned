@@ -21,6 +21,32 @@ use crate::cli::io::{
     write_atomic, write_output,
 };
 
+/// Compute model-aware token savings for the convert metrics path (F1/F2).
+/// Returns `(Some(tokens_saved), true)` when a [`TokenizerProfile`] is
+/// configured on `opts`, else `(None, false)` so the ledger falls back to the
+/// constitution-mandated 4-bytes/token heuristic. Input/output that are not
+/// valid UTF-8 count as empty for tokenization (they would not be re-encoded
+/// into a tokenizable string anyway).
+#[allow(clippy::disallowed_methods, clippy::manual_unwrap_or_default, clippy::manual_unwrap_or)]
+fn precise_savings(input: &[u8], output: &[u8], opts: &ConversionOptions) -> (Option<u64>, bool) {
+    match &opts.tokenizer {
+        Some(profile) => {
+            let input_str = match std::str::from_utf8(input) {
+                Ok(s) => s,
+                Err(_) => "",
+            };
+            let output_str = match std::str::from_utf8(output) {
+                Ok(s) => s,
+                Err(_) => "",
+            };
+            let in_tokens = tooned_token::count_tokens(input_str, profile);
+            let out_tokens = tooned_token::count_tokens(output_str, profile);
+            (Some(in_tokens.saturating_sub(out_tokens) as u64), true)
+        }
+        None => (None, false),
+    }
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum Direction {
     Toon,
@@ -130,8 +156,9 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 Ok(Conversion::Passthrough { bytes, .. }) => bytes,
                 Err(_) => bytes.clone(),
             };
+            let (tokens, precise) = precise_savings(&bytes, &output, &opts);
             #[allow(clippy::manual_unwrap_or)]
-            crate::metrics_recorder::record_convert_outcome(
+            crate::metrics_recorder::record_convert_outcome_ex(
                 crate::metrics_recorder::CliSurface::Onto,
                 &crate::metrics_recorder::label_from_path(&args.input),
                 format_hint.map(std::convert::Into::into),
@@ -144,6 +171,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     Ok(v) => v,
                     Err(_) => i64::MAX,
                 },
+                tokens,
+                precise,
             );
             let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
                 write_in_place(&args.input, &output)
@@ -192,8 +221,9 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     Ok(Conversion::Passthrough { bytes, .. }) => bytes,
                     Err(_) => bytes.clone(),
                 };
+                let (tokens, precise) = precise_savings(&bytes, &output, &opts);
                 #[allow(clippy::manual_unwrap_or)]
-                crate::metrics_recorder::record_convert_outcome(
+                crate::metrics_recorder::record_convert_outcome_ex(
                     crate::metrics_recorder::CliSurface::Tron,
                     &crate::metrics_recorder::label_from_path(&args.input),
                     format_hint.map(std::convert::Into::into),
@@ -206,6 +236,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                         Ok(v) => v,
                         Err(_) => i64::MAX,
                     },
+                    tokens,
+                    precise,
                 );
                 let write_result = if output_is_same_as_input(&args.input, args.out.as_deref()) {
                     write_in_place(&args.input, &output)

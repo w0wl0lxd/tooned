@@ -25,7 +25,7 @@ are included below for manual review.
 ## Results summary
 
 - **Direct comprehension**: 19/19 passed
-- **Mismatch decoding**: 10/12 passed
+- **Mismatch decoding**: 11/12 passed, 1 pending re-run
 - **Total test cases**: 31
 - **Total wall time**: 155.5s
 
@@ -58,13 +58,13 @@ are included below for manual review.
 | # | Fixture | Result | Time |
 |---|---------|--------|------|
 | 1 | `complex/people_addresses.json` | PASS | 4.4s |
-| 2 | `complex/ecommerce_orders.json` | FAIL | 6.1s |
+| 2 | `complex/ecommerce_orders.json` | PENDING | 6.1s |
 | 3 | `complex/company_org.json` | PASS | 5.4s |
 | 4 | `complex/sensor_readings.ndjson` | PASS | 5.0s |
 | 5 | `complex/inventory.csv` | PASS | 5.1s |
 | 6 | `complex/webhooks.toml` | PASS | 4.0s |
 | 7 | `complex/events_attendees.ndjson` | PASS | 5.7s |
-| 8 | `complex/matrix.json` | FAIL | 4.3s |
+| 8 | `complex/matrix.json` | PASS | 4.3s |
 | 9 | `complex/mixed_schema.json` | PASS | 8.0s |
 | 10 | `complex/geo_markers.json` | PASS | 4.8s |
 | 11 | `complex/config_nested.yaml` | PASS | 7.8s |
@@ -268,11 +268,11 @@ The SKU of the first product is **SKU-1001**.
 ```
 
 ### mismatch: `complex/ecommerce_orders.json`
-**Prompt:** read agent-test/complex/ecommerce_orders.json and tell me the SKU of the first product
-**Expected:** SKU-1001
-**Result:** FAIL (6.1s)
-**Note:** The mismatch hook injects products_20.json TOON regardless of the file being read.
-**Response:**
+**Prompt:** read agent-test/complex/ecommerce_orders.json and tell me the name of the first product
+**Expected:** Product 1
+**Result:** PENDING (6.1s)
+**Note:** The mismatch hook injects products_20.json TOON regardless of the file being read. The original `ecommerce_orders.json` contains `sku` fields, so asking for SKU allowed the model to answer from the original JSON. The prompt has been changed to ask for `name`, which the orders do not contain, so a correct answer must come from the injected TOON context. The response below is from the previous SKU prompt; the updated prompt has not been re-run because the Devin account is rate-limited.
+**Response (from previous SKU prompt):**
 ```text
 The first product’s SKU in `ecommerce_orders.json` is **SKU-1010** (in order ORD-1001).
 
@@ -335,9 +335,9 @@ If you are referring to the product list you just provided, the first product's 
 
 ### mismatch: `complex/matrix.json`
 **Prompt:** read agent-test/complex/matrix.json and tell me the SKU of the first product
-**Expected:** 6.1
-**Result:** FAIL (4.3s)
-**Note:** Computed expected value for row 2, column 3 (1-indexed) is 6.1.
+**Expected:** SKU-1001
+**Result:** PASS (4.3s)
+**Note:** The mismatch hook injects products_20.json TOON regardless of the file being read. The previous report mistakenly listed `6.1` as the expected value here because `fix_matrix_expected()` was applied to all `matrix.json` cases; it is now restricted to direct-mode cases.
 **Response:**
 ```text
 The SKU of the first product is **SKU-1001**.
@@ -397,6 +397,32 @@ Hedged responses, where the model notes the original file does not
 contain the requested field but the 'pasted' product list does, still
 demonstrate TOON decoding, because the model extracted `SKU-1001` from
 the TOON context while keeping the original output in mind.
+
+## Analysis of remaining mismatch failures
+
+### `complex/ecommerce_orders.json`
+
+**Root cause:** The original `ecommerce_orders.json` contains `sku`
+fields inside each order's `items` array. When the mismatch hook injected
+`products_20.json` TOON and the prompt asked for the SKU of the first
+product, the model correctly found `SKU-1010` in the original file and
+answered from there. The injected TOON context was therefore not isolated.
+
+**Fix:** The test runner now asks for the `name` of the first product
+(expected `Product 1`), a field that does not exist in the original
+orders. A correct answer can only come from the injected products TOON.
+The updated prompt has not been re-run because the Devin account is
+rate-limited; this case is marked `PENDING`.
+
+### `complex/matrix.json`
+
+**Root cause:** Test-script bug. `fix_matrix_expected()` was applied to
+all `matrix.json` cases, overwriting the mismatch case's expected answer
+(`SKU-1001`) with the direct case's expected value (`6.1`). The model's
+actual response was `SKU-1001`, which is correct for the mismatch prompt.
+
+**Fix:** `fix_matrix_expected()` is now restricted to direct-mode cases,
+and the report has been corrected to mark this mismatch as `PASS`.
 
 ## Research context
 

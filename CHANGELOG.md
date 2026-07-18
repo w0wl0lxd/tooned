@@ -199,6 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   internal files, and transient metadata failures are all recorded as `seen`
   rather than treated as deleted, so the prune pass keeps their rows intact.
 
+- **tooned-cli:** `tooned dashboard` now fails gracefully with a clear error
+  instead of panicking when stdout is not a terminal.
+  ([work-log](docs/agents/work-log/2026-07-17-009-dashboard-tty.md))
+
 ### Security
 
 - **tooned-cli:** `convert --to json` no longer materializes an arbitrarily
