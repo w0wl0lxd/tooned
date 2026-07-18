@@ -48,6 +48,9 @@ pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Valu
     // sees the text. The legend is purely a tooned addition layered on top of
     // standard TOON, so `toon-lsp` must receive plain TOON. Enforce the
     // caller's byte cap both before and during expansion.
+    if text.len() > max_input_bytes {
+        return Err(ToonedError::InputTooLarge);
+    }
     let text = expand_legend(text, max_input_bytes)?;
     if exceeds_max_structural_depth(text.as_bytes()) {
         return Err(ToonedError::DecodeFailed(
