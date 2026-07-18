@@ -1,117 +1,17 @@
 # TOON decoding across formats
 
-This document explains how a model, given a TOON-encoded tool result from a `PostToolUse` hook or wrapped command, can read it into the underlying structure and answer as if it had the original JSON.
+A model given a TOON tool result extracts values as if it were reading a table. It sees the header `[20]{sku,name,price,qty,category}:` and the rows, then answers questions like "what is the SKU of the first product?" with `SKU-1001`. No `toon → json` conversion runs inside the agent; the model maps the header/row structure to the question directly.
 
-`tooned` does not use `additionalContext`: for agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the original JSON would remain in context alongside the TOON, inflating total token count. Those agents require command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) for TOON-only output. The examples below assume an agent protocol that replaces the native tool result with TOON.
+This works because TOON is explicit about structure: field names are declared once, rows are comma-separated, and array lengths are in the header. The same pattern appears in CSV, Markdown tables, SQL result sets, and pandas output, so models can read it without a bespoke parser.
 
-## Core observation
+The mismatch test in [`toon-evidence.md`](toon-evidence.md) isolates this behavior by injecting the TOON of `products_20.json` while reading `users_20.json` (which has no `sku` field). The model still returned `SKU-1001`.
 
-When `tooned` produces TOON as the tool result like this:
+## When `tooned` converts a payload
 
-```toon
-[20]{sku,name,price,qty,category}:
-  SKU-1001,"Product 1",11.49,7,home
-  SKU-1002,"Product 2",12.99,14,home
-  ...
-```
-
-the model does not echo the TOON syntax back. It extracts the requested field and replies in natural language or JSON values, e.g.:
-
-> The SKU of the first product is `SKU-1001`.
-
-This is an implicit, learned decode: the model sees the header `{sku,name,...}`, maps it to a table schema, picks the first row, and returns the `sku` value. No `toon → json` step runs inside the agent; the model performs the semantic mapping itself. We describe this as the model *reading* the TOON rather than formally *proving* structural decoding.
-
-## Why this is expected
-
-TOON is deliberately human-readable and structurally explicit: field names are declared once, rows are comma-separated tuples, counts are explicit. That pattern is well represented in pretraining data (CSV, Markdown tables, YAML lists, SQL result sets, pandas output, logs). The model can recognize the header/row convention and infer the schema without a bespoke parser.
-
-Recent arXiv work supports this, with stated limits:
-
-- **McMillan, 2026** — *Structured Context Engineering for File-Native Agentic Systems* (arXiv:2602.05447v2): 9,649 experiments across 11 models and 4 formats. Main result: "format does not significantly affect aggregate accuracy (chi-squared=2.45, p=0.484)," but the same study reports *model-dependent* format sensitivities.
-- **Kutschka & Geiger, 2026** — *Notation Matters: A Benchmark Study of Token-Optimized Formats in Agentic AI Systems* (arXiv:2605.29676v2): TOON cuts tokens up to 18% with accuracy **within ~9 percentage points** of JSON; largest savings on tool schemas and tool results.
-- **Matveev, 2026** — *Token-Oriented Object Notation vs JSON* (arXiv:2603.03306v1): describes TOON as a serialization for structured data to LLMs, with "solid accuracy in LLM comprehension."
-- **Dong et al., 2024** — *SpreadsheetLLM* (arXiv:2407.09025v2): a compressed, structure-aware tabular encoding improves GPT-4 in-context learning by 25.6% and reaches 78.9% F1.
-
-## The mismatch test
-
-1. The agent `read`s `agent-test/users_20.json` (no `sku` field).
-2. The tool result is replaced with the TOON of `agent-test/products_20.json`.
-3. Prompt: `read users_20.json and tell me the SKU of the first product`.
-4. Model answers: `The SKU of the first product is SKU-1001`.
-
-Because `users_20.json` has no `sku` field, the answer strongly supports that it came from the TOON tool result. This is consistent with the model parsing the TOON header and first row and returning the `sku` value.
-
-## Cross-format mismatch test
-
-A universal mismatch test ignores the real tool output and always replaces the tool result with the TOON of `agent-test/products_20.json`. The same prompt is used each time:
-
-```text
-read <file> and tell me the SKU of the first product
-```
-
-The files listed below were used in the cross-format run. Whether `tooned` itself can convert each file to TOON is shown separately; the mismatch test does not depend on that — the replacement TOON is always the same `products_20.json` TOON.
-
-| File | `tooned` can convert? | Notes |
-|---|---|---|
-| `agent-test/records_20.xml` | yes (51.5% byte savings) | XML attributes |
-| `agent-test/config.yaml` | yes (11.7% byte savings) | YAML |
-| `agent-test/settings.toml` | no | only 4.9% smaller (below effective margin) |
-| `agent-test/sample.json5` | no | TOON 2.5% larger |
-| `agent-test/orders_100.ndjson` | yes (62.7% byte savings) | NDJSON |
-| `agent-test/events_100.ndjson` | yes (58.2% byte savings) | NDJSON |
-| `agent-test/products_20.cbor` | yes (50.2% byte savings) | CBOR (binary) |
-| `agent-test/users_20.msgpack` | yes (47.2% byte savings) | MessagePack (binary) |
-| `agent-test/data_20.csv` | yes (53.7% byte savings) | CSV |
-| `agent-test/data_20.tsv` | yes (53.7% byte savings) | TSV |
-| `agent-test/nested_config.json` | no | only 3.9% smaller (below effective margin) |
-| `agent-test/large_uniform_500.json` | yes (56.4% byte savings) | Large uniform JSON |
-| `agent-test/plain.txt` | no | not structured data |
-
-In the tested run the model returned `SKU-1001` for every file where the prompt could be answered. This is supporting evidence that the model extracts the value from the TOON result regardless of the original file's format, not a controlled proof.
+`tooned` only emits TOON when the encoding is smaller than the compact JSON representation and `decode(encode(x)) == x`. The current conversion results for the test fixtures are in [`toon-evidence.md`](toon-evidence.md) (simple cross-format) and [`research/toon-format-research.md`](research/toon-format-research.md) (complex fixtures).
 
 ## Reading is easier than writing
 
-These tests measure **comprehension** (reading TOON). Getting a model to **generate** valid TOON accurately is harder — it requires strict syntax. `tooned` only asks the model to *read* TOON, never to *write* it.
+`tooned` asks the model to *read* TOON, not *write* it. Generating valid TOON accurately is harder than reading it.
 
-## Reproduce
-
-A minimal mismatch hook for an agent that supports tool-result replacement (Claude Code / OpenCode / Kilo / Pi) converts `products_20.json` to TOON and replaces the tool output:
-
-```python
-#!/usr/bin/env python3
-import json, os, subprocess, sys
-from pathlib import Path
-
-repo_root = Path(os.environ.get("REPO_ROOT", "."))
-tooned = os.environ.get("TOONED_BIN", "tooned")
-
-# Convert products_20.json to TOON once
-products = repo_root / "agent-test" / "products_20.json"
-conv = subprocess.run(
-    [tooned, "convert", str(products), "--to", "toon"],
-    capture_output=True, text=True,
-)
-toon_text = conv.stdout.strip()
-if not toon_text:
-    sys.exit(0)
-
-# Ignore stdin (the real tool output) and replace the tool result with TOON
-sys.stdin.read()
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "PostToolUse",
-        "updatedToolOutput": toon_text,
-    }
-}, ensure_ascii=False))
-```
-
-For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead of `updatedToolOutput`. For Devin / Droid, use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) because `PostToolUse` cannot replace the tool result.
-
-Install the hook as the `PostToolUse` command for the agent you are testing, run `read agent-test/records_20.xml and tell me the SKU of the first product`, then restore the real `tooned hook run` entry.
-
-> **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
-
-## More
-
-- Findings + observations: [`toon-evidence.md`](toon-evidence.md)
-- Backend flow diagrams: [`toon-context-proof.md`](toon-context-proof.md)
+For the test results and the research context, see [`toon-evidence.md`](toon-evidence.md). For the conversion pipeline details, see [`research/toon-format-research.md`](research/toon-format-research.md).
