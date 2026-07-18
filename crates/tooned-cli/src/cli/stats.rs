@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use clap::{Args, ValueEnum};
 use serde::Serialize;
 
+use tooned_index::{DocTypeFilter, IndexFilter};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum StatsSortBy {
     Savings,
@@ -43,6 +45,14 @@ pub struct StatsArgs {
     /// Emit the report as a JSON array instead of human-readable text.
     #[arg(short = 'j', long)]
     pub json: bool,
+
+    /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
+    #[arg(long, value_name = "TYPE")]
+    pub type_filter: Option<String>,
+
+    /// Exclude paths matching these gitignore-style globs (repeatable).
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -60,8 +70,18 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
         None => PathBuf::from("."),
     };
 
+    let type_filter = match &args.type_filter {
+        Some(s) => {
+            let parsed = DocTypeFilter::parse(s)
+                .ok_or_else(|| anyhow::anyhow!("invalid type filter: {s}"))?;
+            Some(parsed)
+        }
+        None => None,
+    };
+    let filter = IndexFilter { type_filter, excludes: args.exclude.clone() };
+
     let sort_by = args.sort_by.map_or(tooned_index::SortBy::Savings, Into::into);
-    match tooned_index::stats_sorted(&root, args.top, sort_by) {
+    match tooned_index::stats_sorted(&root, args.top, sort_by, &filter) {
         Ok(rows) => {
             if args.json {
                 let entries: Vec<StatsEntry> = rows

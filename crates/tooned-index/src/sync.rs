@@ -10,6 +10,7 @@ use rusqlite::Connection;
 use tooned_core::ConversionOptions;
 
 use crate::IndexError;
+use crate::filter::IndexFilter;
 use crate::scan::{
     build_walker, enforce_walk_cap, hash_file_streaming, is_tooned_internal,
     persist_oversized_file, persist_scanned_file,
@@ -37,13 +38,13 @@ pub struct SyncSummary {
 /// files; and prunes rows (cascading to `shapes`/`conversions`) for files
 /// that no longer exist. Requires a prior [`crate::scan_full`] --
 /// `Err(IndexError::NoIndex)` if no index exists yet.
-pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
+pub fn sync(project_root: &Path, filter: &IndexFilter) -> Result<SyncSummary, IndexError> {
     if !schema::index_exists(project_root) {
         return Err(IndexError::NoIndex(project_root.to_path_buf()));
     }
     let mut conn = schema::open_index(project_root)?;
 
-    let existing = load_existing(&conn)?;
+    let existing = load_existing(&conn, filter)?;
     let mut seen: HashSet<String> = HashSet::new();
     let mut summary = SyncSummary::default();
 
@@ -51,8 +52,16 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
     // sync, not one implicit auto-commit transaction per touched row.
     let tx = conn.transaction()?;
 
+    let exclude_gitignore = filter.compile_excludes(project_root).unwrap_or_else(|_| {
+        // If exclude compilation fails, fall back to an empty gitignore
+        // (no exclusion) rather than failing the entire sync.
+        ignore::gitignore::Gitignore::empty()
+    });
+
+    let walker = build_walker(project_root);
+
     let mut visited: usize = 0;
-    for entry in build_walker(project_root) {
+    for entry in walker {
         visited += 1;
         enforce_walk_cap(visited)?;
 
@@ -93,6 +102,13 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
             continue;
         }
 
+        // Check if file is excluded - if so, mark as seen but skip processing
+        if !filter.excludes.is_empty() && filter.is_excluded(path, project_root, &exclude_gitignore)
+        {
+            seen.insert(rel_str.to_string());
+            continue;
+        }
+
         let meta = match std::fs::metadata(path) {
             Ok(meta) => meta,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
@@ -122,6 +138,12 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
             }
             Some((_, _, old_hash)) => {
                 if oversized {
+                    let doc_type = crate::scan::detect_file_type(path, filter);
+                    if !filter.matches_type(doc_type) {
+                        // File no longer matches type filter; skip but mark as seen
+                        // so it's not pruned (it may match a future filter).
+                        continue;
+                    }
                     let Ok(new_hash) = hash_file_streaming(path) else { continue };
                     if &new_hash == old_hash {
                         touch_mtime(&tx, rel_str, mtime)?;
@@ -133,6 +155,12 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
                     continue;
                 }
                 let Ok(bytes) = std::fs::read(path) else { continue };
+                let doc_type = tooned_core::inspect(&bytes, &ConversionOptions::default()).doc_type;
+                if !filter.matches_type(doc_type) {
+                    // File no longer matches type filter; skip but mark as seen
+                    // so it's not pruned (it may match a future filter).
+                    continue;
+                }
                 let new_hash = blake3::hash(&bytes).to_hex().to_string();
                 if &new_hash == old_hash {
                     // mtime changed but content didn't (e.g. `touch`):
@@ -146,12 +174,20 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
             }
             None => {
                 if oversized {
+                    let doc_type = crate::scan::detect_file_type(path, filter);
+                    if !filter.matches_type(doc_type) {
+                        continue;
+                    }
                     let Ok(new_hash) = hash_file_streaming(path) else { continue };
                     persist_oversized_file(&tx, rel_str, &new_hash, meta.len(), mtime)?;
                     summary.added += 1;
                     continue;
                 }
                 let Ok(bytes) = std::fs::read(path) else { continue };
+                let doc_type = tooned_core::inspect(&bytes, &ConversionOptions::default()).doc_type;
+                if !filter.matches_type(doc_type) {
+                    continue;
+                }
                 persist_scanned_file(&tx, rel_str, &bytes, meta.len(), mtime)?;
                 summary.added += 1;
             }
@@ -170,20 +206,26 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
     Ok(summary)
 }
 
-fn load_existing(conn: &Connection) -> Result<HashMap<String, (i64, i64, String)>, IndexError> {
+fn load_existing(
+    conn: &Connection,
+    _filter: &IndexFilter,
+) -> Result<HashMap<String, (i64, i64, String)>, IndexError> {
     let mut stmt = conn.prepare("SELECT path, mtime_unix, size_bytes, content_hash FROM files")?;
     let rows = stmt.query_map([], |row| {
         let path: String = row.get(0)?;
         let mtime: i64 = row.get(1)?;
         let size: i64 = row.get(2)?;
         let hash: String = row.get(3)?;
-        Ok((path, (mtime, size, hash)))
+        Ok((path, mtime, size, hash))
     })?;
 
     let mut map = HashMap::new();
     for row in rows {
-        let (path, val) = row?;
-        map.insert(path, val);
+        let (path, mtime, size, hash) = row?;
+        // Load all files regardless of type filter, so the prune pass can correctly
+        // identify files that are truly deleted vs. files that are just excluded
+        // or don't match the current type filter.
+        map.insert(path, (mtime, size, hash));
     }
     Ok(map)
 }

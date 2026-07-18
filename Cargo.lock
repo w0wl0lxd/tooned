@@ -3454,6 +3454,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tooned-core",
+ "tooned-detect",
+ "tooned-types",
 ]
 
 [[package]]
