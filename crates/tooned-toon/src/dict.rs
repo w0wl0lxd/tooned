@@ -13,6 +13,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use tooned_types::ToonedError;
+
 /// Explicit fallback for `Option<&str>` that avoids the banned
 /// `Option::unwrap_or` method while keeping call sites compact.
 fn or_fallback<'a>(opt: Option<&'a str>, fallback: &'a str) -> &'a str {
@@ -34,7 +36,19 @@ const LEGEND_MARKER: &str = "\u{E000}legend:";
 /// empty slice when no column is protected.
 #[must_use]
 pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
-    let lines: Vec<&str> = toon.split('\n').collect();
+    // The sentinel private-use character must not already appear in the input,
+    // or the compressed output could collide with literal data.
+    if toon.contains(SENTINEL_PREFIX) {
+        return None;
+    }
+
+    let use_crlf = toon.contains("\r\n");
+    let eol = if use_crlf { "\r\n" } else { "\n" };
+
+    let lines: Vec<&str> = toon
+        .split('\n')
+        .map(|s| if let Some(stripped) = s.strip_suffix('\r') { stripped } else { s })
+        .collect();
     let (object_mode, header_idx, keys) = find_structure(&lines);
 
     let data_indices: Vec<usize> = if object_mode {
@@ -59,16 +73,35 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
     };
 
     // Frequency of each cell token across data lines (skipping protected
-    // columns so critical values stay verbatim).
+    // columns/keys so critical values stay verbatim).
     let mut freq: HashMap<String, usize> = HashMap::new();
     for &di in &data_indices {
         let line = match lines.get(di) {
             Some(l) => l.trim(),
             None => continue,
         };
-        for (col, cell) in split_cells(line).into_iter().enumerate() {
-            if object_mode || !protected_idx.contains(&col) {
-                *freq.entry(cell.to_string()).or_insert(0) += 1;
+        if object_mode {
+            // Object-mode "key: value" lines: protect by key name, then
+            // frequency-count cells inside the value.
+            if let Some(sp) = line.find(": ") {
+                let key = or_fallback(line.get(..sp), "");
+                let val = or_fallback(line.get(sp + 2..), "");
+                if protected_keys.iter().any(|p| key_protected(key, p)) {
+                    continue;
+                }
+                for cell in split_cells(val) {
+                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                }
+            } else {
+                for cell in split_cells(line) {
+                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                }
+            }
+        } else {
+            for (col, cell) in split_cells(line).into_iter().enumerate() {
+                if !protected_idx.contains(&col) {
+                    *freq.entry(cell.to_string()).or_insert(0) += 1;
+                }
             }
         }
     }
@@ -102,19 +135,19 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
 
     let mut out = String::new();
     out.push_str(LEGEND_MARKER);
-    out.push('\n');
+    out.push_str(eol);
     for (orig, sent) in &mapping {
         out.push_str(sent);
         out.push(' ');
         out.push_str(orig);
-        out.push('\n');
+        out.push_str(eol);
     }
-    out.push('\n');
+    out.push_str(eol);
 
     for (li, line) in lines.iter().enumerate() {
         if object_mode {
             if line.trim().is_empty() {
-                out.push('\n');
+                out.push_str(eol);
                 continue;
             }
             if data_indices.contains(&li) {
@@ -122,18 +155,18 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
             } else {
                 out.push_str(line);
             }
-            out.push('\n');
+            out.push_str(eol);
         } else if li == header_idx {
             out.push_str(line);
-            out.push('\n');
+            out.push_str(eol);
         } else if line.trim().is_empty() {
-            out.push('\n');
+            out.push_str(eol);
         } else if data_indices.contains(&li) {
             out.push_str(&transform_line(line, &map, false));
-            out.push('\n');
+            out.push_str(eol);
         } else {
             out.push_str(line);
-            out.push('\n');
+            out.push_str(eol);
         }
     }
 
@@ -143,12 +176,21 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
 /// Reverse [`apply_dict`]: if `text` begins with the legend marker, expand the
 /// sentinel references back to their original cell tokens and return the plain
 /// TOON document. Returns `text` unchanged when there is no legend.
-#[must_use]
-pub fn expand_legend(text: &str) -> String {
+///
+/// `max_output_bytes` bounds the expanded output so a small encoded payload
+/// with a huge legend cannot allocate an unbounded string.
+pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, ToonedError> {
     if !text.starts_with(LEGEND_MARKER) {
-        return text.to_string();
+        if text.len() > max_output_bytes {
+            return Err(ToonedError::InputTooLarge);
+        }
+        return Ok(text.to_string());
     }
-    let lines: Vec<&str> = text.split('\n').collect();
+
+    let lines: Vec<&str> = text
+        .split('\n')
+        .map(|s| if let Some(stripped) = s.strip_suffix('\r') { stripped } else { s })
+        .collect();
     let mut map: HashMap<String, String> = HashMap::new();
     let mut i = 1;
     while let Some(line) = lines.get(i).copied() {
@@ -167,11 +209,21 @@ pub fn expand_legend(text: &str) -> String {
     }
 
     let mut out = String::new();
-    for line in lines.iter().skip(i) {
-        out.push_str(&expand_line(line, &map));
-        out.push('\n');
+    let mut lines_iter = lines.iter().skip(i).peekable();
+    while let Some(&line) = lines_iter.next() {
+        let expanded = expand_line(line, &map);
+        if out.len() + expanded.len() > max_output_bytes {
+            return Err(ToonedError::InputTooLarge);
+        }
+        out.push_str(&expanded);
+        if lines_iter.peek().is_some() {
+            if out.len() + 1 > max_output_bytes {
+                return Err(ToonedError::InputTooLarge);
+            }
+            out.push('\n');
+        }
     }
-    out
+    Ok(out)
 }
 
 /// Split a TOON data line into cell tokens, respecting quoted strings (so a
@@ -299,7 +351,7 @@ mod tests {
     #[test]
     fn expand_without_legend_is_identity() {
         let toon = "[2]{id,name}:\n\n  1,\"Alice Chen\"\n  2,\"Bob Diaz\"\n";
-        assert_eq!(expand_legend(toon), toon);
+        assert_eq!(expand_legend(toon, usize::MAX).unwrap(), toon);
     }
 
     #[test]

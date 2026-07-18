@@ -240,7 +240,13 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // acceptance margin from how uniform (redundant) the payload is rather
     // than a single fixed floor -- dense/diverse inputs demand more headroom
     // so TOON never "wins" on a rounding error.
-    let margin = if opts.auto_margin { auto_margin_for(&shape) } else { opts.margin_pct };
+    let margin = if opts.auto_margin {
+        // The configured margin is a floor; never accept less than what the
+        // caller explicitly requested.
+        auto_margin_for(&shape).max(opts.margin_pct)
+    } else {
+        opts.margin_pct
+    };
 
     if !is_smaller_enough(json_bytes, toon_bytes, margin) {
         return Attempt {
@@ -333,10 +339,12 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
             }
         }
         Value::Array(arr) if !arr.is_empty() => {
-            if let Some(Value::Object(first)) = arr.first() {
-                for k in first.keys() {
-                    if policy.is_protected(k) {
-                        keys.push(k.clone());
+            for item in arr {
+                if let Value::Object(map) = item {
+                    for k in map.keys() {
+                        if policy.is_protected(k) && !keys.contains(k) {
+                            keys.push(k.clone());
+                        }
                     }
                 }
             }
