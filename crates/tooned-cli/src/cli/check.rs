@@ -96,6 +96,7 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
             precise_savings_pct: None,
             would_convert: false,
             reason: Some(PassthroughReason::InputTooLarge),
+            protected_fields: Vec::new(),
         },
     };
 
