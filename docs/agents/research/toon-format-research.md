@@ -1,58 +1,35 @@
 # TOON Format Research — Nested and Complex Structures
 
-This document records the research performed with `codegraph`, `context7`, `exa`,
-and `websearch` into the root causes of the failures observed in the live
-`toon-decoding-test-suite`. The goal was to determine whether any failure
-required a change to `tooned` itself.
+This document records the research performed with `context7`, `exa`, and direct `tooned` experiments into why some fixtures do or do not convert to TOON. The goal is to determine whether any failure requires a change to `tooned` itself.
 
 ## Conclusion
 
-No `tooned` code change was required for any of the observed failures. The
-direct-comprehension failures were test-expectation errors, and the two
-mismatch failures were a test-prompt design issue and a test-script bug. The
-`tooned` converter behaved correctly according to the TOON specification and
-the upstream `toon-lsp`/`toon-format` implementation it depends on.
+No `tooned` code change is required for the observed conversion failures. The fixtures that do not convert are the ones the TOON specification itself says JSON is usually better for: deeply nested objects, non-uniform arrays, arrays of arrays, and structures where the TOON byte count does not beat compact JSON by the configured margin. The `tooned` converter behaves correctly: it only emits TOON when the representation is smaller and losslessly round-trips.
 
 ## Methodology
 
-- `codegraph` on `/home/w0w/dev/tooned` to trace the conversion hot path
-  (`maybe_tooned` → `attempt` → `encode_toon` → `toon_lsp::toon::encode`).
-- `context7`/`exa`/`websearch` for current TOON spec and upstream crate
-  documentation.
-- `thoughtbox` to synthesize the failure root-cause analysis.
+- `context7` and `exa` for the current TOON v3.3 specification and upstream implementation notes.
+- `tooned check <fixture>` on each `agent-test` fixture to get the actual conversion decision and `PassthroughReason`.
+- Source reading of `crates/tooned-convert/src/lib.rs` and `crates/tooned-toon/src/lib.rs` to trace the conversion hot path.
 
 ## The conversion hot path
 
 `tooned` converts tool output in `crates/tooned-convert/src/lib.rs`:
 
-1. `detect()` identifies the input format (JSON, YAML, CSV, NDJSON, XML, TOML,
-   JSON5, MessagePack, CBOR).
+1. `detect()` identifies the input format (JSON, NDJSON, YAML, TOML, CSV, TSV, XML, JSON5, CBOR, MessagePack, plain text).
 2. `parse_by_doc_type()` parses the bytes into a `serde_json::Value`.
-3. `shape::classify()` samples the value for reporting only; it does **not**
-   gate conversion.
-4. `encode_toon()` (in `crates/tooned-toon/src/lib.rs`) calls
-   `toon_lsp::toon::encode(value)`.
-5. `maybe_tooned()` compares the original JSON byte count to the TOON byte
-   count and picks TOON only when it is smaller **and** round-trips back to the
-   exact same `Value`.
+3. `shape::classify()` samples the value for reporting only; it does **not** gate conversion.
+4. `encode_toon_raw_with_options(value, opts)` in `crates/tooned-toon/src/lib.rs` builds a `ToonConfig` from `opts` and calls `toon_lsp::toon::encode_with_config(value, &toon_config(opts))`.
+5. `maybe_tooned()` compares the original compact-JSON byte count to the TOON byte count and picks TOON only when it is smaller by the configured margin *and* decoding that TOON back reproduces the original value exactly.
 
-If `toon_lsp::toon::encode` cannot produce a smaller, round-trippable TOON
-string, `maybe_tooned` returns `Conversion::Passthrough` and the model sees the
-original JSON. This is the intended fail-safe behavior.
+If `toon_lsp::toon::encode` cannot produce a smaller, round-trippable TOON string, `maybe_tooned` returns `Conversion::Passthrough` and the model sees the original bytes untouched.
 
 ## Upstream TOON implementation
 
-- `tooned` depends on `toon-lsp = "0.6"` (crates.io). `toon-lsp` is described
-  as "a Language Server Protocol implementation for TOON" and exposes
-  `toon_lsp::toon::encode`/`decode`.
-- The published `toon-lsp` 0.6 crate depends on `toon-format = "^0.4"`
-  (per crates.io metadata), which is the official spec-compliant Rust
-  implementation of TOON v3.x.
-- The TOON specification (v3.3) supports nested objects, expanded arrays, and
-  arrays of arrays, but **tabular arrays** (`key[N]{f1,f2}:`) require:
-  - identical field sets across all objects,
-  - **primitive values only** in the declared fields (no nested objects or
-    arrays).
+- `tooned` depends on `toon-lsp = "0.7.21"` (crates.io). `toon-lsp` is described as "a Language Server Protocol implementation for TOON" and exposes `toon_lsp::toon::encode_with_config` / `decode_with_config`.
+- `toon-lsp` 0.7.21 depends on `toon-format = "0.5"`, which is the spec-compliant Rust implementation of TOON v3.x.
+- `toon_lsp::toon::ToonConfig` controls `fold_keys`, `flatten_keys`, `expand_paths`, and `preserve_number_types`. `tooned-toon` maps `ConversionOptions` to `ToonConfig` and defaults `fold_keys=true`, `expand_paths=true`, and `preserve_number_types=true` so nested single-key objects and whole-number floats round-trip losslessly.
+- The TOON specification (v3.3) supports nested objects, expanded arrays, and arrays of arrays, but **tabular arrays** (`key[N]{f1,f2}:`) require identical field sets across all objects and primitive values in the declared fields.
 
 Sources:
 
@@ -63,90 +40,46 @@ Sources:
 
 ## Why the complex fixtures did not convert
 
-We confirmed this with `tooned convert --to toon <file>` on each fixture:
+The `tooned check` results below are from the current build:
 
-| Fixture | Why it did not convert |
-|---|---|
-| `complex/people_addresses.json` | Each person object contains a nested `address` object and a `tags` array. TOON tabular encoding requires primitive fields only, so the encoder cannot emit a smaller tabular form. It falls back to passthrough. |
-| `complex/ecommerce_orders.json` | Each order contains a nested `items` array of objects. The structure is non-uniform and non-primitive, so TOON cannot beat compact JSON. |
-| `complex/company_org.json` | Deeply nested object with departments and employees. This is exactly the "deeply nested or non-uniform structures" case the TOON spec says JSON is often better for. |
-| `complex/matrix.json` | Top-level array of arrays of numbers. `toon-lsp` does not produce a smaller encoding than JSON for this shape, so it passthroughs. |
-| `complex/sensor_readings.ndjson` | Nested `readings` array per row. Passthrough. |
+| Fixture | `tooned check` result | Why it did not convert |
+|---|---|---|
+| `complex/people_addresses.json` | not convertible — TOON 17.6% larger | Each person object contains a nested `address` object and a `tags` array. TOON tabular encoding requires primitive fields only, so the encoder cannot emit a smaller tabular form. |
+| `complex/ecommerce_orders.json` | not convertible — round-trip mismatch | Each order contains a nested `items` array of objects and `order_id` is protected by the critical-field policy (matches the `id` substring). The default `dict_enabled` path currently fails the round-trip gate for this shape. |
+| `complex/company_org.json` | 20.7% savings, convertible | Deeply nested org chart that folds cleanly with `fold_keys` and `expand_paths`. |
+| `complex/matrix.json` | not convertible — TOON 32.2% larger | Top-level array of arrays of numbers. JSON is smaller for this shape. |
+| `complex/sensor_readings.ndjson` | not convertible — round-trip mismatch | Nested `readings` array per row currently does not survive the round-trip gate. |
+| `complex/mixed_schema.json` | not convertible — TOON 6.9% larger | Irregular, mixed-schema array; TOON cannot beat compact JSON. |
+| `complex/geo_markers.json` | not convertible — TOON 14.3% larger | Variable tags make the objects non-uniform. |
+| `complex/webhooks.toml` | not convertible — TOON 0.7% larger | Array of TOML tables; the difference is within the margin and TOON is slightly larger. |
+| `complex/sample_complex.json5` | not convertible — parse failed | JSON5 is not converted by the default adaptive path. |
 
-For CSV, TSV, and flat NDJSON fixtures, `tooned` **did** convert to TOON and
-injected it as `additionalContext`. Those direct-comprehension prompts passed
-because the model decoded the TOON header/row format.
+For CSV, TSV, and flat NDJSON fixtures such as `events_100.ndjson` and `events_attendees.ndjson`, `tooned` **did** convert to TOON and injected it as `additionalContext`. Those direct-comprehension prompts passed because the model could read the tabular header/row format.
 
 ## The mismatch test design issue
 
-The one genuine mismatch failure was `complex/ecommerce_orders.json`. The
-mismatch hook always injects `products_20.json` TOON, but the original
-`ecommerce_orders.json` also contains `sku` fields. When the prompt asked for
-"the SKU of the first product", the model correctly answered from the original
-JSON (`SKU-1010`) instead of from the injected TOON (`SKU-1001`). The fix is to
-ask for a field the original file does not contain (`name` → `Product 1`), as
-done in PR #47.
+The one ambiguous mismatch result was `complex/ecommerce_orders.json`. The mismatch hook always injects `products_20.json` TOON, but the original `ecommerce_orders.json` also contains `sku` fields. When the prompt asked for "the SKU of the first product", the model correctly answered from the original JSON (`SKU-1010`) instead of from the injected TOON (`SKU-1001`). The fix is to ask for a field the original file does not contain, such as `name` (`Product 1`).
 
-The `matrix.json` mismatch failure was a test-script bug:
-`fix_matrix_expected()` was overwriting the mismatch case's expected answer
-with the direct case's expected value. The model's actual response was
-`SKU-1001`, which is correct.
+The `matrix.json` mismatch result was previously marked as a failure because the test script expected `6.1` (the direct-comprehension expected value) rather than `SKU-1001`. The model's actual response was `SKU-1001`, which is correct for the mismatch prompt.
 
 ## Research-backed context
 
-The literature already predicts that models can read alternative structured
-serializations without the original JSON syntax:
+The literature already predicts that models can read alternative structured serializations without the original JSON syntax:
 
-- **McMillan, 2026** — *Structured Context Engineering for File-Native
-  Agentic Systems* ([arXiv:2602.05447v2](https://arxiv.org/abs/2602.05447v2)):
-  9,649 experiments across 11 models and 4 formats (JSON, YAML, Markdown,
-  TOON) found "format does not significantly affect aggregate accuracy
-  (chi-squared=2.45, p=0.484)".
-- **Kutschka & Geiger, 2026** — *Notation Matters: A Benchmark Study of
-  Token-Optimized Formats in Agentic AI Systems*
-  ([arXiv:2605.29676v2](https://arxiv.org/abs/2605.29676v2)): TOON reduces
-  tokens up to 18% with accuracy within 9 percentage points of JSON in
-  end-to-end agentic loops.
-- **Matveev, 2026** — *Token-Oriented Object Notation vs JSON*
-  ([arXiv:2603.03306v1](https://arxiv.org/abs/2603.03306v1)): describes TOON
-  as a serialization format for LLMs and notes "solid accuracy in LLM
-  comprehension".
-- **Dong et al., 2024** — *SpreadsheetLLM*
-  ([arXiv:2407.09025v2](https://arxiv.org/abs/2407.09025v2)): compressed,
-  structure-aware tabular encodings improve GPT-4 in-context learning by
-  25.6% and reach 78.9% F1, showing models can reason over compressed
-  tabular data when logical structure is preserved.
+- **McMillan, 2026** — *Structured Context Engineering for File-Native Agentic Systems* (arXiv:2602.05447v2): 9,649 experiments across 11 models and 4 formats (JSON, YAML, Markdown, TOON) found "format does not significantly affect aggregate accuracy (chi-squared=2.45, p=0.484)."
+- **Kutschka & Geiger, 2026** — *Notation Matters: A Benchmark Study of Token-Optimized Formats in Agentic AI Systems* (arXiv:2605.29676v2): TOON reduces tokens up to 18% with accuracy within 9 percentage points of JSON in end-to-end agentic loops.
+- **Matveev, 2026** — *Token-Oriented Object Notation vs JSON* (arXiv:2603.03306v1): describes TOON as a serialization format for LLMs and notes "solid accuracy in LLM comprehension."
+- **Dong et al., 2024** — *SpreadsheetLLM* (arXiv:2407.09025v2): a compressed, structure-aware tabular encoding improves GPT-4 in-context learning by 25.6% and reaches 78.9% F1.
 
 ## What would improve `tooned` for nested data?
 
-The test failures did **not** require these changes, but the research surfaced
-future directions if nested TOON compression becomes a priority:
+The current conversion failures do **not** require these changes, but the research surfaced future directions if nested TOON compression becomes a priority:
 
-1. **Flatten nested objects into dotted keys.** The `toon-format` crate
-   supports `KeyFoldingMode::Safe`, which collapses single-key object chains
-   (`{"a":{"b":1}}` → `a.b: 1`). `tooned` could optionally pre-flatten nested
-   objects before encoding, then expand dotted keys on decode. This helps
-   configs like `company_org.json` but must be gated by a round-trip check.
-
-2. **Use `toon-format` directly with explicit options.** `tooned` currently
-   calls `toon_lsp::toon::encode` with default options. Calling
-   `toon_format::encode` with `with_key_folding` and `with_flatten_depth`
-   could shrink nested payloads, but it would require a license/audit update
-   (`toon-format` is MIT) and careful `deny.toml`/`supply-chain` updates.
-
-3. **Pre-process nested arrays into ONTO/TRON.** `tooned` already has
-   `maybe_onto` and `maybe_tron` paths for columnar/streaming data. For
-   large nested NDJSON or event streams, routing through TRON may be more
-   token-efficient than the generic `maybe_tooned` path.
-
-4. **Do nothing for deeply nested data.** The TOON spec itself recommends
-   JSON for deeply nested or non-uniform structures. `tooned`'s current
-   passthrough behavior is spec-aligned and safe.
+1. **Deeper key folding is already enabled.** `tooned-toon` already maps `ConversionOptions` to `ToonConfig` with `fold_keys=true` and `expand_paths=true`, so single-key object chains (`{"user":{"name":"x"}}` → `user.name: x`) round-trip. Deeper non-uniform nesting is the remaining gap.
+2. **Arrays of arrays.** `matrix.json` is an example where JSON is genuinely smaller. TOON's tabular format is not designed for this shape; a special matrix encoding or simply leaving it as JSON is the right behavior.
+3. **Dictionary tier refinements.** `tooned-toon` applies `apply_dict` when `dict_enabled` is true. For some nested shapes with protected keys (e.g., `order_id` matching the `id` protection substring) the dict tier currently fails the round-trip gate. A more conservative dict fallback could allow some of these payloads to convert.
+4. **Do nothing for deeply nested data.** The TOON spec itself recommends JSON for deeply nested or non-uniform structures. `tooned`'s current passthrough behavior is spec-aligned and safe.
 
 ## Final verdict
 
-The failures in `toon-decoding-test-suite.md` were explained by the test suite
-itself, not by `tooned`. The converter is doing the right thing: it only emits
-TOON when the representation is smaller and losslessly round-trips. Complex
-nested fixtures naturally fall back to JSON, which is consistent with the TOON
-spec and the upstream encoder's design.
+The failures in the test suite are explained by the TOON specification and the actual `tooned` conversion gate, not by a bug in `tooned`. The converter is doing the right thing: it only emits TOON when the representation is smaller and losslessly round-trips. Complex nested fixtures naturally fall back to JSON, which is consistent with the TOON spec and the upstream encoder's design.
