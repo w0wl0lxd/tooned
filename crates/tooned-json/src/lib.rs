@@ -111,7 +111,7 @@ pub fn parse_json_stream<R: BufRead>(reader: R) -> JsonArrayStream<R> {
         depth: 0,
         in_string: false,
         escaped: false,
-        state: StreamState::BeforeArray,
+        state: StreamState::Before,
     }
 }
 
@@ -129,9 +129,9 @@ pub struct JsonArrayStream<R> {
 
 #[derive(Debug)]
 enum StreamState {
-    BeforeArray, // Looking for opening '['
-    InArray,     // Inside array, depth >= 1
-    AfterArray,  // After closing ']', done
+    Before, // Looking for opening '['
+    Inside, // Inside array, depth >= 1
+    After,  // After closing ']', done
 }
 
 impl<R: BufRead> JsonArrayStream<R> {
@@ -148,12 +148,11 @@ impl<R: BufRead> JsonArrayStream<R> {
         self.buf.clear();
         self.pos = 0;
         match self.reader.read_line(&mut self.buf) {
-            Ok(0) => false,
+            Ok(0) | Err(_) => false,
             Ok(n) => {
                 self.bytes_read += n as u64;
                 true
             }
-            Err(_) => false,
         }
     }
 
@@ -184,14 +183,14 @@ impl<R: BufRead> Iterator for JsonArrayStream<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Find the opening '['
-        while matches!(self.state, StreamState::BeforeArray) {
+        while matches!(self.state, StreamState::Before) {
             match self.next_char()? {
                 '[' => {
-                    self.state = StreamState::InArray;
+                    self.state = StreamState::Inside;
                     self.depth = 1;
                     break;
                 }
-                c if c.is_ascii_whitespace() => continue,
+                c if c.is_ascii_whitespace() => {}
                 _ => {
                     return Some(Err(ParseError::Json(
                         "expected JSON array to start with '['".into(),
@@ -212,7 +211,7 @@ impl<R: BufRead> Iterator for JsonArrayStream<R> {
         // Check if we're at the closing bracket
         if let Some(']') = self.peek_char() {
             self.next_char();
-            self.state = StreamState::AfterArray;
+            self.state = StreamState::After;
             return None;
         }
 
@@ -257,7 +256,7 @@ impl<R: BufRead> Iterator for JsonArrayStream<R> {
 
                     if self.depth == 0 {
                         // End of array - this was the last element
-                        self.state = StreamState::AfterArray;
+                        self.state = StreamState::After;
                         if element_buf.is_empty() {
                             return None; // Empty array
                         }

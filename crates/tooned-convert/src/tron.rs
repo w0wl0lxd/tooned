@@ -601,7 +601,7 @@ fn try_streaming_tron(
     // Estimate shape based on doc_type
     let shape = match doc_type {
         tooned_types::DocType::NdJson | tooned_types::DocType::Json => shape::classify(&decoded),
-        _ => shape::ShapeClass::Irregular,
+        _ => tooned_types::ShapeClass::Irregular,
     };
 
     Ok(Conversion::Toon {
