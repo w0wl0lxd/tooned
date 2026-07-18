@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
-use tooned_toon::{apply_dict, encode_toon_raw};
+use tooned_toon::{apply_dict, decode_toon_with_options, encode_toon_raw_with_options};
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
     PassthroughReason, ShapeClass, ToonedError,
@@ -210,7 +210,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (counter.0, None)
     };
 
-    let Ok(encoded) = encode_toon_raw(&value) else {
+    let Ok(encoded) = encode_toon_raw_with_options(&value, opts) else {
         return Attempt {
             doc_type: Some(doc_type),
             shape,
@@ -266,7 +266,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         };
     }
 
-    let round_trip_ok = match tooned_toon::decode_toon_with_limit(&encoded, opts.max_input_bytes) {
+    let round_trip_ok = match decode_toon_with_options(&encoded, opts) {
         Ok(decoded) => decoded == value,
         Err(_) => false,
     };
@@ -735,7 +735,7 @@ mod tests {
 
     #[test]
     fn ecommerce_orders_convert() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 0.0,
             entropy_gate: false,
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn ecommerce_orders_convert_with_cli_defaults() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 2.0,
             auto_margin: true,
@@ -760,7 +760,7 @@ mod tests {
 
     #[test]
     fn inspect_ecommerce_orders() {
-        let payload = std::fs::read("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let payload = std::fs::read("tests/fixtures/ecommerce_orders.json").unwrap();
         let opts = ConversionOptions {
             margin_pct: 2.0,
             auto_margin: true,
