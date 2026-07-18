@@ -51,37 +51,40 @@ fn weekday_name(i: usize) -> String {
 // CLI arg struct with clap-generated bool flags; not a state machine.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Args)]
+#[command(
+    after_help = "Examples:\n  tooned heatmap\n  tooned heatmap --global\n  tooned heatmap --all --metric bytes\n  tooned heatmap --tui"
+)]
 pub struct HeatmapArgs {
     /// Read from the user-global ledger instead of the project ledger.
-    #[arg(long)]
+    #[arg(short = 'g', long)]
     pub global: bool,
 
     /// Show the full history instead of just the last year.
-    #[arg(long)]
+    #[arg(short = 'a', long)]
     pub all: bool,
 
     /// Launch the interactive TUI pager.
-    #[arg(long)]
+    #[arg(short = 't', long)]
     pub tui: bool,
 
     /// Metric to display: tokens saved (default) or bytes saved.
-    #[arg(long, value_enum, default_value_t = MetricArg::Tokens)]
+    #[arg(short = 'm', long, value_enum, default_value_t = MetricArg::Tokens)]
     pub metric: MetricArg,
 
     /// Filter to a single surface (e.g. cli:convert, index:scan, hook:claude, mcp:server).
-    #[arg(long)]
+    #[arg(short = 'S', long)]
     pub surface: Option<String>,
 
     /// Include index-discovered opportunity events in the totals.
-    #[arg(long)]
+    #[arg(short = 'o', long)]
     pub include_opportunity: bool,
 
     /// Override the start of the range (YYYY-MM-DD).
-    #[arg(long)]
+    #[arg(short = 's', long)]
     pub since: Option<String>,
 
     /// Override the end of the range (YYYY-MM-DD, default today).
-    #[arg(long)]
+    #[arg(short = 'u', long)]
     pub until: Option<String>,
 }
 
@@ -139,7 +142,11 @@ fn opts_from(args: &HeatmapArgs) -> anyhow::Result<QueryOpts<'_>> {
         let ds = parse_ymd(u)?;
         opts.until_day = Some(ymd_to_day(&ds).ok_or_else(|| anyhow::anyhow!("bad date"))?);
     }
-    if opts.since_day.is_none() && !args.all {
+    if args.all {
+        // Span the full recorded history.
+        opts.since_day = Some(0);
+        opts.until_day = Some(today_day());
+    } else if opts.since_day.is_none() {
         opts.since_day = Some(today_day() - 364i64);
     }
     Ok(opts)

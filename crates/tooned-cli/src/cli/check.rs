@@ -39,6 +39,10 @@ pub struct CheckArgs {
     /// Path to a tooned config file.
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+
+    /// Emit the report as machine-readable JSON.
+    #[arg(short = 'j', long)]
+    pub json: bool,
 }
 
 // `Result` is kept (rather than `()`) to match every other subcommand's
@@ -108,6 +112,11 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
             protected_fields: Vec::new(),
         },
     };
+
+    if args.json {
+        println!("{}", sonic_rs::to_string(&report)?);
+        return Ok(());
+    }
 
     let doc_type = match report.doc_type {
         Some(dt) => format!("{dt:?}"),

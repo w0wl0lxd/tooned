@@ -46,7 +46,27 @@ fn assert_help(args: &[&str], must_contain: &[&str]) {
 
 #[test]
 fn top_level_help_documents_every_subcommand() {
-    assert_help(&[], &["convert", "check", "pipe", "wrap", "index", "stats", "hook", "mcp"]);
+    assert_help(
+        &[],
+        &[
+            "convert",
+            "check",
+            "pipe",
+            "wrap",
+            "index",
+            "stats",
+            "diff",
+            "lint",
+            "hook",
+            "mcp",
+            "metrics",
+            "heatmap",
+            "dashboard",
+            "completions",
+            "man",
+            "config",
+        ],
+    );
 }
 
 #[test]

@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use serde::Serialize;
 use tooned_core::ToonedError;
 
 use crate::cli::io::{BoundedRead, open_input, read_bounded};
@@ -25,6 +26,16 @@ pub struct LintArgs {
     /// Path to a tooned config file.
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+
+    /// Emit the result as machine-readable JSON.
+    #[arg(short = 'j', long)]
+    pub json: bool,
+}
+
+#[derive(Serialize)]
+struct LintResult {
+    valid: bool,
+    warnings: Vec<String>,
 }
 
 pub fn run(args: &LintArgs) -> anyhow::Result<()> {
@@ -103,7 +114,13 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
         warnings.push("top-level value is neither an object nor a uniform array of objects");
     }
 
-    if warnings.is_empty() {
+    if args.json {
+        let result = LintResult {
+            valid: true,
+            warnings: warnings.iter().map(|w| (*w).to_string()).collect(),
+        };
+        println!("{}", sonic_rs::to_string(&result)?);
+    } else if warnings.is_empty() {
         println!("ok: valid TOON and round-trips losslessly");
     } else {
         println!("ok: valid TOON and round-trips losslessly (with warnings)");
