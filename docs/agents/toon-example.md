@@ -19,7 +19,7 @@ surfaces it to the model. How it is surfaced depends on the agent protocol:
 - **`updatedToolOutput`** (TOON *replaces* the tool output in place): Claude
   Code, OpenCode, Kilo, Pi.
 
-The evidence below was produced with the Devin protocol, so the model saw both
+The evidence below was produced with `additionalContext`, so the model saw both
 the original JSON and the TOON `additionalContext`.
 
 ## What happened
