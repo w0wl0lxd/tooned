@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
-use tooned_toon::{apply_dict, encode_toon};
+use tooned_toon::{apply_dict, encode_toon_raw};
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
     PassthroughReason, ShapeClass, ToonedError,
@@ -209,7 +209,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         (counter.0, None)
     };
 
-    let Ok(encoded) = encode_toon(&value) else {
+    let Ok(encoded) = encode_toon_raw(&value) else {
         return Attempt {
             doc_type: Some(doc_type),
             shape,
@@ -322,7 +322,11 @@ pub(crate) fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
     if json_bytes == 0 {
         return 0.0;
     }
-    (1.0 - (toon_bytes as f64 / json_bytes as f64)) * 100.0
+    // Clamp to a non-negative percentage so the report never shows a bogus
+    // "negative savings" for payloads that did not convert (TOON larger than
+    // JSON). The actual convert/passthrough decision is made by
+    // `is_smaller_enough`, which this function does not influence.
+    ((1.0 - (toon_bytes as f64 / json_bytes as f64)) * 100.0).max(0.0)
 }
 
 /// Collect the object keys / array-of-objects column names that the

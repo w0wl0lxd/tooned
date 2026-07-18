@@ -569,10 +569,6 @@ impl<W> CountingWriter<W> {
     fn new(inner: W) -> Self {
         Self { inner, count: 0 }
     }
-
-    fn count(&self) -> u64 {
-        self.count
-    }
 }
 
 impl<W: Write> Write for CountingWriter<W> {
@@ -607,6 +603,7 @@ where
     let mut out = CountingWriter::new(writer);
     let mut first = true;
     let mut keys: Option<Vec<String>> = None;
+    let mut header = String::new();
     let mut array_opened = false;
 
     for result in stream.by_ref() {
@@ -618,18 +615,23 @@ where
                 && let Ok(k) = object_keys(obj, 0)
                 && object_values(obj, &k, 0).is_ok()
             {
-                out.write_all(class_header("A", &k).as_bytes())
+                header = class_header("A", &k);
+                out.write_all(header.as_bytes())
                     .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
                 keys = Some(k);
             }
             out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
             array_opened = true;
-            write_stream_value(&mut out, &value, keys.as_ref())?;
+            let text = stream_value_text(&value, keys.as_ref())?;
+            validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+            out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
             continue;
         }
 
         out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        write_stream_value(&mut out, &value, keys.as_ref())?;
+        let text = stream_value_text(&value, keys.as_ref())?;
+        validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+        out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
     }
 
     if array_opened {
@@ -639,29 +641,51 @@ where
     }
     out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
 
-    Ok(StreamStats { input_bytes: stream.bytes_read(), output_bytes: out.count() })
+    let input_bytes = stream.bytes_read();
+    let output_bytes = out.count;
+    Ok(StreamStats { input_bytes, output_bytes })
 }
 
-fn write_stream_value<W: Write>(
-    out: &mut CountingWriter<W>,
-    value: &Value,
-    keys: Option<&Vec<String>>,
-) -> Result<(), ToonedError> {
+/// Render a single NDJSON record as the TRON text that will appear inside the
+/// body array. When a class schema has been established, compatible objects are
+/// emitted as `A(...)` instances; everything else falls back to plain JSON.
+fn stream_value_text(value: &Value, keys: Option<&Vec<String>>) -> Result<String, ToonedError> {
     if let Some(keys) = keys
         && let Value::Object(obj) = value
         && let Ok(vals) = object_values(obj, keys, 0)
     {
-        out.write_all(encode_instance(&vals).as_bytes())
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        return Ok(());
+        return Ok(encode_instance(&vals));
     }
-    let mut writer = sonic_rs::writer::BufferedWriter::new(&mut *out);
-    sonic_rs::to_writer(&mut writer, value).map_err(|e| {
+    sonic_rs::to_string(value).map_err(|e| {
         ToonedError::DecodeFailed(format!("failed to serialize TRON fallback value: {e}"))
-    })?;
-    writer
-        .flush()
-        .map_err(|e| ToonedError::DecodeFailed(format!("failed to flush TRON fallback value: {e}")))
+    })
+}
+
+/// Verify that emitting `text` for `value` decodes back to exactly `value`.
+/// This keeps the streaming path memory-bounded: no `Vec<Value>` of every
+/// record is retained, yet we still fail closed on any lossy conversion.
+fn validate_stream_record(
+    header: &str,
+    keys: Option<&Vec<String>>,
+    text: &str,
+    value: &Value,
+) -> Result<(), ToonedError> {
+    let test_doc = if keys.is_some() {
+        let mut s = header.to_string();
+        s.push('[');
+        s.push_str(text);
+        s.push(']');
+        s
+    } else {
+        format!("[{text}]")
+    };
+    let decoded = decode(&test_doc)?;
+    if decoded != Value::Array(vec![value.clone()]) {
+        return Err(ToonedError::DecodeFailed(
+            "streaming TRON record is not losslessly reversible".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -721,5 +745,30 @@ mod tests {
             Conversion::Passthrough { reason: PassthroughReason::NotStructuredData, .. } => {}
             other => panic!("expected Passthrough(NotStructuredData), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn maybe_tron_stream_round_trips_uniform_array() {
+        let input = "{\"id\":0,\"name\":\"row-0\"}\n{\"id\":1,\"name\":\"row-1\"}\n";
+        let mut out: Vec<u8> = Vec::new();
+        maybe_tron_stream(std::io::Cursor::new(input), &mut out).expect("stream");
+        let text = String::from_utf8(out).expect("utf8");
+        // The streamed body must decode back to the original records.
+        let decoded = decode(&text).expect("decodable");
+        assert_eq!(decoded, serde_json::json!([{"id":0,"name":"row-0"},{"id":1,"name":"row-1"}]));
+    }
+
+    #[test]
+    fn maybe_tron_stream_falls_back_on_corrupt_record() {
+        // A record with a non-primitive value for a class column cannot be
+        // faithfully represented as `A(...)`; the streaming path must fall back
+        // to emitting the original JSON array rather than ship a lossy TOON.
+        let input = "{\"id\":1,\"name\":\"a\"}\n{\"id\":2,\"nested\":{\"x\":1}}\n";
+        let mut out: Vec<u8> = Vec::new();
+        maybe_tron_stream(std::io::Cursor::new(input), &mut out).expect("stream");
+        let text = String::from_utf8(out).expect("utf8");
+        let decoded = decode(&text).expect("decodable");
+        // The fallback must still reconstruct the original records exactly.
+        assert_eq!(decoded, serde_json::json!([{"id":1,"name":"a"},{"id":2,"nested":{"x":1}}]));
     }
 }

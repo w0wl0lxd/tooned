@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 /// read-only operation in both cases -- never opens `path` for writing, so
 /// it can never mutate a source file (FR-005).
 ///
-/// Unbounded by design -- only used by `convert --to json`, whose decode
-/// path has no `max_input_bytes` gate of its own (unlike the adaptive
-/// paths, which use [`read_bounded`] below instead).
+/// Unbounded by design -- used by the `--to onto`/`--to tron` encode paths,
+/// which enforce their own `max_input_bytes` gate internally (a larger input
+/// is a verbatim passthrough, never an error). The `--to json` decode path
+/// uses [`read_input_bounded`] instead so it cannot materialize an
+/// arbitrarily large file before the decoder's own cap is consulted.
 pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
     if path == Path::new("-") {
         let mut buf = Vec::new();
@@ -21,6 +23,39 @@ pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
         return Ok(buf);
     }
     std::fs::read(path)
+}
+
+/// Reads `path`'s bytes (or stdin when `path == "-"`), refusing to materialize
+/// more than `cap` bytes in memory. Used by the `--to json` decode path so a
+/// large input can never be buffered in full before the decoder's own
+/// `max_input_bytes` gate is consulted (the unbounded [`read_input`] is unsafe
+/// here because the decode direction has no size gate of its own -- a local
+/// denial-of-memory vector). Anything larger than `cap` can never be
+/// converted, so there is no reason to buffer the whole file first. Returns an
+/// error if the input exceeds `cap`.
+pub fn read_input_bounded(path: &Path, cap: usize) -> io::Result<Vec<u8>> {
+    // For regular files we can short-circuit on the metadata size, but for
+    // stdin, FIFOs, device files, and files that may grow between the stat
+    // and the read, we still enforce the cap while reading.
+    if path != Path::new("-") {
+        let meta = std::fs::metadata(path)?;
+        if meta.is_file() && meta.len() > cap as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "input exceeds the decode size cap",
+            ));
+        }
+    }
+    let reader = open_input(path)?;
+    let mut buf = Vec::new();
+    reader.take((cap as u64).saturating_add(1)).read_to_end(&mut buf)?;
+    if buf.len() > cap {
+        return Err(io::Error::new(
+            io::ErrorKind::OutOfMemory,
+            "input exceeds the decode size cap",
+        ));
+    }
+    Ok(buf)
 }
 
 /// Writes `bytes` to `out`, or to stdout when `out` is `None` or `Some("-")`.

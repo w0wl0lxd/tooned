@@ -325,8 +325,27 @@ pub(crate) fn merge_post_tool_use_entry(
         return false;
     };
 
-    if arr.iter().any(|entry| entry_has_command(entry, command)) {
-        return false;
+    for entry in arr.iter_mut() {
+        let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+            continue;
+        };
+        for h in hooks.iter_mut() {
+            let Some(existing) = h.get("command").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if existing == command {
+                return false;
+            }
+            if let Some(suffix) = command_suffix_for(command)
+                && existing.ends_with(suffix)
+            {
+                // Reinstall or PATH change: update the existing entry to the
+                // new binary path in-place rather than leaving a stale path
+                // behind (finding: duplicate PostToolUse entries on reinstall).
+                h["command"] = serde_json::json!(command);
+                return false;
+            }
+        }
     }
 
     arr.push(serde_json::json!({
@@ -336,6 +355,7 @@ pub(crate) fn merge_post_tool_use_entry(
     true
 }
 
+/// True if any inner `hooks[].command` of `entry` exactly matches `command`.
 fn entry_has_command(entry: &serde_json::Value, command: &str) -> bool {
     entry.get("hooks").and_then(serde_json::Value::as_array).is_some_and(|inner| {
         inner.iter().any(|h| h.get("command").and_then(serde_json::Value::as_str) == Some(command))
@@ -351,6 +371,17 @@ fn entry_command_ends_with(entry: &serde_json::Value, suffix: &str) -> bool {
                 .is_some_and(|c| c.ends_with(suffix))
         })
     })
+}
+
+/// Returns the tooned-owned suffix `command` ends with, if any.
+fn command_suffix_for(command: &str) -> Option<&'static str> {
+    const SUFFIXES: &[&str] = &[
+        CLAUDE_CODE_COMMAND_SUFFIX,
+        CODEX_COMMAND_SUFFIX,
+        DEVIN_COMMAND_SUFFIX,
+        DROID_COMMAND_SUFFIX,
+    ];
+    SUFFIXES.iter().copied().find(|s| command.ends_with(*s))
 }
 
 /// Command suffixes that identify tooned's own `PostToolUse` entries,
@@ -891,5 +922,72 @@ pub fn run(args: &HookArgs) {
         },
         // Read-only across both agents' configs -- never writes (data-model.md).
         HookCommand::Doctor => doctor::run(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_post_tool_use_entry;
+
+    const OLD_PATH: &str = "/opt/old/tooned hook run --claude-code";
+    const NEW_PATH: &str = "/opt/new/tooned hook run --claude-code";
+    const FOREIGN: &str = "/usr/bin/some-other-tool --watch";
+
+    fn post_tool_use_root(commands: &[&str]) -> serde_json::Value {
+        let entries = commands
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "matcher": "Bash|Read",
+                    "hooks": [ { "type": "command", "command": c } ],
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({ "hooks": { "PostToolUse": entries } })
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn suffix_dedup_collapses_reinstall_with_new_prefix() {
+        // Regression: an existing tooned entry under an old absolute path must
+        // not cause a duplicate when `tooned` later moves on PATH (reinstall).
+        let mut root = post_tool_use_root(&[OLD_PATH]);
+        let appended = merge_post_tool_use_entry(&mut root, "Bash|Read", NEW_PATH);
+        assert!(!appended, "must not append a duplicate tooned entry");
+        let arr = root["hooks"]["PostToolUse"].as_array().expect("array");
+        assert_eq!(arr.len(), 1, "exactly one tooned entry should remain");
+        assert_eq!(
+            arr[0]["hooks"][0]["command"].as_str().expect("command"),
+            NEW_PATH,
+            "the pre-existing entry must be updated to the new path"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn suffix_dedup_never_touches_foreign_entry() {
+        // A foreign tool's entry must never be collapsed by the tooned
+        // suffix match: merging a brand-new tooned entry alongside a lone
+        // foreign entry appends (does not touch the foreign row).
+        let mut root = post_tool_use_root(&[FOREIGN]);
+        let appended = merge_post_tool_use_entry(&mut root, "Bash|Read", NEW_PATH);
+        assert!(appended, "foreign entry must not block a genuine new insert");
+        let arr = root["hooks"]["PostToolUse"].as_array().expect("array");
+        assert_eq!(arr.len(), 2, "foreign + new tooned = 2 entries");
+        assert_eq!(
+            arr[0]["hooks"][0]["command"].as_str().expect("command"),
+            FOREIGN,
+            "the foreign entry must be left untouched"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn exact_command_dedup_still_works() {
+        let mut root = post_tool_use_root(&[OLD_PATH]);
+        let appended = merge_post_tool_use_entry(&mut root, "Bash|Read", OLD_PATH);
+        assert!(!appended, "exact command match must still dedupe");
+        let arr = root["hooks"]["PostToolUse"].as_array().expect("array");
+        assert_eq!(arr.len(), 1);
     }
 }
