@@ -16,11 +16,11 @@ pub struct StatsArgs {
     pub path: Option<PathBuf>,
 
     /// Limit results to the top N entries by savings percentage.
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     pub top: Option<u32>,
 
     /// Emit the report as a JSON array instead of human-readable text.
-    #[arg(long)]
+    #[arg(short = 'j', long)]
     pub json: bool,
 }
 
