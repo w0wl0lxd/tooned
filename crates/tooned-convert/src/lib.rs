@@ -240,13 +240,18 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // acceptance margin from how uniform (redundant) the payload is rather
     // than a single fixed floor -- dense/diverse inputs demand more headroom
     // so TOON never "wins" on a rounding error.
-    let margin = if opts.auto_margin {
+    let mut margin = if opts.auto_margin {
         // The configured margin is a floor; never accept less than what the
         // caller explicitly requested.
         auto_margin_for(&shape).max(opts.margin_pct)
     } else {
         opts.margin_pct
     };
+    // Entropy gate (#5): raise the bar on near-incompressible payloads so the
+    // structural win is genuine (still gated by the byte-size comparison).
+    if opts.entropy_gate {
+        margin = margin.max(entropy_margin_for(input));
+    }
 
     if !is_smaller_enough(json_bytes, toon_bytes, margin) {
         return Attempt {
@@ -362,21 +367,77 @@ fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<St
 /// payloads) can be accepted on even tiny savings; low-uniformity / dense,
 /// diverse payloads demand progressively more headroom so TOON never wins on
 /// a rounding error (TAAC / entropy-gate insight, arXiv 2602.15843,
-/// 2606.03739).
+/// 2606.03739). Shapes that are not an array of objects (single objects,
+/// scalars) are not "dense" in this sense, so they keep the baseline margin
+/// rather than an inflated one -- widening only where redundancy is actually
+/// present.
 fn auto_margin_for(shape: &ShapeClass) -> f64 {
     match shape {
         ShapeClass::UniformArrayOfObjects { uniformity_pct, .. } => {
-            if *uniformity_pct >= 70.0 {
+            // `uniformity_pct` is a fraction in `[0, 1]` (1.0 == fully
+            // uniform), not a percentage.
+            if *uniformity_pct >= 0.70 {
                 0.0
-            } else if *uniformity_pct >= 40.0 {
+            } else if *uniformity_pct >= 0.40 {
                 2.0
-            } else if *uniformity_pct >= 20.0 {
+            } else if *uniformity_pct >= 0.20 {
                 5.0
             } else {
                 10.0
             }
         }
-        _ => 10.0,
+        _ => 2.0,
+    }
+}
+
+/// Normalized Shannon entropy of the raw input bytes in `[0, 1]` (8-bit
+/// maximum). A low value means the payload is highly redundant; a value near
+/// `1.0` means it is near-random / incompressible. Dependency-free
+/// (constitution Principle III): a plain byte-frequency table, no gzip/zstd
+/// dependency on the hot path.
+fn shannon_entropy(bytes: &[u8]) -> f64 {
+    if bytes.is_empty() {
+        return 0.0;
+    }
+    let mut freq = [0u64; 256];
+    for &b in bytes {
+        if let Some(c) = freq.get_mut(b as usize) {
+            *c += 1;
+        }
+    }
+    let n = bytes.len() as f64;
+    let mut h = 0.0f64;
+    for &c in &freq {
+        if c == 0 {
+            continue;
+        }
+        let p = c as f64 / n;
+        h -= p * p.log2();
+    }
+    (h / 8.0).clamp(0.0, 1.0)
+}
+
+/// Entropy gate (#5): widen the acceptance margin for high-entropy /
+/// near-incompressible payloads so TOON only "wins" on genuine *structural*
+/// savings (what a structural/dictionary encoder adds beyond generic
+/// redundancy compression), not on redundancy a generic compressor would
+/// already capture (arXiv 2606.03739). This is a margin *refinement*: the
+/// final decision stays the strict byte-size comparison mandated by
+/// constitution Principle II, so it can never force a conversion that is not
+/// provably smaller -- it can only raise the bar.
+fn entropy_margin_for(input: &[u8]) -> f64 {
+    let e = shannon_entropy(input);
+    // Text/JSON payloads realistically span ~0.35..0.75 normalized entropy
+    // (ASCII subsets cap the ceiling), so tiers are placed there. The top
+    // tier (>=0.65) corresponds to near-random, incompressible data.
+    if e < 0.35 {
+        0.0
+    } else if e < 0.50 {
+        2.0
+    } else if e < 0.65 {
+        5.0
+    } else {
+        10.0
     }
 }
 
@@ -503,6 +564,94 @@ mod tests {
         s.into_bytes()
     }
 
+    /// Deterministically generates near-incompressible objects (unique
+    /// pseudo-random base64 `id` and `token` per row) so the payload's
+    /// byte-level Shannon entropy is high -- TOON can lift the keys but the
+    /// values are all distinct and random-looking, so there is no structural
+    /// redundancy for it to capture.
+    fn build_random_array_payload(rows: usize) -> Vec<u8> {
+        const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut rng = || {
+            // xorshift64* -- deterministic, no external dependency.
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut b64 = |_v: u64| -> String {
+            let mut s = String::with_capacity(16);
+            for _ in 0..16 {
+                let idx = (rng() & 0x3F) as usize;
+                s.push(B64[idx] as char);
+            }
+            s
+        };
+        let mut s = String::from("[");
+        for i in 0..rows {
+            if i > 0 {
+                s.push(',');
+            }
+            let _ = write!(s, r#"{{"id":"{}","token":"{}"}}"#, b64(0), b64(0));
+        }
+        s.push(']');
+        s.into_bytes()
+    }
+
+    #[test]
+    fn shannon_entropy_extremes() {
+        assert_eq!(shannon_entropy(&[]), 0.0);
+        assert_eq!(shannon_entropy(&[b'a'; 64]), 0.0);
+        // Cycling through every byte value -- maximal (normalized ~1.0).
+        let mut varied = Vec::with_capacity(256);
+        for b in 0u16..256 {
+            varied.push(b as u8);
+        }
+        assert!(shannon_entropy(&varied) > 0.99, "expected near-max entropy");
+    }
+
+    #[test]
+    fn entropy_margin_widens_for_incompressible() {
+        // Maximally redundant input -- no extra margin needed.
+        assert_eq!(entropy_margin_for(&[b'a'; 256]), 0.0);
+        // Repetitive JSON is still lower-entropy than random data.
+        let rep = build_uniform_array_payload(50);
+        let rand = build_random_array_payload(50);
+        assert!(
+            entropy_margin_for(&rep) < entropy_margin_for(&rand),
+            "random payload must demand a wider margin than repetitive JSON"
+        );
+        // Random-looking, high-entropy payload -- gate demands >=10% headroom.
+        assert!(
+            entropy_margin_for(&rand) >= 10.0,
+            "high-entropy payload must raise the bar (got {})",
+            entropy_margin_for(&rand)
+        );
+    }
+
+    #[test]
+    fn entropy_gate_blocks_illusory_win_on_incompressible() {
+        let payload = build_random_array_payload(80);
+        // Entropy gate OFF: if TOON happens to edge out JSON, it would convert.
+        let off = ConversionOptions { entropy_gate: false, ..ConversionOptions::default() };
+        // Entropy gate ON: demands far more headroom on incompressible data.
+        let on = ConversionOptions { entropy_gate: true, ..ConversionOptions::default() };
+        let off_res = maybe_tooned(&payload, &off).expect("infallible");
+        let on_res = maybe_tooned(&payload, &on).expect("infallible");
+        // The gate can only make the outcome *more* conservative (never force
+        // a conversion). If the off-version already passed through, the on-
+        // version must too; if the off-version converted on a marginal win,
+        // the on-version must downgrade it to Passthrough.
+        match (off_res, on_res) {
+            (Conversion::Toon { .. }, Conversion::Passthrough { .. }) => {}
+            (a, b) => assert_eq!(
+                matches!(a, Conversion::Toon { .. }),
+                matches!(b, Conversion::Toon { .. }),
+                "entropy gate changed a non-marginal decision"
+            ),
+        }
+    }
+
     #[test]
     fn max_input_bytes_short_circuits_before_parsing() {
         // Well-formed, genuinely convertible JSON -- if the size gate didn't
@@ -574,7 +723,11 @@ mod tests {
         // silently surfacing a corrupted conversion (FR-008, constitution
         // Principle I).
         let payload: &[u8] = br#"{"x": 1.0, "y": 2.0, "z": 3.0, "note": "whole-number floats"}"#;
-        let opts = ConversionOptions { margin_pct: 0.0, ..ConversionOptions::default() };
+        let opts = ConversionOptions {
+            margin_pct: 0.0,
+            entropy_gate: false,
+            ..ConversionOptions::default()
+        };
         let result = maybe_tooned(payload, &opts).expect("infallible for payload-driven input");
         match result {
             Conversion::Passthrough { reason: PassthroughReason::RoundTripMismatch, bytes } => {

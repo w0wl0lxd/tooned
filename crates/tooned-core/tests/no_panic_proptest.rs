@@ -52,6 +52,7 @@ proptest! {
             auto_margin: false,
             dict_enabled: true,
             critical_policy: tooned_types::CriticalFieldPolicy::default_policy(),
+            entropy_gate: true,
             tokenizer: None,
         };
         let _ = maybe_tooned(&bytes, &opts);
