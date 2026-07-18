@@ -16,8 +16,8 @@ use tooned_types::{ConversionOptions, ToonedError};
 const TOON_CFG: ToonConfig = ToonConfig {
     indent: 2,
     delimiter: Delimiter::Comma,
-    fold_keys: false,
-    flatten_keys: true,
+    fold_keys: true,
+    flatten_keys: false,
     expand_paths: true,
     preserve_number_types: true,
 };
@@ -139,6 +139,15 @@ mod tests {
         let toon = encode_toon(&value).expect("folded encode must round-trip");
         let decoded = decode_toon(&toon).unwrap();
         assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn people_addresses_debug() {
+        let text = std::fs::read_to_string("../../agent-test/complex/people_addresses.json").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let toon = encode_toon_raw(&value).unwrap();
+        let dict = apply_dict(&toon, &[]).map(|d| d.len()).unwrap_or(toon.len());
+        eprintln!("raw {} dict {}", toon.len(), dict);
     }
 
     #[test]
