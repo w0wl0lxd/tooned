@@ -1,11 +1,11 @@
-# tooned
+# `tooned`
 
 [![CI](https://github.com/w0wl0lxd/tooned/actions/workflows/ci.yml/badge.svg)](https://github.com/w0wl0lxd/tooned/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/w0wl0lxd/tooned/actions/workflows/security.yml/badge.svg)](https://github.com/w0wl0lxd/tooned/actions/workflows/security.yml)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 
-tooned watches the JSON-shaped data moving through an AI coding agent's tool
+`tooned` watches the JSON-shaped data moving through an AI coding agent's tool
 calls: API responses, database rows, config files read from disk. When TOON is
 smaller, tooned swaps it in. There's nothing to configure or opt into per call,
 and tooned never touches a source file. When TOON doesn't win, the agent sees
@@ -14,7 +14,7 @@ the original JSON, unchanged.
 It runs as a Claude Code hook, a Codex CLI hook, a Devin CLI hook, an MCP
 server, or a plain CLI you can pipe things through. It is not a replacement for
 [rtk](https://github.com/rtk-ai/rtk). rtk rewrites and compresses command
-output in general; tooned does one thing, re-encoding structured data, and
+output in general; `tooned` does one thing, re-encoding structured data, and
 is built to sit alongside rtk in the same agent session without either tool
 stepping on the other's configuration.
 
