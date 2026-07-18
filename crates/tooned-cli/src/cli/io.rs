@@ -58,6 +58,26 @@ pub fn read_input_bounded(path: &Path, cap: usize) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Returns a buffered writer for `out`: stdout when `out` is `None` or
+/// `Some("-")`, or a newly created/truncated file otherwise.
+///
+/// This is the non-atomic, streaming counterpart to [`write_output`]: it
+/// writes in place rather than through a temp-file-then-rename, so callers
+/// that need atomicity for small, known payloads should prefer
+/// [`write_output`]. Callers that may stream an unbounded amount of data
+/// (e.g. `pipe`/`wrap` passthrough) use this instead.
+pub fn output_writer(out: Option<&Path>) -> io::Result<io::BufWriter<Box<dyn io::Write>>> {
+    let w: Box<dyn io::Write> = match out {
+        Some(path) if path != Path::new("-") => {
+            let file =
+                std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(path)?;
+            Box::new(file)
+        }
+        _ => Box::new(io::stdout()),
+    };
+    Ok(io::BufWriter::new(w))
+}
+
 /// Writes `bytes` to `out`, or to stdout when `out` is `None` or `Some("-")`.
 /// For a file path the write goes through the same temp-file-then-rename
 /// atomic path used by [`write_atomic`] so the destination is never observed

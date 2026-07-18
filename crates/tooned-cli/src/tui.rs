@@ -18,8 +18,8 @@ use ratatui::style::{Color, Style, Stylize as _};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Axis, Block, Cell, Chart, Dataset, Gauge, GraphType, List, ListItem, ListState, Paragraph, Row,
-    Sparkline, Table, TableState, Tabs,
+    Axis, Block, Cell, Chart, Clear, Dataset, Gauge, GraphType, List, ListItem, ListState,
+    Paragraph, Row, Sparkline, Table, TableState, Tabs, Wrap,
 };
 use tui_bar_graph::{BarGraph as TuiBarGraph, BarStyle, ColorMode};
 use tui_big_text::{BigText, PixelSize};
@@ -115,6 +115,7 @@ struct App {
     agent_table_state: TableState,
     list_state: ListState,
     running: bool,
+    show_help: bool,
 }
 
 impl App {
@@ -135,6 +136,7 @@ impl App {
             agent_table_state,
             list_state,
             running: true,
+            show_help: false,
         }
     }
 
@@ -200,6 +202,7 @@ impl App {
         }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.running = false,
+            KeyCode::Char('?' | 'h') => self.show_help = !self.show_help,
             KeyCode::Char('1') => self.tab = Tab::Summary,
             KeyCode::Char('2') => self.tab = Tab::Trend,
             KeyCode::Char('3') => self.tab = Tab::Top,
@@ -264,6 +267,9 @@ impl App {
         self.render_header(frame, header);
         self.render_main(frame, main);
         Self::render_footer(frame, footer);
+        if self.show_help {
+            Self::render_help(frame);
+        }
     }
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
@@ -324,6 +330,8 @@ impl App {
         let help = Paragraph::new(Line::from(vec![
             "q quit".gray(),
             "  ".into(),
+            "? help".gray(),
+            "  ".into(),
             "1-6 tab".gray(),
             "  ".into(),
             "g scope".gray(),
@@ -333,6 +341,50 @@ impl App {
             "j/k move".gray(),
         ]));
         frame.render_widget(help, area);
+    }
+
+    fn render_help(frame: &mut Frame) {
+        let area = frame.area();
+        let vertical = Layout::vertical([
+            Constraint::Percentage(15),
+            Constraint::Percentage(70),
+            Constraint::Percentage(15),
+        ])
+        .split(area);
+        let middle = match vertical.get(1) {
+            Some(r) => *r,
+            None => area,
+        };
+        let popup = match Layout::horizontal([
+            Constraint::Percentage(20),
+            Constraint::Percentage(60),
+            Constraint::Percentage(20),
+        ])
+        .split(middle)
+        .get(1)
+        {
+            Some(r) => *r,
+            None => middle,
+        };
+        frame.render_widget(Clear, popup);
+
+        let text = vec![
+            Line::from("Keybindings").bold(),
+            Line::raw(""),
+            Line::from("q, Esc     quit"),
+            Line::from("?, h       toggle this help"),
+            Line::from("1-6        switch tab"),
+            Line::from("Tab/S-Tab  next/previous tab"),
+            Line::from("g          toggle project/user scope"),
+            Line::from("m          toggle tokens/bytes metric"),
+            Line::from("j/k        move selection down/up"),
+            Line::from("Home/End   jump to first/last"),
+            Line::raw(""),
+            Line::from("Press ? or h to close.").gray(),
+        ];
+        let paragraph =
+            Paragraph::new(text).block(Block::bordered().title("Help")).wrap(Wrap { trim: true });
+        frame.render_widget(paragraph, popup);
     }
 
     fn render_summary(&self, frame: &mut Frame, area: Rect) {

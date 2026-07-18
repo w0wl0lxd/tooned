@@ -6,8 +6,8 @@
 //! path, prints the result; stderr and exit code of the wrapped command are
 //! passed through unchanged.
 
-use std::io::{Read as _, Write as _};
-use std::path::PathBuf;
+use std::io::{Read as _, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::Args;
@@ -59,6 +59,10 @@ pub struct WrapArgs {
     /// Path to a tooned config file.
     #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+
+    /// Write output to this file instead of stdout.
+    #[arg(short = 'o', long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
 
     /// The command (and its arguments) to run, after `--`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -143,6 +147,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         std::process::exit(code);
     };
     let cap = opts.max_input_bytes;
+    let is_stdout = args.out.as_deref().is_none_or(|p| p == Path::new("-"));
     // Cap the initial allocation and avoid `cap as u64 + 1` overflow when
     // `cap` is near `usize::MAX` (mirrors the `read_bounded` hardening in
     // `io.rs`).
@@ -152,7 +157,15 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
     if let Err(err) = read_result {
         // A genuine I/O error reading the pipe -- fall back to passing
         // whatever was captured through unchanged rather than losing it.
-        let _ = std::io::stdout().write_all(&buf);
+        // For stdout (including `-`) a broken pipe is not this wrapper's
+        // error to escalate; file destinations still report failures.
+        if let Err(write_err) = crate::cli::io::write_output(args.out.as_deref(), &buf)
+            && !is_stdout
+        {
+            eprintln!("tooned wrap: failed to write captured output: {write_err}");
+            let _ = child.wait();
+            std::process::exit(1);
+        }
         let status = child.wait();
         eprintln!("tooned wrap: error reading child stdout: {err}");
         let code = match status.ok().and_then(|s| s.code()) {
@@ -162,62 +175,55 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         std::process::exit(code);
     }
 
-    let out_stdout = std::io::stdout();
     if buf.len() as u64 <= cap as u64 {
         // Entire output fits within the cap: run it through the normal
-        // adaptive conversion path.
+        // adaptive conversion path, then write it atomically when a file is
+        // requested so the destination is never observed partially written.
+        #[allow(clippy::manual_unwrap_or)]
+        let to_i64_or_max = |n: usize| match i64::try_from(n) {
+            Ok(v) => v,
+            Err(_) => i64::MAX,
+        };
         let converted = match tooned_core::maybe_tooned(&buf, &opts) {
             Ok(Conversion::Toon { text, .. }) => {
-                #[allow(clippy::manual_unwrap_or)]
-                let buf_len = match buf.len().try_into() {
-                    Ok(v) => v,
-                    Err(_) => i64::MAX,
-                };
-                #[allow(clippy::manual_unwrap_or)]
-                let text_len = match text.len().try_into() {
-                    Ok(v) => v,
-                    Err(_) => i64::MAX,
-                };
                 crate::metrics_recorder::record_convert_outcome(
                     crate::metrics_recorder::CliSurface::Wrap,
                     &crate::metrics_recorder::SourceLabel::None,
                     None,
                     true,
-                    buf_len,
-                    text_len,
+                    to_i64_or_max(buf.len()),
+                    to_i64_or_max(text.len()),
                 );
                 text.into_bytes()
             }
             Ok(Conversion::Passthrough { bytes, .. }) => {
-                #[allow(clippy::manual_unwrap_or)]
-                let buf_len = match buf.len().try_into() {
-                    Ok(v) => v,
-                    Err(_) => i64::MAX,
-                };
-                #[allow(clippy::manual_unwrap_or)]
-                let bytes_len = match bytes.len().try_into() {
-                    Ok(v) => v,
-                    Err(_) => i64::MAX,
-                };
                 crate::metrics_recorder::record_convert_outcome(
                     crate::metrics_recorder::CliSurface::Wrap,
                     &crate::metrics_recorder::SourceLabel::None,
                     None,
                     false,
-                    buf_len,
-                    bytes_len,
+                    to_i64_or_max(buf.len()),
+                    to_i64_or_max(bytes.len()),
                 );
                 bytes
             }
             Err(_) => buf,
         };
-        let _ = out_stdout.lock().write_all(&converted);
+        if let Err(err) = crate::cli::io::write_output(args.out.as_deref(), &converted)
+            && !is_stdout
+        {
+            return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
+        }
     } else {
         // Output exceeds the cap: it would be a guaranteed passthrough, so
         // write the buffered prefix and stream the rest straight through
         // without ever holding it all in memory at once.
-        let mut lock = out_stdout.lock();
-        let _ = lock.write_all(&buf);
+        let mut writer = crate::cli::io::output_writer(args.out.as_deref())?;
+        if let Err(err) = writer.write_all(&buf)
+            && !is_stdout
+        {
+            return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
+        }
         drop(buf);
         let mut chunk = vec![0u8; STREAM_CHUNK_BYTES];
         loop {
@@ -225,9 +231,17 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                 Ok(0) | Err(_) => break,
                 Ok(n) => n,
             };
-            if let Some(written) = chunk.get(..n) {
-                let _ = lock.write_all(written);
+            if let Some(written) = chunk.get(..n)
+                && let Err(err) = writer.write_all(written)
+                && !is_stdout
+            {
+                return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
             }
+        }
+        if let Err(err) = writer.flush()
+            && !is_stdout
+        {
+            return Err(anyhow::anyhow!("tooned wrap: failed to flush output: {err}"));
         }
     }
 
