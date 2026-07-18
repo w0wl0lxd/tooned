@@ -14,7 +14,7 @@ the original JSON, unchanged.
 It runs as a Claude Code hook, a Codex CLI hook, a Devin CLI hook, an MCP
 server, or a plain CLI you can pipe things through. It is not a replacement for
 [rtk](https://github.com/rtk-ai/rtk). rtk rewrites and compresses command
-output in general; tooned does one thing, re-encoding structured data, and
+output in general; `tooned` does one thing, re-encoding structured data, and
 is built to sit alongside rtk in the same agent session without either tool
 stepping on the other's configuration.
 
