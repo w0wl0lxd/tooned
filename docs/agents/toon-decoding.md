@@ -51,19 +51,19 @@ The files listed below were used in the cross-format run. Whether `tooned` itsel
 
 | File | `tooned` can convert? | Notes |
 |---|---|---|
-| `agent-test/records_20.xml` | yes (48.2% byte savings) | XML attributes |
-| `agent-test/config.yaml` | yes (11.7%) | YAML |
-| `agent-test/settings.toml` | no — round-trip mismatch | TOML |
-| `agent-test/sample.json5` | no — TOON 2.5% larger | JSON5 |
-| `agent-test/orders_100.ndjson` | no — round-trip mismatch | NDJSON |
-| `agent-test/events_100.ndjson` | yes (52.4%) | NDJSON |
-| `agent-test/products_20.cbor` | yes (48.6% byte savings) | CBOR |
-| `agent-test/users_20.msgpack` | yes (47.5% byte savings) | MessagePack |
-| `agent-test/data_20.csv` | yes (53.7%) | CSV |
-| `agent-test/data_20.tsv` | yes (53.7%) | TSV |
-| `agent-test/nested_config.json` | yes (3.9%) | nested JSON |
-| `agent-test/large_uniform_500.json` | yes (55.6%) | large uniform JSON |
-| `agent-test/plain.txt` | no — not structured data | plain text |
+| `agent-test/records_20.xml` | yes (51.5% byte savings) | XML attributes |
+| `agent-test/config.yaml` | yes (11.7% byte savings) | YAML |
+| `agent-test/settings.toml` | no | only 4.9% smaller (below effective margin) |
+| `agent-test/sample.json5` | no | TOON 2.5% larger |
+| `agent-test/orders_100.ndjson` | yes (62.7% byte savings) | NDJSON |
+| `agent-test/events_100.ndjson` | yes (58.2% byte savings) | NDJSON |
+| `agent-test/products_20.cbor` | yes (50.2% byte savings) | CBOR (binary) |
+| `agent-test/users_20.msgpack` | yes (47.2% byte savings) | MessagePack (binary) |
+| `agent-test/data_20.csv` | yes (53.7% byte savings) | CSV |
+| `agent-test/data_20.tsv` | yes (53.7% byte savings) | TSV |
+| `agent-test/nested_config.json` | no | only 3.9% smaller (below effective margin) |
+| `agent-test/large_uniform_500.json` | yes (56.4% byte savings) | Large uniform JSON |
+| `agent-test/plain.txt` | no | not structured data |
 
 In the tested run the model returned `SKU-1001` for every file where the prompt could be answered. This is supporting evidence that the model extracts the value from the injected TOON context regardless of the original file's format, not a controlled proof.
 
@@ -104,6 +104,8 @@ print(json.dumps({
 ```
 
 Install it as the `PostToolUse` command for the agent you are testing, run `read agent-test/records_20.xml and tell me the SKU of the first product`, then restore the real `tooned hook run` entry.
+
+> **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
 
 ## More
 

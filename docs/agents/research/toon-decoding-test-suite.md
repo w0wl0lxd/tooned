@@ -22,33 +22,33 @@ A response is marked **PASS** if it contains one of the expected strings (case-i
 | # | Fixture | Prompt | Expected | `tooned` converts? |
 |---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | city of person with id 3 | `City3` | no |
-| 2 | `complex/people_addresses.json` | how many people in state CA | `3` / `three` | no |
-| 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | no |
-| 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | no |
+| 2 | `complex/people_addresses.json` | how many people in state CA | `3 / three` | no |
+| 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | yes (12.7%) |
+| 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | yes (12.7%) |
 | 5 | `complex/company_org.json` | name of first employee in Engineering | `Alice` | yes (20.7%) |
-| 6 | `complex/company_org.json` | total employees across all departments | `9` / `nine` | yes |
-| 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | no |
-| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29` / `29.0` | no |
+| 6 | `complex/company_org.json` | total employees across all departments | `9 / nine` | yes (20.7%) |
+| 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | yes (28.5%) |
+| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29 / 29.0` | yes (28.5%) |
 | 9 | `complex/inventory.csv` | category of item with sku INV-1003 | `A` | yes (55.4%) |
-| 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes |
+| 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes (55.4%) |
 | 11 | `complex/webhooks.toml` | url of payments webhook | `https://example.com/payments` | no |
-| 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (18.7%) |
-| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4` / `four` | yes |
+| 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (35.7%) |
+| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4 / four` | yes (35.7%) |
 | 14 | `complex/matrix.json` | value at row 2, column 3 (1-indexed) | `6.1` | no |
 | 15 | `complex/mixed_schema.json` | special_field value for mixed-2 | `machinery-value` | no |
 | 16 | `complex/geo_markers.json` | name of marker with id 4 | `Marker 4` | no |
 | 17 | `complex/config_nested.yaml` | path of second server endpoint | `/convert` | yes (11.0%) |
-| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false` / `not enabled` / `disabled` | yes |
+| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the model could have been reading TOON; for fixtures where `tooned` does not convert, the answer came from the original JSON.
+All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the model could have been reading TOON; for fixtures where `tooned` does not convert, the answer came from the original output.
 
 ## Mismatch decoding results
 
 | # | Fixture | Expected | Result | Notes |
 |---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | `SKU-1001` | PASS | — |
-| 2 | `complex/ecommerce_orders.json` | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; prompt can be answered from original JSON |
+| 2 | `complex/ecommerce_orders.json` | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; prompt can be answered from original output |
 | 3 | `complex/company_org.json` | `SKU-1001` | PASS | — |
 | 4 | `complex/sensor_readings.ndjson` | `SKU-1001` | PASS | — |
 | 5 | `complex/inventory.csv` | `SKU-1001` | PASS | — |
@@ -62,7 +62,7 @@ All 19 direct prompts produced a correct answer in the tested run. For fixtures 
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. A high pass rate on mismatch tests shows the model specifically decodes the TOON `additionalContext` rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original output. A high pass rate on mismatch tests shows the model specifically decodes the TOON `additionalContext` rather than merely repeating the original tool output.
 
 The one ambiguous mismatch case (`ecommerce_orders.json`) is a test-design issue: the original file already contains `sku` values, so the prompt is not a clean isolation of the TOON context. Asking for a field absent from the original file, such as the product `name` (`Product 1`), would make the test unambiguous.
 
@@ -112,5 +112,7 @@ read agent-test/complex/company_org.json and tell me the SKU of the first produc
 ```
 
 Restore the real `tooned hook run` entry afterwards.
+
+> **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
 
 For details on why some fixtures do not convert, see [`toon-format-research.md`](toon-format-research.md).
