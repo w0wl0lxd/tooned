@@ -1,0 +1,172 @@
+[
+  {
+    "order_id": "ORD-1001",
+    "customer": "customer_1@example.com",
+    "status": "pending",
+    "items": [
+      {
+        "sku": "SKU-1010",
+        "qty": 1,
+        "price": 11.0
+      },
+      {
+        "sku": "SKU-1011",
+        "qty": 2,
+        "price": 11.5
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1002",
+    "customer": "customer_2@example.com",
+    "status": "delivered",
+    "items": [
+      {
+        "sku": "SKU-1020",
+        "qty": 1,
+        "price": 12.0
+      },
+      {
+        "sku": "SKU-1021",
+        "qty": 2,
+        "price": 12.5
+      },
+      {
+        "sku": "SKU-1022",
+        "qty": 3,
+        "price": 13.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1003",
+    "customer": "customer_3@example.com",
+    "status": "shipped",
+    "items": [
+      {
+        "sku": "SKU-1030",
+        "qty": 1,
+        "price": 13.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1004",
+    "customer": "customer_4@example.com",
+    "status": "pending",
+    "items": [
+      {
+        "sku": "SKU-1040",
+        "qty": 1,
+        "price": 14.0
+      },
+      {
+        "sku": "SKU-1041",
+        "qty": 2,
+        "price": 14.5
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1005",
+    "customer": "customer_5@example.com",
+    "status": "delivered",
+    "items": [
+      {
+        "sku": "SKU-1050",
+        "qty": 1,
+        "price": 15.0
+      },
+      {
+        "sku": "SKU-1051",
+        "qty": 2,
+        "price": 15.5
+      },
+      {
+        "sku": "SKU-1052",
+        "qty": 3,
+        "price": 16.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1006",
+    "customer": "customer_6@example.com",
+    "status": "shipped",
+    "items": [
+      {
+        "sku": "SKU-1060",
+        "qty": 1,
+        "price": 16.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1007",
+    "customer": "customer_7@example.com",
+    "status": "pending",
+    "items": [
+      {
+        "sku": "SKU-1070",
+        "qty": 1,
+        "price": 17.0
+      },
+      {
+        "sku": "SKU-1071",
+        "qty": 2,
+        "price": 17.5
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1008",
+    "customer": "customer_8@example.com",
+    "status": "delivered",
+    "items": [
+      {
+        "sku": "SKU-1080",
+        "qty": 1,
+        "price": 18.0
+      },
+      {
+        "sku": "SKU-1081",
+        "qty": 2,
+        "price": 18.5
+      },
+      {
+        "sku": "SKU-1082",
+        "qty": 3,
+        "price": 19.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1009",
+    "customer": "customer_9@example.com",
+    "status": "shipped",
+    "items": [
+      {
+        "sku": "SKU-1090",
+        "qty": 1,
+        "price": 19.0
+      }
+    ]
+  },
+  {
+    "order_id": "ORD-1010",
+    "customer": "customer_10@example.com",
+    "status": "pending",
+    "items": [
+      {
+        "sku": "SKU-1100",
+        "qty": 1,
+        "price": 20.0
+      },
+      {
+        "sku": "SKU-1101",
+        "qty": 2,
+        "price": 20.5
+      }
+    ]
+  }
+]

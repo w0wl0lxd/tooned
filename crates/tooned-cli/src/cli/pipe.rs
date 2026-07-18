@@ -48,6 +48,8 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         None,
         None,
         None,
+        None,
+        None,
     );
 
     let mut stdin = std::io::stdin();

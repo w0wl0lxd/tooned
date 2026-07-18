@@ -40,7 +40,18 @@ struct LintResult {
 
 pub fn run(args: &LintArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(None, args.max_bytes, None, None, None, None, None, None);
+    let opts = config.conversion_options(
+        None,
+        args.max_bytes,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
 
     let mut reader = open_input(&args.input).map_err(|err| {
         anyhow::anyhow!("tooned lint: failed to read {}: {err}", args.input.display())

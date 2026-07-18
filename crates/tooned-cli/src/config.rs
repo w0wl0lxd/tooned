@@ -152,6 +152,8 @@ impl Config {
         auto_margin: Option<bool>,
         entropy_gate: Option<bool>,
         protect: Option<Vec<String>>,
+        fold: Option<bool>,
+        expand: Option<bool>,
     ) -> ConversionOptions {
         let mut opts = ConversionOptions::default();
 
@@ -181,6 +183,14 @@ impl Config {
         opts.dict_enabled = if let Some(v) = dict.or(self.dict_enabled) { v } else { true };
         opts.auto_margin = if let Some(v) = auto_margin.or(self.auto_margin) { v } else { true };
         opts.entropy_gate = if let Some(v) = entropy_gate.or(self.entropy_gate) { v } else { true };
+        // TOON key folding / path expansion default ON at the CLI surface so
+        // folded encodings round-trip losslessly by default (F25).
+        if let Some(v) = fold {
+            opts.fold_keys = v;
+        }
+        if let Some(v) = expand {
+            opts.expand_paths = v;
+        }
         if let Some(keys) = protect.or_else(|| self.protect.clone())
             && !keys.is_empty()
         {

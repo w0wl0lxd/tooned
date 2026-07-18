@@ -70,6 +70,8 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
         None,
         None,
         None,
+        None,
+        None,
     );
 
     let mut reader = match open_input(&args.input) {

@@ -118,6 +118,8 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         flag_value(args.auto_margin, args.no_auto_margin),
         flag_value(args.entropy_gate, args.no_entropy_gate),
         if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+        None,
+        None,
     );
 
     // Bound how much of the wrapped command's stdout is ever buffered in
