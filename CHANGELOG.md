@@ -70,6 +70,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tooned hook status (--claude-code|--codex)` (installed vs. not-installed) and
   `tooned hook doctor` (read-only report of every detected `PostToolUse`/hooks entry,
   tooned's own and any foreign tool's, across both agents — never writes).
+- Agent hook integrations for Droid (Factory AI), Devin, OpenCode, Kilo Code, and Pi:
+  `tooned hook install --droid|--devin|--opencode|--kilo|--pi` writes each agent's native
+  config (`.factory/hooks.json`, `.devin/hooks.v1.json` / `~/.config/devin/config.json`,
+  `.opencode/plugins/tooned.ts`, `.kilo/plugin/tooned.ts`, `.pi/extensions/tooned.ts`),
+  `hook run` handles each agent's `tool_response`/`tool_output` shape, and `hook uninstall`
+  removes only tooned's own entry. Droid's generated hook carries a 5-second timeout and
+  supports `tool_response` as either a string or an object; the TS plugins spawn `tooned` and
+  mutate the agent payload in place. Closes #27, #28.
 - MCP server (`tooned mcp serve`, `rmcp` stdio transport): `tooned_convert`,
   `tooned_detect`, `tooned_decode`, `tooned_index_build`, `tooned_index_refresh`,
   `tooned_stats`.
