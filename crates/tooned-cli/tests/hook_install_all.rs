@@ -80,11 +80,7 @@ fn install_all_project_scope_writes_hooks_for_all_agents() {
     );
 
     // Codex project hook (nested under hooks.PostToolUse)
-    let codex_hooks = project
-        .path()
-        .join(".codex-plugin")
-        .join("hooks")
-        .join("hooks.json");
+    let codex_hooks = project.path().join(".codex-plugin").join("hooks").join("hooks.json");
     assert!(codex_hooks.exists(), ".codex-plugin/hooks/hooks.json must be written");
     assert!(
         !read_nested_hooks(&codex_hooks).is_empty(),
@@ -111,11 +107,7 @@ fn install_all_is_idempotent() {
 
     let devin_hooks = project.path().join(".devin").join("hooks.v1.json");
     let entries = read_project_hooks(&devin_hooks);
-    assert_eq!(
-        entries.len(),
-        1,
-        "installing --all twice must not duplicate the Devin entry"
-    );
+    assert_eq!(entries.len(), 1, "installing --all twice must not duplicate the Devin entry");
 }
 
 #[test]
