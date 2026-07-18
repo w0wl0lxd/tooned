@@ -142,15 +142,6 @@ mod tests {
     }
 
     #[test]
-    fn people_addresses_debug() {
-        let text = std::fs::read_to_string("../../agent-test/complex/people_addresses.json").unwrap();
-        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let toon = encode_toon_raw(&value).unwrap();
-        let dict = apply_dict(&toon, &[]).map(|d| d.len()).unwrap_or(toon.len());
-        eprintln!("raw {} dict {}", toon.len(), dict);
-    }
-
-    #[test]
     fn ecommerce_subset_round_trips() {
         let value = serde_json::json!({
             "order_id": "ORD-1001",
@@ -169,7 +160,8 @@ mod tests {
 
     #[test]
     fn full_ecommerce_round_trips() {
-        let text = std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let text =
+            std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         let toon = encode_toon_raw(&value).unwrap();
         let decoded = decode_toon(&toon).unwrap();
@@ -180,10 +172,14 @@ mod tests {
     fn full_ecommerce_round_trips_with_dict() {
         use crate::dict::apply_dict;
 
-        let text = std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
+        let text =
+            std::fs::read_to_string("../../agent-test/complex/ecommerce_orders.json").unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         let toon = encode_toon_raw(&value).unwrap();
-        let dict_toon = apply_dict(&toon, &[]).unwrap_or(toon);
+        let dict_toon = match apply_dict(&toon, &[]) {
+            Some(d) => d,
+            None => toon,
+        };
         eprintln!("DICT TOON:\n{dict_toon}");
         let decoded = decode_toon(&dict_toon).unwrap();
         assert_eq!(decoded, value);

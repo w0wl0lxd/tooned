@@ -289,3 +289,30 @@ serializations for LLMs:
   compressed, structure-aware tabular spreadsheet encodings improve GPT-4
   in-context learning by 25.6% and reach 78.9% F1, demonstrating that models
   can reason over compressed tabular data when logical structure is preserved.
+
+## Codec fixes (2026-07-18)
+
+Two underlying TOON codec issues were fixed so the `tooned` conversion pipeline
+round-trips more real-world payloads:
+
+1. **Numeric normalization**: `toon-lsp` previously decoded whole-number floats
+   such as `11.0` as integers, which broke `tooned`'s round-trip gate. A new
+   `ToonConfig::preserve_number_types` option keeps the source int/float
+   distinction; `tooned-toon` enables it. Default `toon-lsp` decode still
+   normalizes exponent forms and `-0.0` per the TOON spec conformance suite.
+2. **Key folding**: `toon-lsp` gained `fold_keys`/`flatten_keys` encode options
+   and `expand_paths` decode, plus lossless path-expansion with prefix-conflict
+   suppression. `tooned-toon` uses `fold_keys` to shrink nested objects.
+
+Complex fixture results after the fixes:
+
+| Fixture | Result | Notes |
+|---|---|---|
+| `company_org.json` | converts (20.7% savings) | unchanged |
+| `ecommerce_orders.json` | converts (12.7% savings) | previously failed round-trip |
+| `events_attendees.ndjson` | converts (36.0% savings) | unchanged |
+| `sensor_readings.ndjson` | converts (28.5% savings) | previously failed round-trip |
+| `geo_markers.json` | still too large | mixed arrays/nested objects |
+| `matrix.json` | still too large | array-of-arrays |
+| `mixed_schema.json` | still too large | irregular schema |
+| `people_addresses.json` | still too large | nested `address` + `tags` arrays |
