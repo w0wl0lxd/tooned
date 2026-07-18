@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! T080b: `--help` output for the top-level `tooned` command and every
 //! subcommand is non-empty and documents its required/key flags (SC-006 --
 //! a new developer should be able to use tooned from `--help` alone,
