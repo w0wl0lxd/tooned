@@ -1,4 +1,4 @@
-# tooned
+# `tooned`
 
 [![CI](https://github.com/w0wl0lxd/tooned/actions/workflows/ci.yml/badge.svg)](https://github.com/w0wl0lxd/tooned/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/w0wl0lxd/tooned/actions/workflows/security.yml/badge.svg)](https://github.com/w0wl0lxd/tooned/actions/workflows/security.yml)
