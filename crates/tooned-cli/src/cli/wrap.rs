@@ -6,7 +6,7 @@
 //! path, prints the result; stderr and exit code of the wrapped command are
 //! passed through unchanged.
 
-use std::io::{Read as _, Write};
+use std::io::{self, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -90,6 +90,30 @@ const SIGNAL_KILLED_FALLBACK_CODE: i32 = 1;
 /// straight through instead of being accumulated in memory.
 const STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
+/// RAII guard that removes a temporary file unless explicitly disarmed.
+struct TempGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
     let Some((program, rest)) = args.command.split_first() else {
         anyhow::bail!("tooned wrap: no command given after `--`");
@@ -163,9 +187,11 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
             && !is_stdout
         {
             eprintln!("tooned wrap: failed to write captured output: {write_err}");
+            drop(stdout_pipe);
             let _ = child.wait();
             std::process::exit(1);
         }
+        drop(stdout_pipe);
         let status = child.wait();
         eprintln!("tooned wrap: error reading child stdout: {err}");
         let code = match status.ok().and_then(|s| s.code()) {
@@ -218,32 +244,72 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         // Output exceeds the cap: it would be a guaranteed passthrough, so
         // write the buffered prefix and stream the rest straight through
         // without ever holding it all in memory at once.
-        let mut writer = crate::cli::io::output_writer(args.out.as_deref())?;
-        if let Err(err) = writer.write_all(&buf)
-            && !is_stdout
-        {
-            return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
-        }
-        drop(buf);
-        let mut chunk = vec![0u8; STREAM_CHUNK_BYTES];
-        loop {
-            let n = match stdout_pipe.read(&mut chunk) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
+        //
+        // For file destinations, stream into a same-directory temp file and
+        // promote it with an atomic rename only after the child stdout is fully
+        // drained. This avoids opening/truncating `--out` before the wrapped
+        // command finishes reading it (e.g. `wrap --out data.json -- cat data.json`).
+        let mut writer: io::BufWriter<Box<dyn Write>>;
+        let mut output_state: Option<(PathBuf, PathBuf, TempGuard)> = None;
+        if is_stdout {
+            writer = crate::cli::io::output_writer(args.out.as_deref())?;
+        } else {
+            let Some(path) = args.out.as_deref() else {
+                anyhow::bail!("tooned wrap: --out path required for non-stdout destination");
             };
-            if let Some(written) = chunk.get(..n)
-                && let Err(err) = writer.write_all(written)
-                && !is_stdout
-            {
+            let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+            let (tmp_path, file) = crate::cli::io::open_output_temp(&target)?;
+            let guard = TempGuard::new(tmp_path.clone());
+            writer = io::BufWriter::new(file);
+            output_state = Some((target, tmp_path, guard));
+        }
+
+        let mut write_failed = false;
+        if let Err(err) = writer.write_all(&buf) {
+            if !is_stdout {
                 return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
             }
+            write_failed = true;
         }
-        if let Err(err) = writer.flush()
+        drop(buf);
+
+        if !write_failed {
+            let mut chunk = vec![0u8; STREAM_CHUNK_BYTES];
+            loop {
+                let n = match stdout_pipe.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                if let Some(written) = chunk.get(..n)
+                    && let Err(err) = writer.write_all(written)
+                {
+                    if !is_stdout {
+                        return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
+                    }
+                    write_failed = true;
+                    break;
+                }
+            }
+        }
+
+        if !write_failed
+            && let Err(err) = writer.flush()
             && !is_stdout
         {
             return Err(anyhow::anyhow!("tooned wrap: failed to flush output: {err}"));
         }
+
+        if let Some((target, tmp_path, mut guard)) = output_state {
+            crate::cli::io::atomic_rename(&tmp_path, &target)
+                .map_err(|err| anyhow::anyhow!("tooned wrap: failed to write output: {err}"))?;
+            guard.disarm();
+        }
     }
+
+    // Close the read end of the pipe now that we are done consuming stdout.
+    // For stdout-mode broken-pipe failures this lets the child receive SIGPIPE
+    // and terminate instead of blocking on a full pipe buffer.
+    drop(stdout_pipe);
 
     // Mirror the wrapped command's exit code exactly.
     let status = match child.wait() {
