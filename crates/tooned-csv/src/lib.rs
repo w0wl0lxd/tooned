@@ -2,6 +2,8 @@
 
 //! CSV/TSV parsing.
 
+use std::io::BufRead;
+
 use serde_json::{Map, Value};
 use tooned_parse::ParseError;
 
@@ -70,6 +72,144 @@ fn parse_delimited(input: &[u8], delimiter: u8) -> Result<Value, ParseError> {
 fn first_duplicate_header(headers: &csv::StringRecord) -> Option<&str> {
     let mut seen = std::collections::HashSet::with_capacity(headers.len());
     headers.into_iter().find(|candidate| !seen.insert(*candidate))
+}
+
+/// Streaming CSV parser: yields one `Value` per record as an object.
+pub fn parse_csv_stream<R: BufRead>(reader: R) -> CsvStream<R> {
+    let mut csv_reader = csv::ReaderBuilder::new()
+        .delimiter(b',')
+        .has_headers(true)
+        .flexible(true)
+        .from_reader(reader);
+
+    // Read headers immediately
+    let headers_result = csv_reader.headers();
+    let headers = match headers_result {
+        Ok(h) => {
+            if let Some(dup) = first_duplicate_header(h) {
+                let dup = dup.to_string();
+                Err(format!(
+                    "duplicate column header {dup:?}: refusing to parse, since later columns of the \
+                     same name would silently overwrite earlier ones and lose data"
+                ))
+            } else {
+                Ok(h.iter().map(std::string::ToString::to_string).collect())
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    };
+
+    CsvStream { reader: csv_reader, headers }
+}
+
+/// Iterator returned by [`parse_csv_stream`].
+pub struct CsvStream<R> {
+    reader: csv::Reader<R>,
+    headers: Result<Vec<String>, String>,
+}
+
+impl<R: BufRead> CsvStream<R> {
+    /// Get the headers, if available.
+    pub fn headers(&self) -> Option<&[String]> {
+        self.headers.as_ref().ok().map(Vec::as_slice)
+    }
+}
+
+impl<R: BufRead> Iterator for CsvStream<R> {
+    type Item = Result<Value, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check for header error first
+        let headers = match &self.headers {
+            Ok(h) => h,
+            Err(e) => return Some(Err(ParseError::Csv(e.clone()))),
+        };
+
+        let record = match self.reader.records().next() {
+            Some(Ok(r)) => r,
+            Some(Err(e)) => return Some(Err(ParseError::Csv(e.to_string()))),
+            None => return None,
+        };
+
+        let mut map = Map::new();
+        for (i, field) in record.iter().enumerate() {
+            let key = match headers.get(i) {
+                Some(k) => k.clone(),
+                None => format!("field_{i}"),
+            };
+            map.insert(key, Value::String(field.to_string()));
+        }
+        Some(Ok(Value::Object(map)))
+    }
+}
+
+/// Streaming TSV parser: yields one `Value` per record as an object.
+pub fn parse_tsv_stream<R: BufRead>(reader: R) -> TsvStream<R> {
+    let mut csv_reader = csv::ReaderBuilder::new()
+        .delimiter(b'\t')
+        .has_headers(true)
+        .flexible(true)
+        .from_reader(reader);
+
+    // Read headers immediately
+    let headers_result = csv_reader.headers();
+    let headers = match headers_result {
+        Ok(h) => {
+            if let Some(dup) = first_duplicate_header(h) {
+                let dup = dup.to_string();
+                Err(format!(
+                    "duplicate column header {dup:?}: refusing to parse, since later columns of the \
+                     same name would silently overwrite earlier ones and lose data"
+                ))
+            } else {
+                Ok(h.iter().map(std::string::ToString::to_string).collect())
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    };
+
+    TsvStream { reader: csv_reader, headers }
+}
+
+/// Iterator returned by [`parse_tsv_stream`].
+pub struct TsvStream<R> {
+    reader: csv::Reader<R>,
+    headers: Result<Vec<String>, String>,
+}
+
+impl<R: BufRead> TsvStream<R> {
+    /// Get the headers, if available.
+    pub fn headers(&self) -> Option<&[String]> {
+        self.headers.as_ref().ok().map(Vec::as_slice)
+    }
+}
+
+impl<R: BufRead> Iterator for TsvStream<R> {
+    type Item = Result<Value, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check for header error first
+        let headers = match &self.headers {
+            Ok(h) => h,
+            Err(e) => return Some(Err(ParseError::Csv(e.clone()))),
+        };
+
+        let record = match self.reader.records().next() {
+            Some(Ok(r)) => r,
+            Some(Err(e)) => return Some(Err(ParseError::Csv(e.to_string()))),
+            None => return None,
+        };
+
+        let mut map = Map::new();
+        for (i, field) in record.iter().enumerate() {
+            let key = match headers.get(i) {
+                Some(k) => k.clone(),
+                None => format!("field_{i}"),
+            };
+            map.insert(key, Value::String(field.to_string()));
+        }
+        Some(Ok(Value::Object(map)))
+    }
 }
 
 #[cfg(test)]
