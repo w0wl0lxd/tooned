@@ -39,11 +39,11 @@ Sources:
 - [toonformat.dev format overview](https://toonformat.dev/guide/format-overview.html)
 - [crates.io: toon-lsp](https://crates.io/crates/toon-lsp)
 
-## Complex fixture conversion status
+## Why the complex fixtures behave as they do
 
 The `tooned check` results below are from the current build:
 
-| Fixture | `tooned check` result | Notes |
+| Fixture | `tooned check` result | Why it behaves this way |
 |---|---|---|
 | `complex/people_addresses.json` | not convertible — TOON 16.6% larger | Nested `address` object and `tags` array make the structure non-tabular |
 | `complex/ecommerce_orders.json` | 12.7% savings, convertible | Nested `items` arrays and `order_id` protected by the critical-field policy; still convertible |
