@@ -6,13 +6,14 @@
 //! (FR-005): reads are always read-only, and `--out` writes to a distinct
 //! destination, never back onto `input`.
 
+use std::cell::RefCell;
 use std::io::{BufRead, Write as _};
 use std::path::{Path, PathBuf};
 
 use clap::Args;
 use tooned_core::{
     Conversion, ConversionOptions, StreamStats, decode_onto, decode_toon, decode_tron,
-    is_smaller_enough, maybe_tooned, maybe_tron, maybe_tron_stream,
+    is_smaller_enough, maybe_tooned_in, maybe_tron, maybe_tron_stream,
 };
 
 use crate::cli::FormatHint;
@@ -20,6 +21,15 @@ use crate::cli::io::{
     BoundedRead, atomic_rename, open_input, open_output_temp, read_bounded, read_input,
     write_atomic, write_output,
 };
+
+thread_local! {
+    /// Reusable TOON output buffer for the adaptive conversion path.
+    /// Using a thread-local buffer avoids repeatedly allocating a fresh
+    /// `String` for every `maybe_tooned_in` call while still letting the
+    /// conversion borrow from it and then move the bytes into the final
+    /// `Vec<u8>` returned to the caller.
+    static TOON_OUT: RefCell<String> = const { RefCell::new(String::new()) };
+}
 
 /// Compute model-aware token savings for the convert metrics path (F1/F2).
 /// Returns `(Some(tokens_saved), true)` when a [`TokenizerProfile`] is
@@ -642,33 +652,41 @@ fn finalize_json(value: &serde_json::Value, bytes: &[u8]) -> Vec<u8> {
 /// passthrough outcome (constitution Principle I -- never an error for
 /// payload-driven ambiguity).
 fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
-    #[allow(clippy::manual_unwrap_or)]
-    let input_len = match bytes.len().try_into() {
-        Ok(v) => v,
-        Err(_) => i64::MAX,
-    };
-    let output = match maybe_tooned(bytes, opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
-        // Infallible in practice (see maybe_tooned's doc comment); fail
-        // safe to the original bytes rather than panicking or erroring.
-        Err(_) => bytes.to_vec(),
-    };
-    #[allow(clippy::manual_unwrap_or)]
-    let output_len = match output.len().try_into() {
-        Ok(v) => v,
-        Err(_) => i64::MAX,
-    };
-    let converted = output_len != input_len;
-    crate::metrics_recorder::record_convert_outcome(
-        crate::metrics_recorder::CliSurface::Convert,
-        &crate::metrics_recorder::SourceLabel::None,
-        opts.format_hint,
-        converted,
-        input_len,
-        output_len,
-    );
-    output
+    TOON_OUT.with_borrow_mut(|out| {
+        // Ensure the reusable buffer is at least as large as the input so the
+        // first conversion on this thread does not immediately reallocate.
+        if out.capacity() < bytes.len() {
+            out.reserve(bytes.len() - out.capacity());
+        }
+
+        #[allow(clippy::manual_unwrap_or)]
+        let input_len = match bytes.len().try_into() {
+            Ok(v) => v,
+            Err(_) => i64::MAX,
+        };
+        let output = match maybe_tooned_in(bytes, opts, out) {
+            Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+            Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
+            // Infallible in practice (see maybe_tooned's doc comment); fail
+            // safe to the original bytes rather than panicking or erroring.
+            Err(_) => bytes.to_vec(),
+        };
+        #[allow(clippy::manual_unwrap_or)]
+        let output_len = match output.len().try_into() {
+            Ok(v) => v,
+            Err(_) => i64::MAX,
+        };
+        let converted = output_len != input_len;
+        crate::metrics_recorder::record_convert_outcome(
+            crate::metrics_recorder::CliSurface::Convert,
+            &crate::metrics_recorder::SourceLabel::None,
+            opts.format_hint,
+            converted,
+            input_len,
+            output_len,
+        );
+        output
+    })
 }
 
 /// Returns the size of the input in bytes, or 0 for stdin (unknown size).

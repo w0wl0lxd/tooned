@@ -10,11 +10,16 @@
 //! and `tooned` for the distributed binary (CLI, hooks, MCP server)
 //! that wires this crate together with `tooned-index`.
 //!
-//! The public surface here is exactly `contracts/tooned-core-api.md`:
-//! [`maybe_tooned`], [`inspect`], and [`decode_toon`]. Every other
-//! integration surface (CLI, Claude Code/Codex hooks, MCP server) funnels
-//! through these three functions rather than re-implementing detection or
-//! conversion logic (constitution Principle V).
+//! The public surface is defined by `contracts/tooned-core-api.md`:
+//! [`maybe_tooned`], [`maybe_tooned_in`], [`inspect`], and [`decode_toon`].
+//! The zero-allocation hot path is [`maybe_tooned_in`]`/`[`toon_from_value`]`:
+//! after parsing, the function writes TOON into a caller-provided `&mut String`
+//! and returns a [`Conversion`] that borrows from it. The parsing step itself
+//! still allocates, but the encode/verify/margin phases do not when dict,
+//! auto-margin, and entropy tiers are disabled. Every other integration
+//! surface (CLI, Claude Code/Codex hooks, MCP server) funnels through these
+//! functions rather than re-implementing detection or conversion logic
+//! (constitution Principle V).
 
 // Re-export public types from tooned-types
 pub use tooned_types::{

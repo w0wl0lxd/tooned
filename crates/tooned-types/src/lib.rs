@@ -231,6 +231,12 @@ pub struct InspectReport {
 }
 
 /// Result of an adaptive conversion decision (data-model.md).
+///
+/// The lifetime `'a` ties the `Cow` payloads to the input and output buffers
+/// provided by the caller. `maybe_tooned_in` and `toon_from_value` return
+/// `Conversion<'a>` that borrows from the caller's `&'a mut String` and
+/// `&'a [u8]`; `maybe_tooned` is the owned convenience wrapper that returns
+/// `Conversion<'static>`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Conversion<'a> {
     Toon { text: Cow<'a, str>, report: ConversionReport },
