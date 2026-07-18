@@ -15,7 +15,7 @@ fn watch_with_stop_triggers_sync_on_new_file() {
     let root = dir.path();
 
     // Create an empty index to satisfy `watch_with_stop`.
-    tooned_index::scan_full(root).expect("initial scan");
+    tooned_index::scan_full(root, &tooned_index::IndexFilter::default()).expect("initial scan");
     let before = tooned_index::status(root).expect("status before watch");
     assert_eq!(before.file_count, 0);
 
@@ -24,8 +24,13 @@ fn watch_with_stop_triggers_sync_on_new_file() {
     let stop_for_thread = Arc::clone(&stop);
 
     let handle = thread::spawn(move || {
-        tooned_index::watch_with_stop(&root_owned, 50, &stop_for_thread)
-            .expect("watch loop should exit cleanly");
+        tooned_index::watch_with_stop(
+            &root_owned,
+            50,
+            &stop_for_thread,
+            &tooned_index::IndexFilter::default(),
+        )
+        .expect("watch loop should exit cleanly");
     });
 
     // Give the watcher time to register. FSEvents on macOS can take a
@@ -64,7 +69,7 @@ fn watch_ignores_gitignored_directories() {
     std::fs::create_dir(root.join("target")).expect("create target dir");
 
     // Initial scan must see the .gitignore but not the ignored directory.
-    tooned_index::scan_full(root).expect("initial scan");
+    tooned_index::scan_full(root, &tooned_index::IndexFilter::default()).expect("initial scan");
     let before = tooned_index::status(root).expect("status before watch");
     assert_eq!(before.file_count, 0, "gitignored directory should not be indexed");
 
@@ -73,8 +78,13 @@ fn watch_ignores_gitignored_directories() {
     let stop_for_thread = Arc::clone(&stop);
 
     let handle = thread::spawn(move || {
-        tooned_index::watch_with_stop(&root_owned, 50, &stop_for_thread)
-            .expect("watch loop should exit cleanly");
+        tooned_index::watch_with_stop(
+            &root_owned,
+            50,
+            &stop_for_thread,
+            &tooned_index::IndexFilter::default(),
+        )
+        .expect("watch loop should exit cleanly");
     });
 
     thread::sleep(Duration::from_millis(500));
