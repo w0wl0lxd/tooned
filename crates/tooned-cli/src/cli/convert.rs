@@ -56,35 +56,75 @@ pub enum Direction {
 }
 
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ConvertArgs {
     /// Input file, or `-` for stdin.
     pub input: PathBuf,
 
     /// Force conversion direction instead of the adaptive default.
-    #[arg(long, value_enum)]
+    #[arg(short = 't', long, value_enum)]
     pub to: Option<Direction>,
 
     /// Output destination, or `-` for stdout (default).
-    #[arg(long)]
+    #[arg(short = 'o', long)]
     pub out: Option<PathBuf>,
 
     /// Force the parser's doc type instead of relying on content-sniffing
     /// (only applies to the adaptive default and `--to toon`; `--to json`
     /// always decodes TOON regardless).
-    #[arg(long = "format-hint", value_enum)]
+    #[arg(short = 'f', long = "format-hint", value_enum)]
     pub format_hint: Option<FormatHint>,
 
     /// Minimum savings margin, as a percentage, required to convert (default 2%).
-    #[arg(long)]
+    #[arg(short = 'm', long)]
     pub margin: Option<f64>,
 
     /// Maximum input size in bytes before hard passthrough (default 2 MiB).
-    #[arg(long = "max-bytes")]
+    #[arg(short = 'b', long = "max-bytes")]
     pub max_bytes: Option<u64>,
 
+    /// Enable the dictionary-compression tier (#1). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_dict")]
+    pub dict: bool,
+    /// Disable the dictionary-compression tier (#1).
+    #[arg(long = "no-dict", action = clap::ArgAction::SetTrue, conflicts_with = "dict")]
+    pub no_dict: bool,
+
+    /// Enable the density-aware acceptance margin (#2). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_auto_margin")]
+    pub auto_margin: bool,
+    /// Disable the density-aware acceptance margin (#2).
+    #[arg(long = "no-auto-margin", action = clap::ArgAction::SetTrue, conflicts_with = "auto_margin")]
+    pub no_auto_margin: bool,
+
+    /// Enable the entropy gate (#5). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_entropy_gate")]
+    pub entropy_gate: bool,
+    /// Disable the entropy gate (#5).
+    #[arg(long = "no-entropy-gate", action = clap::ArgAction::SetTrue, conflicts_with = "entropy_gate")]
+    pub no_entropy_gate: bool,
+
+    /// Protect these column/key substrings from dictionary abbreviation (#3).
+    /// Repeatable.
+    #[arg(long = "protect", action = clap::ArgAction::Append)]
+    pub protect: Vec<String>,
+
     /// Path to a tooned config file.
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+}
+
+/// Collapse the `--flag` / `--no-flag` pair into a single `Option<bool>`.
+/// `None` when neither is supplied lets the configured default apply;
+/// an explicit `Some(true)` / `Some(false)` always overrides it.
+fn flag_value(yes: bool, no: bool) -> Option<bool> {
+    if no {
+        Some(false)
+    } else if yes {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 // `Result` is kept (rather than `()`) to match every other subcommand's
@@ -115,7 +155,9 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             // to materialize an arbitrarily large file in memory before the cap
             // is consulted (finding: the decode direction previously used the
             // unbounded `read_input`, a local denial-of-memory vector).
-            let cap = config.conversion_options(None, args.max_bytes, None, None).max_input_bytes;
+            let cap = config
+                .conversion_options(None, args.max_bytes, None, None, None, None, None, None)
+                .max_input_bytes;
             let bytes = match crate::cli::io::read_input_bounded(&args.input, cap) {
                 Ok(bytes) => bytes,
                 Err(err) => {
@@ -146,8 +188,16 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                     std::process::exit(2);
                 }
             };
-            let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
+            let mut opts = config.conversion_options(
+                args.margin,
+                args.max_bytes,
+                format_hint,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
             opts.margin_pct = 0.0;
             let onto_outcome = tooned_core::maybe_onto(&bytes, &opts);
             let converted = matches!(onto_outcome, Ok(Conversion::Toon { .. }));
@@ -189,8 +239,16 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // objects. Like `--to onto`, the margin is forced to 0% but round-trip
         // fidelity is still enforced.
         Some(Direction::Tron) => {
-            let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
+            let mut opts = config.conversion_options(
+                args.margin,
+                args.max_bytes,
+                format_hint,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
             opts.margin_pct = 0.0;
 
             // Check if we should use streaming for NDJSON input
@@ -257,14 +315,31 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // still falls back to passthrough rather than ever emitting a
         // corrupted or larger-than-source encoding.
         Some(Direction::Toon) => {
-            let mut opts =
-                config.conversion_options(args.margin, args.max_bytes, format_hint, None);
+            let mut opts = config.conversion_options(
+                args.margin,
+                args.max_bytes,
+                format_hint,
+                None,
+                flag_value(args.dict, args.no_dict),
+                flag_value(args.auto_margin, args.no_auto_margin),
+                flag_value(args.entropy_gate, args.no_entropy_gate),
+                if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+            );
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
             run_adaptive_bounded(args, &opts)?;
         }
         None => {
-            let opts = config.conversion_options(args.margin, args.max_bytes, format_hint, None);
+            let opts = config.conversion_options(
+                args.margin,
+                args.max_bytes,
+                format_hint,
+                None,
+                flag_value(args.dict, args.no_dict),
+                flag_value(args.auto_margin, args.no_auto_margin),
+                flag_value(args.entropy_gate, args.no_entropy_gate),
+                if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+            );
 
             // Stream only when the input is genuinely too large to buffer:
             // `maybe_tooned` (via `run_adaptive_bounded`) is the single,

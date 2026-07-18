@@ -112,6 +112,7 @@ fn hook_install_help_documents_agent_scope_and_mcp_flags() {
     assert_help(
         &["hook", "install"],
         &[
+            "--all",
             "--claude-code",
             "--codex",
             "--devin",
@@ -130,6 +131,7 @@ fn hook_uninstall_help_documents_agent_and_scope_flags() {
     assert_help(
         &["hook", "uninstall"],
         &[
+            "--all",
             "--claude-code",
             "--codex",
             "--devin",
@@ -146,7 +148,16 @@ fn hook_uninstall_help_documents_agent_and_scope_flags() {
 fn hook_status_help_documents_the_agent_selector_flags() {
     assert_help(
         &["hook", "status"],
-        &["--claude-code", "--codex", "--devin", "--droid", "--opencode", "--kilo", "--pi"],
+        &[
+            "--all",
+            "--claude-code",
+            "--codex",
+            "--devin",
+            "--droid",
+            "--opencode",
+            "--kilo",
+            "--pi",
+        ],
     );
 }
 

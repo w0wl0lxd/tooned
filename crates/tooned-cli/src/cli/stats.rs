@@ -33,7 +33,7 @@ pub struct StatsArgs {
     pub path: Option<PathBuf>,
 
     /// Limit results to the top N entries.
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     pub top: Option<u32>,
 
     /// Rank results by savings, conversion count, or recency.
@@ -41,7 +41,7 @@ pub struct StatsArgs {
     pub sort_by: Option<StatsSortBy>,
 
     /// Emit the report as a JSON array instead of human-readable text.
-    #[arg(long)]
+    #[arg(short = 'j', long)]
     pub json: bool,
 }
 
