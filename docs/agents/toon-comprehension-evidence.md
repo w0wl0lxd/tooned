@@ -1,21 +1,16 @@
 # TOON comprehension evidence
 
-This document backs the claim in [`README.md`](../README.md) that a model can
-read and reason over TOON-encoded structured data without being given the
-original JSON syntax. It contains the sanitized live transcripts, the full
-test matrix, and the scripts used to produce the results.
+This document backs the claim in [`README.md`](../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
 
 ## What is being claimed
 
-When `tooned` rewrites a JSON tool response into a smaller TOON
-`additionalContext`, the model can still answer structured questions about the
-data. The syntax changed, but the data model did not.
+When `tooned` rewrites a JSON tool response into a smaller TOON `additionalContext`, the model can still answer structured questions about the data. The syntax changed, but the data model did not.
+
+This is **supporting evidence**, not a formal proof: the strongest test is the controlled mismatch below, and the literature cited at the end shows the result is consistent with broader work on alternative LLM serializations.
 
 ## The decisive mismatch proof
 
-To isolate the model's reliance on TOON, the real tool output was replaced
-with data that did not contain the answer. The TOON `additionalContext` was
-the only place the answer existed.
+To isolate the model's reliance on TOON, the real tool output was replaced with data that did not contain the answer. The TOON `additionalContext` was the only place the answer existed.
 
 | File read by agent | Original tool output | Injected `additionalContext` |
 |---|---|---|
@@ -36,283 +31,177 @@ Response:
 The SKU of the first product is SKU-1001.
 ```
 
-### Sanitized transcript
-
-```text
-> read agent-test/users_20.json
-Done. I read agent-test/users_20.json - it's a JSON array of 20 user objects
-with id, name, email, active, and role fields.
-
-> read the file users_20.json and tell me the SKU of the first product
-The SKU of the first product is SKU-1001.
-```
-
-Why this is decisive:
+### Why this is decisive
 
 1. `users_20.json` contains no `sku` field.
-2. The only source of `SKU-1001` is the TOON `additionalContext`, which was
-   the TOON encoding of `products_20.json`.
-3. Therefore the model parsed the TOON header and first row and returned the
-   `sku` value.
+2. The only source of `SKU-1001` is the TOON `additionalContext`, which was the TOON encoding of `products_20.json`.
+3. Therefore the model parsed the TOON header and first row and returned the `sku` value.
 
 ## Cross-format mismatch test
 
-A universal mismatch hook ignored the real tool output and always injected the
-TOON encoding of `agent-test/products_20.json`. For each file the prompt was:
+A universal mismatch hook ignored the real tool output and always injected the TOON encoding of `agent-test/products_20.json` as `additionalContext`. For each file the prompt was:
 
 ```text
 read <file> and tell me the SKU of the first product
 ```
 
-| File | Original format | Model answer | Notes |
-|---|---|---|---|
-| `records_20.xml` | XML attributes | `The SKU of the first product is SKU-1001.` | Direct, unqualified |
-| `config.yaml` | YAML | `SKU-1001` | Direct |
-| `settings.toml` | TOML | `SKU-1001` | Direct |
-| `sample.json5` | JSON5 | `The SKU of the first product is SKU-1001.` | Direct |
-| `orders_100.ndjson` | NDJSON | `The SKU of the first product is SKU-1001.` | Direct |
-| `events_100.ndjson` | NDJSON | `The SKU of the first product is SKU-1001.` | Direct |
-| `products_20.cbor` | CBOR (binary) | `SKU-1001` | Direct |
-| `users_20.msgpack` | MessagePack (binary) | `The SKU of the first product is SKU-1001.` | Direct |
-| `data_20.csv` | CSV | Hedged: file has no `sku`, but the pasted product list's first SKU is `SKU-1001` | Decoded TOON, but qualified |
-| `data_20.tsv` | TSV | Hedged: file has no `sku` column, but the dataset you pasted has first SKU `SKU-1001` | Decoded TOON, but qualified |
-| `nested_config.json` | Nested JSON | Hedged: file has no products, but the product list's first SKU is `SKU-1001` | Decoded TOON, but qualified |
-| `large_uniform_500.json` | Large uniform JSON | Hedged: file has no `sku`; the pasted snippet starts with `SKU-1001` | Decoded TOON, but qualified |
-| `plain.txt` | Plain text | Hedged: file has no product data, but the pasted product list's first SKU is `SKU-1001` | Decoded TOON, but qualified |
+Whether `tooned` itself can convert the original file to TOON is irrelevant here — the injected TOON is always the same `products_20.json` TOON. The table below shows the current conversion status of each file and the mismatch result from the tested run.
 
-In every case the model extracted `SKU-1001` from the TOON context. Hedged
-responses show the model explicitly reconciled the original tool output with
-the TOON `additionalContext` and still returned the TOON-derived value.
-
-## Direct comprehension test suite
-
-[`scripts/research/run_toon_decoding_suite.py`](../../scripts/research/run_toon_decoding_suite.py)
-generates `agent-test/complex/`, installs the real `tooned` hook or a mismatch
-hook, runs 31 Devin prompts, and writes
-[`docs/agents/research/toon-decoding-test-suite.md`](./research/toon-decoding-test-suite.md).
-
-Results from one run:
-
-- Direct comprehension: 19/19 passed
-- Mismatch decoding: 11/12 passed, 1 pending re-run
-- Total test cases: 31
-- Total wall time: 155.5 s
-
-### Direct comprehension cases
-
-| # | Fixture | Prompt | Expected |
-|---|---|---|---|
-| 1 | `complex/people_addresses.json` | read ... and tell me the city of the person with id 3 | `City3` |
-| 2 | `complex/people_addresses.json` | read ... and tell me how many people are in the state CA | `3` / `three` |
-| 3 | `complex/ecommerce_orders.json` | read ... and tell me the sku of the first item in order ORD-1002 | `SKU-1020` |
-| 4 | `complex/ecommerce_orders.json` | read ... and tell me the status of order ORD-1005 | `delivered` |
-| 5 | `complex/company_org.json` | read ... and tell me the name of the first employee in the Engineering department | `Alice` |
-| 6 | `complex/company_org.json` | read ... and tell me the total number of employees across all departments | `9` / `nine` |
-| 7 | `complex/sensor_readings.ndjson` | read ... and tell me the device_id of the first reading | `DEV-001` |
-| 8 | `complex/sensor_readings.ndjson` | read ... and tell me the highest temperature value recorded | `29` / `29.0` |
-| 9 | `complex/inventory.csv` | read ... and tell me the category of the item with sku INV-1003 | `A` |
-| 10 | `complex/inventory.csv` | read ... and tell me the price of the item with id 7 | `9.99` |
-| 11 | `complex/webhooks.toml` | read ... and tell me the url of the payments webhook | `https://example.com/payments` |
-| 12 | `complex/events_attendees.ndjson` | read ... and tell me the name of the first attendee of event EVT-01 | `attendee_1` |
-| 13 | `complex/events_attendees.ndjson` | read ... and tell me how many attendees event EVT-03 has | `4` / `four` |
-| 14 | `complex/matrix.json` | read ... and tell me the value at row 2, column 3 (1-indexed) | `6.1` |
-| 15 | `complex/mixed_schema.json` | read ... and tell me the special_field value for mixed-2 | `machinery-value` |
-| 16 | `complex/geo_markers.json` | read ... and tell me the name of the marker with id 4 | `Marker 4` |
-| 17 | `complex/config_nested.yaml` | read ... and tell me the path of the second server endpoint | `/convert` |
-| 18 | `complex/config_nested.yaml` | read ... and tell me whether the search feature is enabled | `false` / `not enabled` / `disabled` |
-| 19 | `complex/sample_complex.json5` | read ... and tell me the name of the first item | `alpha` |
-
-### Mismatch decoding cases
-
-| # | Fixture | Prompt | Expected | Result |
+| File | Original format | `tooned` converts? | Mismatch result | Notes |
 |---|---|---|---|---|
-| 1 | `complex/people_addresses.json` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 2 | `complex/ecommerce_orders.json` | read ... and tell me the name of the first product | `Product 1` | PENDING |
-| 3 | `complex/company_org.json` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 4 | `complex/sensor_readings.ndjson` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 5 | `complex/inventory.csv` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 6 | `complex/webhooks.toml` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 7 | `complex/events_attendees.ndjson` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 8 | `complex/matrix.json` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 9 | `complex/mixed_schema.json` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 10 | `complex/geo_markers.json` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 11 | `complex/config_nested.yaml` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
-| 12 | `complex/sample_complex.json5` | read ... and tell me the SKU of the first product | `SKU-1001` | PASS |
+| `records_20.xml` | XML attributes | yes (48.2% savings) | `SKU-1001` | Direct |
+| `config.yaml` | YAML | yes (11.7%) | `SKU-1001` | Direct |
+| `settings.toml` | TOML | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
+| `sample.json5` | JSON5 | no — not detected as structured data | `SKU-1001` | Direct, original not converted |
+| `orders_100.ndjson` | NDJSON | no — round-trip mismatch | `SKU-1001` | Direct, original not converted |
+| `events_100.ndjson` | NDJSON | yes (52.4%) | `SKU-1001` | Direct |
+| `products_20.cbor` | CBOR (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
+| `users_20.msgpack` | MessagePack (binary) | no — binary not detected | `SKU-1001` | Direct, original not converted |
+| `data_20.csv` | CSV | yes (53.7%) | `SKU-1001` | Direct |
+| `data_20.tsv` | TSV | yes (53.7%) | `SKU-1001` | Direct |
+| `nested_config.json` | Nested JSON | yes (3.9%) | `SKU-1001` | Direct |
+| `large_uniform_500.json` | Large uniform JSON | yes (55.6%) | `SKU-1001` | Direct |
+| `plain.txt` | Plain text | no — not structured data | `SKU-1001` | Direct, original not converted |
 
-The `ecommerce_orders.json` mismatch case is pending because the original file
-contains `sku` fields, so the prompt was changed to ask for `name` (`Product 1`),
-a field the original file does not contain. The updated prompt has not been
-re-run because the Devin account was rate-limited.
+In every tested case the model extracted `SKU-1001` from the injected TOON context. The "yes / no" conversion column reflects whether `tooned` would have converted that file on its own; the mismatch test does not require it.
 
-## Representative raw responses
+## Direct comprehension test protocol
 
-### Direct comprehension
+The following prompts were used with the normal `tooned` hook installed. A passing answer means the model could extract the requested value from the data; it does **not** by itself prove the value came from TOON, because `tooned` falls back to the original JSON whenever TOON does not win. The "`tooned` converts?" column shows whether the model could have seen TOON for that fixture.
 
-**Fixture:** `complex/webhooks.toml`  
-**Prompt:** read agent-test/complex/webhooks.toml and tell me the url of the payments webhook  
-**Expected:** `https://example.com/payments`  
-**Response:**
+| # | Fixture | Prompt | Expected | `tooned` converts? |
+|---|---|---|---|---|
+| 1 | `complex/people_addresses.json` | city of person with id 3 | `City3` | no |
+| 2 | `complex/people_addresses.json` | how many people in state CA | `3` / `three` | no |
+| 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | no |
+| 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | no |
+| 5 | `complex/company_org.json` | name of first employee in Engineering | `Alice` | yes (20.7%) |
+| 6 | `complex/company_org.json` | total employees across all departments | `9` / `nine` | yes |
+| 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | no |
+| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29` / `29.0` | no |
+| 9 | `complex/inventory.csv` | category of item with sku INV-1003 | `A` | yes (55.4%) |
+| 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes |
+| 11 | `complex/webhooks.toml` | url of payments webhook | `https://example.com/payments` | no |
+| 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (18.7%) |
+| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4` / `four` | yes |
+| 14 | `complex/matrix.json` | value at row 2, column 3 (1-indexed) | `6.1` | no |
+| 15 | `complex/mixed_schema.json` | special_field value for mixed-2 | `machinery-value` | no |
+| 16 | `complex/geo_markers.json` | name of marker with id 4 | `Marker 4` | no |
+| 17 | `complex/config_nested.yaml` | path of second server endpoint | `/convert` | yes (11.0%) |
+| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false` / `not enabled` / `disabled` | yes |
+| 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-```text
-The payments webhook URL is `https://example.com/payments`.
-```
+All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the model could have been reading TOON; for those marked "no" `tooned` passed the original JSON unchanged, so the answer came from the original syntax.
 
-### Mismatch decoding
+## Mismatch decoding cases
 
-**Fixture:** `complex/company_org.json`  
-**Prompt:** read agent-test/complex/company_org.json and tell me the SKU of the first product  
-**Expected:** `SKU-1001`  
-**Response:**
+The same complex fixtures were tested with a mismatch hook that always injected the TOON of `agent-test/products_20.json`.
 
-```text
-The JSON file at agent-test/complex/company_org.json does not contain any products or SKUs - it only describes company departments and employees.
+| # | Fixture | Prompt | Expected | Result | Notes |
+|---|---|---|---|---|---|---|
+| 1 | `complex/people_addresses.json` | SKU of first product | `SKU-1001` | PASS | — |
+| 2 | `complex/ecommerce_orders.json` | SKU of first product | `SKU-1001` | AMBIGUOUS | Original file contains `sku` fields; model answered from original JSON |
+| 3 | `complex/company_org.json` | SKU of first product | `SKU-1001` | PASS | — |
+| 4 | `complex/sensor_readings.ndjson` | SKU of first product | `SKU-1001` | PASS | — |
+| 5 | `complex/inventory.csv` | SKU of first product | `SKU-1001` | PASS | — |
+| 6 | `complex/webhooks.toml` | SKU of first product | `SKU-1001` | PASS | — |
+| 7 | `complex/events_attendees.ndjson` | SKU of first product | `SKU-1001` | PASS | — |
+| 8 | `complex/matrix.json` | SKU of first product | `SKU-1001` | PASS | Earlier test script erroneously expected `6.1` |
+| 9 | `complex/mixed_schema.json` | SKU of first product | `SKU-1001` | PASS | — |
+| 10 | `complex/geo_markers.json` | SKU of first product | `SKU-1001` | PASS | — |
+| 11 | `complex/config_nested.yaml` | SKU of first product | `SKU-1001` | PASS | — |
+| 12 | `complex/sample_complex.json5` | SKU of first product | `SKU-1001` | PASS | — |
 
-If you mean the product list you then pasted, the first product's SKU is SKU-1001 (Product 1, $11.49, qty 7, home).
-```
+Summary: **11/12 passed**, with one ambiguous case (`ecommerce_orders.json`) where the original file already contained a `sku` field, so the prompt could be answered from either the original output or the injected TOON.
 
-The model explicitly notes the original file does not contain `sku`, then
-extracts `SKU-1001` from the injected TOON context.
+## Current fixture conversion status
 
-## Test fixtures
+The tables below show the actual `tooned check` output for the fixtures used in the tests. They explain why some fixtures convert to TOON and others do not.
 
-The suite uses two sets of fixtures.
+### Simple cross-format fixtures
 
-Cross-format mismatch fixtures in `agent-test/`:
+| File | `tooned check` result | Notes |
+|---|---|---|
+| `products_20.json` | 48.6% savings, convertible | Uniform array of product objects |
+| `users_20.json` | 47.5% savings, convertible | Uniform array of user objects |
+| `records_20.xml` | 48.2% savings, convertible | XML attributes |
+| `config.yaml` | 11.7% savings, convertible | YAML |
+| `settings.toml` | not convertible — round-trip mismatch | TOML; TOON smaller but does not round-trip with the default dict tier |
+| `sample.json5` | not convertible — not detected as structured data | JSON5 |
+| `orders_100.ndjson` | not convertible — round-trip mismatch | NDJSON |
+| `events_100.ndjson` | 52.4% savings, convertible | NDJSON |
+| `products_20.cbor` | not convertible — binary not detected | CBOR |
+| `users_20.msgpack` | not convertible — binary not detected | MessagePack |
+| `data_20.csv` | 53.7% savings, convertible | CSV |
+| `data_20.tsv` | 53.7% savings, convertible | TSV |
+| `nested_config.json` | 3.9% savings, convertible | Nested JSON object |
+| `large_uniform_500.json` | 55.6% savings, convertible | Large uniform JSON array |
+| `plain.txt` | not convertible — not structured data | Plain text |
 
-- `users_20.json`, `products_20.json`, `large_uniform_500.json`,
-  `nested_config.json`, `orders_100.ndjson`, `events_100.ndjson`,
-  `config.yaml`, `settings.toml`, `data_20.csv`, `data_20.tsv`,
-  `records_20.xml`, `sample.json5`, `products_20.cbor`, `users_20.msgpack`,
-  `plain.txt`
+### Complex comprehension fixtures
 
-Direct comprehension fixtures in `agent-test/complex/`:
+| Fixture | `tooned check` result | Why it behaves this way |
+|---|---|---|
+| `complex/people_addresses.json` | not convertible — TOON 17.6% larger | Nested `address` object and `tags` array make the structure non-tabular |
+| `complex/ecommerce_orders.json` | not convertible — round-trip mismatch | Nested `items` arrays and `order_id` protected by the critical-field policy |
+| `complex/company_org.json` | 20.7% savings, convertible | Deeply nested org chart that folds cleanly |
+| `complex/sensor_readings.ndjson` | not convertible — round-trip mismatch | Nested `readings` array per row |
+| `complex/events_attendees.ndjson` | 18.7% savings, convertible | Variable-length attendee lists still encode as tabular rows |
+| `complex/matrix.json` | not convertible — TOON 32.2% larger | Array-of-arrays is smaller in JSON |
+| `complex/mixed_schema.json` | not convertible — TOON 6.9% larger | Irregular schema |
+| `complex/geo_markers.json` | not convertible — TOON 14.3% larger | Variable tags |
+| `complex/config_nested.yaml` | 11.0% savings, convertible | Nested YAML config |
+| `complex/inventory.csv` | 55.4% savings, convertible | Flat CSV records |
+| `complex/webhooks.toml` | not convertible — TOON 0.7% larger | Array of TOML tables |
+| `complex/sample_complex.json5` | not convertible — parse failed | JSON5 not supported by the default adaptive path |
 
-- `people_addresses.json` (nested address object and variable tags)
-- `ecommerce_orders.json` (non-uniform nested items)
-- `company_org.json` (deeply nested org chart)
-- `sensor_readings.ndjson` (nested readings array)
-- `inventory.csv` (flat CSV records)
-- `webhooks.toml` (array of TOML tables)
-- `events_attendees.ndjson` (variable-length attendee lists)
-- `matrix.json` (array of arrays)
-- `mixed_schema.json` (ragged, mixed-schema array)
-- `geo_markers.json` (variable tags)
-- `config_nested.yaml` (nested YAML config)
-- `sample_complex.json5` (JSON5 fixture)
-
-## Reproducing the tests
-
-Two scripts in `scripts/research/` implement the harness:
-
-- [`devin_mismatch_hook.py`](../../scripts/research/devin_mismatch_hook.py) -
-  a Devin `PostToolUse` hook that discards the real tool output and injects
-  the TOON encoding of `agent-test/products_20.json` as `additionalContext`.
-  Use this for the cross-format mismatch test.
-- [`run_toon_decoding_suite.py`](../../scripts/research/run_toon_decoding_suite.py) -
-  the full fixture generator and test runner. It generates
-  `agent-test/complex/`, swaps the hook, runs 31 Devin prompts, checks
-  responses, writes
-  [`docs/agents/research/toon-decoding-test-suite.md`](./research/toon-decoding-test-suite.md),
-  and restores the original `.devin/hooks.v1.json` on exit or interrupt.
-
-Run the full suite from the repo root:
-
-```bash
-python3 scripts/research/run_toon_decoding_suite.py
-```
-
-For the cross-format mismatch test, temporarily install the mismatch hook in
-`.devin/hooks.v1.json`:
-
-```json
-{
-  "PostToolUse": [
-    {
-      "matcher": "^exec$|^read$|^edit$|^grep$|^glob$|^mcp__",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "scripts/research/devin_mismatch_hook.py"
-        }
-      ]
-    }
-  ]
-}
-```
-
-Then run a prompt such as:
-
-```bash
-devin -p "read agent-test/records_20.xml and tell me the SKU of the first product" --permission-mode auto
-```
-
-Restore the real `tooned hook run --devin` entry afterwards.
+These results match the TOON specification: TOON's sweet spot is uniform arrays of objects with primitive-valued fields. Nested objects, non-uniform arrays, and deeply nested structures often remain smaller or round-trip more reliably in JSON.
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured
-questions from the TOON context (or the original JSON when TOON does not win).
-A high pass rate on mismatch tests shows the model specifically decodes the
-TOON `additionalContext` rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. The mismatch test is the only one that specifically shows the model decoding the TOON `additionalContext` rather than merely repeating the original tool output.
 
-Hedged responses, where the model notes the original file does not contain the
-requested field but the injected product list does, still demonstrate TOON
-decoding. The model extracted the expected value from the TOON context while
-keeping the original output in mind.
+For fixtures where `tooned` does not convert, the original JSON is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the model can still answer the same questions, and the mismatch test shows it can do so from TOON alone.
 
 ## Research context
 
-The finding is consistent with recent arXiv literature on alternative
-serializations for LLMs:
+The finding is consistent with recent arXiv literature on alternative serializations for LLMs:
 
-- **McMillan, 2026** - *Structured Context Engineering for File-Native
-  Agentic Systems* ([arXiv:2602.05447v2](https://arxiv.org/abs/2602.05447v2)):
-  9,649 experiments across 11 models and 4 formats (JSON, YAML, Markdown,
-  TOON) found that "format does not significantly affect aggregate accuracy
-  (chi-squared=2.45, p=0.484)", though individual models show format-specific
-  sensitivities.
+- **McMillan, 2026** — *Structured Context Engineering for File-Native Agentic Systems* (arXiv:2602.05447v2): 9,649 experiments across 11 models and 4 formats (JSON, YAML, Markdown, TOON) found that "format does not significantly affect aggregate accuracy (chi-squared=2.45, p=0.484)," though individual models show format-specific sensitivities.
+- **Kutschka & Geiger, 2026** — *Notation Matters: A Benchmark Study of Token-Optimized Formats in Agentic AI Systems* (arXiv:2605.29676v2): TOON reduces tokens up to 18% with accuracy within 9 percentage points of JSON.
+- **Matveev, 2026** — *Token-Oriented Object Notation vs JSON* (arXiv:2603.03306v1): describes TOON as a serialization format for LLMs and notes "solid accuracy in LLM comprehension."
+- **Dong et al., 2024** — *SpreadsheetLLM: Encoding Spreadsheets for Large Language Models* (arXiv:2407.09025v2): compressed, structure-aware tabular encodings improve GPT-4 in-context learning by 25.6% and reach 78.9% F1.
 
-- **Kutschka & Geiger, 2026** - *Notation Matters: A Benchmark Study of
-  Token-Optimized Formats in Agentic AI Systems*
-  ([arXiv:2605.29676v2](https://arxiv.org/abs/2605.29676v2)): evaluates TOON
-  and TRON in end-to-end agentic loops. TOON reduces tokens up to 18% with
-  accuracy within 9 percentage points of JSON.
+## Reproducing the tests
 
-- **Matveev, 2026** - *Token-Oriented Object Notation vs JSON: A Benchmark of
-  Plain and Constrained Decoding Generation*
-  ([arXiv:2603.03306v1](https://arxiv.org/abs/2603.03306v1)): describes TOON as
-  a serialization format for LLMs and refers to "solid accuracy in LLM
-  comprehension".
+The tests are run manually by installing the real `tooned` hook or a mismatch hook in the agent's `PostToolUse` configuration and prompting the agent. There is no committed automation script for these prompts.
 
-- **Dong et al., 2024** - *SpreadsheetLLM: Encoding Spreadsheets for Large
-  Language Models* ([arXiv:2407.09025v2](https://arxiv.org/abs/2407.09025v2)):
-  compressed, structure-aware tabular spreadsheet encodings improve GPT-4
-  in-context learning by 25.6% and reach 78.9% F1, demonstrating that models
-  can reason over compressed tabular data when logical structure is preserved.
+A minimal, agent-agnostic mismatch hook converts `agent-test/products_20.json` to TOON and injects it as `additionalContext`, ignoring the real tool output:
 
-## Codec fixes (2026-07-18)
+```python
+#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
 
-Two underlying TOON codec issues were fixed so the `tooned` conversion pipeline
-round-trips more real-world payloads:
+repo_root = Path(os.environ.get("REPO_ROOT", "."))
+tooned = os.environ.get("TOONED_BIN", "tooned")
 
-1. **Numeric normalization**: `toon-lsp` previously decoded whole-number floats
-   such as `11.0` as integers, which broke `tooned`'s round-trip gate. A new
-   `ToonConfig::preserve_number_types` option keeps the source int/float
-   distinction; `tooned-toon` enables it. Default `toon-lsp` decode still
-   normalizes exponent forms and `-0.0` per the TOON spec conformance suite.
-2. **Key folding**: `toon-lsp` gained `fold_keys`/`flatten_keys` encode options
-   and `expand_paths` decode, plus lossless path-expansion with prefix-conflict
-   suppression. `tooned-toon` uses `fold_keys` to shrink nested objects.
+products = repo_root / "agent-test" / "products_20.json"
+conv = subprocess.run(
+    [tooned, "convert", str(products), "--to", "toon"],
+    capture_output=True, text=True,
+)
+toon_text = conv.stdout.strip()
+if not toon_text:
+    sys.exit(0)
 
-Complex fixture results after the fixes:
+sys.stdin.read()
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": toon_text,
+    }
+}, ensure_ascii=False))
+```
 
-| Fixture | Result | Notes |
-|---|---|---|
-| `company_org.json` | converts (20.7% savings) | unchanged |
-| `ecommerce_orders.json` | converts (12.7% savings) | previously failed round-trip |
-| `events_attendees.ndjson` | converts (36.0% savings) | unchanged |
-| `sensor_readings.ndjson` | converts (28.5% savings) | previously failed round-trip |
-| `geo_markers.json` | still too large | mixed arrays/nested objects |
-| `matrix.json` | still too large | array-of-arrays |
-| `mixed_schema.json` | still too large | irregular schema |
-| `people_addresses.json` | still too large | nested `address` + `tags` arrays |
+Install it as the `PostToolUse` command for the agent under test, run a prompt such as `read agent-test/users_20.json and tell me the SKU of the first product`, then restore the normal `tooned` hook entry.

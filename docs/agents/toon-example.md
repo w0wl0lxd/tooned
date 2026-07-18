@@ -2,49 +2,47 @@
 
 This is the worked example behind the README claim:
 
-> [I tested this](toon-evidence.md) by having agents use `tooned` and then
-> reason about the response. Even though the JSON bytes had been rewritten into
-> TOON, the model still read and reasoned about the data as if it were the
-> original JSON. It doesn't need the original syntax to understand what the
-> data means.
+> [I tested this](toon-evidence.md) by having agents use `tooned` and then reason about the response. Even though the JSON bytes had been rewritten into TOON, the model still read and reasoned about the data as if it were the original JSON.
 
 ## Setup
 
-A `tooned` `PostToolUse` hook is wired into the agent. On each tool call (e.g.
-`read`), it converts the JSON tool output into a smaller TOON encoding and
-surfaces it to the model. How it is surfaced depends on the agent protocol:
+`tooned` is installed as a `PostToolUse` hook. On each tool call that returns JSON-shaped data it tries to produce a smaller TOON encoding. Depending on the agent protocol the TOON is surfaced as:
 
-- **`additionalContext`** (original tool output is preserved alongside TOON):
-  Codex, Devin, Droid.
-- **`updatedToolOutput`** (TOON *replaces* the tool output in place): Claude
-  Code, OpenCode, Kilo, Pi.
+- `additionalContext` — the original tool output is preserved and the TOON is added as extra context. Used by Codex, Devin, and Droid.
+- `updatedToolOutput` — the TOON *replaces* the original tool output in place. Used by Claude Code, OpenCode, Kilo, and Pi.
 
-The evidence below was produced with `additionalContext`, so the model saw both
-the original JSON and the TOON `additionalContext`.
+The example below was produced with an agent that uses `additionalContext`, so the model saw both the original JSON and the TOON.
 
-## What happened
+## The decisive test
 
-1. **Same-file read.** `read users_20.json` produced a natural-language
-   summary of the users — the model reasoned over the TOON `additionalContext`
-   and answered as if it had the JSON.
-2. **Mismatch test (the telling result).** The hook was set to inject the TOON
-   of a *products* file as `additionalContext` while the agent `read` a *users*
-   file (no `sku` field). Asking "what is the SKU of the first product?" returned
-   `SKU-1001` — a value that existed **only** in the TOON context. The model had
-   read the TOON to produce it.
-3. **Fidelity preserved (Codex/Devin/Droid).** An exact-raw-output prompt
-   ("print the file unchanged") still returned the original JSON, because those
-   protocols keep the original tool output next to the TOON context.
+A normal read of `agent-test/users_20.json` returns a JSON array of user objects (`id`, `name`, `email`, `active`, `role`). To force the model to use the TOON context, the hook was temporarily replaced by a mismatch hook: it left the original `read` output untouched but injected the TOON encoding of `agent-test/products_20.json` as `additionalContext`.
 
-## Why this matters
+The prompt:
 
-The model consumed the TOON directly. No external decoder ran; the syntax
-changed but the data model did not. TOON reduces context size for convertible
-payloads, and in the tested configuration the model answered structured
-questions from TOON as well as from the JSON.
+```text
+read the file users_20.json and tell me the SKU of the first product
+```
+
+The response:
+
+```text
+The SKU of the first product is SKU-1001.
+```
+
+`users_20.json` contains no `sku` field. The only place `SKU-1001` exists is the injected TOON `additionalContext` (the TOON of `products_20.json`). Because the model returned that value, it read and understood the TOON context.
+
+## Exact-content requests still get JSON
+
+When the prompt asked to print the file unchanged, the model returned the original JSON. With `additionalContext` protocols the original tool output is still available, so the model can fall back to it for verbatim output.
+
+## What this supports
+
+The model does not need the original JSON syntax to answer structured questions about the data. For payloads where TOON is smaller and round-trips, `tooned` can reduce context size without preventing the model from reasoning about the structure.
+
+This is supporting evidence, not a universal proof: it was observed in one tested configuration with one model, and the result is consistent with the format-independent comprehension reported in independent TOON/JSON literature (see [`toon-decoding.md`](toon-decoding.md)).
 
 ## More
 
-- Evidence with the model's own explanations: [`toon-evidence.md`](toon-evidence.md)
-- Backend flow + diagrams: [`toon-hook-flow.md`](toon-hook-flow.md)
-- Cross-format decoding test + research: [`toon-decoding.md`](toon-decoding.md)
+- [`toon-evidence.md`](toon-evidence.md) — the full observation set.
+- [`toon-context-proof.md`](toon-context-proof.md) — backend flow and the mismatch proof.
+- [`toon-decoding.md`](toon-decoding.md) — cross-format decoding and research context.
