@@ -8,7 +8,9 @@
 use std::fmt::Write as _;
 
 use assert_cmd::Command;
+use assert_cmd::cargo::CommandCargoExt;
 use predicates::prelude::*;
+use std::process::{Command as StdCommand, Stdio};
 
 fn uniform_array_json(rows: usize) -> String {
     let mut s = String::from("[");
@@ -95,4 +97,28 @@ fn pipe_always_exits_0_even_on_malformed_json() {
         .assert()
         .success()
         .stdout(predicate::eq(malformed));
+}
+
+#[test]
+fn pipe_out_same_file_does_not_truncate_before_reading() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("data.json");
+    let json = uniform_array_json(20);
+    std::fs::write(&path, &json).unwrap();
+
+    let stdin = Stdio::from(std::fs::File::open(&path).unwrap());
+    let output = StdCommand::cargo_bin("tooned")
+        .unwrap()
+        .args(["pipe", "--out", path.to_str().unwrap()])
+        .stdin(stdin)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "pipe failed: {}", String::from_utf8_lossy(&output.stderr));
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert!(!contents.is_empty(), "output file was emptied before reading");
+    assert!(
+        contents.contains("id,name,active,score"),
+        "expected converted TOON output: {contents}"
+    );
 }
