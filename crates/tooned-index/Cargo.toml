@@ -22,6 +22,8 @@ notify-debouncer-mini = { version = "0.7", default-features = false }
 rusqlite = { workspace = true } #unified
 thiserror = { workspace = true }
 tooned-core = { workspace = true }                                    #unified
+tooned-detect = { workspace = true }                                  #unified
+tooned-types = { workspace = true }                                    #unified
 
 [target.'cfg(target_os = "macos")'.dependencies]
 notify = { version = "8.2", default-features = false, features = [

@@ -542,7 +542,8 @@ impl ToonedMcpServer {
             // ever happens on the index's first creation for a project, so
             // "no index existed yet before this call" is the accurate signal.
             let existed_before = tooned_index::index_exists(&root);
-            let summary = tooned_index::scan_full(&root).map_err(|err| err.to_string())?;
+            let summary = tooned_index::scan_full(&root, &tooned_index::IndexFilter::default())
+                .map_err(|err| err.to_string())?;
             Ok::<IndexBuildResult, String>(IndexBuildResult {
                 files_scanned: summary.files_scanned,
                 gitignore_updated: !existed_before,
@@ -561,7 +562,8 @@ impl ToonedMcpServer {
     ) -> Result<Json<IndexRefreshResult>, String> {
         let result = task::spawn_blocking(move || {
             let root = resolve_index_path(&req.path)?;
-            let summary = tooned_index::sync(&root).map_err(|err| err.to_string())?;
+            let summary = tooned_index::sync(&root, &tooned_index::IndexFilter::default())
+                .map_err(|err| err.to_string())?;
             Ok::<IndexRefreshResult, String>(IndexRefreshResult {
                 files_rescanned: summary.added + summary.updated,
                 files_pruned: summary.removed,
@@ -580,7 +582,8 @@ impl ToonedMcpServer {
     ) -> Result<Json<StatsResult>, String> {
         let result = task::spawn_blocking(move || {
             let root = resolve_index_path(&req.path)?;
-            let rows = tooned_index::stats(&root, req.top_n).map_err(|err| err.to_string())?;
+            let rows = tooned_index::stats(&root, req.top_n, &tooned_index::IndexFilter::default())
+                .map_err(|err| err.to_string())?;
             Ok::<StatsResult, String>(StatsResult {
                 results: rows
                     .into_iter()
