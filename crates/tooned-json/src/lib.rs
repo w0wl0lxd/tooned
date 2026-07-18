@@ -94,6 +94,248 @@ impl<R: BufRead> Iterator for NdJsonStream<R> {
     }
 }
 
+/// Streaming JSON array parser: yields one `Value` per top-level array element
+/// without ever buffering the whole input in memory. The byte counter returned
+/// by [`JsonArrayStream::bytes_read`] includes all bytes consumed from the
+/// underlying reader.
+///
+/// This uses manual bracket-depth tracking because `serde_json`'s streaming
+/// deserializer is designed for whitespace-separated values (NDJSON), not for
+/// streaming individual elements within a single JSON array.
+pub fn parse_json_stream<R: BufRead>(reader: R) -> JsonArrayStream<R> {
+    JsonArrayStream {
+        reader,
+        buf: String::new(),
+        bytes_read: 0,
+        pos: 0,
+        depth: 0,
+        in_string: false,
+        escaped: false,
+        state: StreamState::BeforeArray,
+    }
+}
+
+/// Iterator returned by [`parse_json_stream`].
+pub struct JsonArrayStream<R> {
+    reader: R,
+    buf: String,
+    bytes_read: u64,
+    pos: usize,
+    depth: usize,
+    in_string: bool,
+    escaped: bool,
+    state: StreamState,
+}
+
+#[derive(Debug)]
+enum StreamState {
+    BeforeArray, // Looking for opening '['
+    InArray,     // Inside array, depth >= 1
+    AfterArray,  // After closing ']', done
+}
+
+impl<R: BufRead> JsonArrayStream<R> {
+    /// Total bytes consumed from the underlying reader so far.
+    pub fn bytes_read(&self) -> u64 {
+        self.bytes_read
+    }
+
+    /// Ensure we have data in the buffer. Returns false on EOF.
+    fn fill_buf(&mut self) -> bool {
+        if self.pos < self.buf.len() {
+            return true;
+        }
+        self.buf.clear();
+        self.pos = 0;
+        match self.reader.read_line(&mut self.buf) {
+            Ok(0) => false,
+            Ok(n) => {
+                self.bytes_read += n as u64;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Get the next character, or None on EOF.
+    fn next_char(&mut self) -> Option<char> {
+        if !self.fill_buf() {
+            return None;
+        }
+        if self.pos >= self.buf.len() {
+            return None;
+        }
+        let c = self.buf[self.pos..].chars().next()?;
+        self.pos += c.len_utf8();
+        Some(c)
+    }
+
+    /// Peek at the next character without consuming it.
+    fn peek_char(&mut self) -> Option<char> {
+        if !self.fill_buf() {
+            return None;
+        }
+        self.buf[self.pos..].chars().next()
+    }
+}
+
+impl<R: BufRead> Iterator for JsonArrayStream<R> {
+    type Item = Result<Value, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Find the opening '['
+        while matches!(self.state, StreamState::BeforeArray) {
+            match self.next_char()? {
+                '[' => {
+                    self.state = StreamState::InArray;
+                    self.depth = 1;
+                    break;
+                }
+                c if c.is_ascii_whitespace() => continue,
+                _ => {
+                    return Some(Err(ParseError::Json(
+                        "expected JSON array to start with '['".into(),
+                    )));
+                }
+            }
+        }
+
+        // Skip whitespace
+        while let Some(c) = self.peek_char() {
+            if c.is_ascii_whitespace() {
+                self.next_char();
+            } else {
+                break;
+            }
+        }
+
+        // Check if we're at the closing bracket
+        if let Some(']') = self.peek_char() {
+            self.next_char();
+            self.state = StreamState::AfterArray;
+            return None;
+        }
+
+        // Collect characters for one array element
+        let mut element_buf = String::new();
+        let mut element_depth: usize = 0;
+
+        loop {
+            let c = self.next_char()?;
+
+            if self.in_string {
+                element_buf.push(c);
+                if self.escaped {
+                    self.escaped = false;
+                } else if c == '\\' {
+                    self.escaped = true;
+                } else if c == '"' {
+                    self.in_string = false;
+                }
+                continue;
+            }
+
+            match c {
+                '"' => {
+                    self.in_string = true;
+                    element_buf.push(c);
+                }
+                '{' | '[' => {
+                    self.depth += 1;
+                    element_depth += 1;
+                    element_buf.push(c);
+                }
+                '}' | ']' => {
+                    if self.depth == 0 {
+                        return Some(Err(ParseError::Json(
+                            "unbalanced brackets in JSON array".into(),
+                        )));
+                    }
+                    self.depth -= 1;
+                    element_depth = element_depth.saturating_sub(1);
+                    element_buf.push(c);
+
+                    if self.depth == 0 {
+                        // End of array - this was the last element
+                        self.state = StreamState::AfterArray;
+                        if element_buf.is_empty() {
+                            return None; // Empty array
+                        }
+                        // Parse the last element
+                        let trimmed = element_buf.trim();
+                        if exceeds_max_structural_depth(trimmed.as_bytes()) {
+                            return Some(Err(ParseError::TooDeep));
+                        }
+                        return Some(
+                            sonic_rs::from_str::<Value>(trimmed)
+                                .map_err(|e| ParseError::Json(e.to_string())),
+                        );
+                    }
+
+                    if element_depth == 0 {
+                        // End of this element
+                        // Skip whitespace and check for comma or closing bracket
+                        while let Some(next_c) = self.peek_char() {
+                            if next_c.is_ascii_whitespace() {
+                                self.next_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        match self.peek_char()? {
+                            ',' => {
+                                self.next_char(); // Skip comma
+                                // Parse the element
+                                let trimmed = element_buf.trim();
+                                if exceeds_max_structural_depth(trimmed.as_bytes()) {
+                                    return Some(Err(ParseError::TooDeep));
+                                }
+                                return Some(
+                                    sonic_rs::from_str::<Value>(trimmed)
+                                        .map_err(|e| ParseError::Json(e.to_string())),
+                                );
+                            }
+                            ']' => {
+                                // End of array, will be handled in next iteration
+                                // Parse the element
+                                let trimmed = element_buf.trim();
+                                if exceeds_max_structural_depth(trimmed.as_bytes()) {
+                                    return Some(Err(ParseError::TooDeep));
+                                }
+                                return Some(
+                                    sonic_rs::from_str::<Value>(trimmed)
+                                        .map_err(|e| ParseError::Json(e.to_string())),
+                                );
+                            }
+                            _ => {
+                                return Some(Err(ParseError::Json(
+                                    "expected ',' or ']' after array element".into(),
+                                )));
+                            }
+                        }
+                    }
+                }
+                ',' if element_depth == 0 && self.depth == 1 => {
+                    // Comma at array level - end of element
+                    let trimmed = element_buf.trim();
+                    if exceeds_max_structural_depth(trimmed.as_bytes()) {
+                        return Some(Err(ParseError::TooDeep));
+                    }
+                    return Some(
+                        sonic_rs::from_str::<Value>(trimmed)
+                            .map_err(|e| ParseError::Json(e.to_string())),
+                    );
+                }
+                _ => {
+                    if !c.is_ascii_whitespace() || element_depth > 0 {
+                        element_buf.push(c);
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +396,104 @@ mod tests {
         let via_fast_path = parse_json(&bytes).expect("valid JSON");
         let via_serde_json: Value = serde_json::from_slice(&bytes).expect("valid JSON");
         assert_eq!(via_fast_path, via_serde_json);
+    }
+
+    #[test]
+    fn parse_json_stream_uniform_array() {
+        let input = b"[{\"a\":1},{\"a\":2},{\"a\":3}]";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(
+            values,
+            vec![
+                serde_json::json!({"a": 1}),
+                serde_json::json!({"a": 2}),
+                serde_json::json!({"a": 3}),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_json_stream_nested_objects() {
+        let input = b"[{\"x\":{\"y\":1}},{\"x\":{\"y\":2}}]";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(
+            values,
+            vec![serde_json::json!({"x": {"y": 1}}), serde_json::json!({"x": {"y": 2}}),]
+        );
+    }
+
+    #[test]
+    fn parse_json_stream_empty_array() {
+        let input = b"[]";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn parse_json_stream_with_whitespace() {
+        let input = b"  [  {\"a\":1}  ,  {\"a\":2}  ]  ";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(values, vec![serde_json::json!({"a": 1}), serde_json::json!({"a": 2}),]);
+    }
+
+    #[test]
+    fn parse_json_stream_with_string_escapes() {
+        let input = br#"[{"text":"hello \"world\""},{"text":"foo\nbar"}]"#;
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(
+            values,
+            vec![
+                serde_json::json!({"text": "hello \"world\""}),
+                serde_json::json!({"text": "foo\nbar"}),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_json_stream_nested_arrays() {
+        let input = b"[[1,2],[3,4]]";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(values, vec![serde_json::json!([1, 2]), serde_json::json!([3, 4]),]);
+    }
+
+    #[test]
+    fn parse_json_stream_mixed_types() {
+        let input = b"[1,\"two\",{\"three\":3},[4]]";
+        let stream = parse_json_stream(input.as_slice());
+        let values: Vec<Value> = stream.map(|r| r.expect("valid")).collect();
+        assert_eq!(
+            values,
+            vec![
+                serde_json::json!(1),
+                serde_json::json!("two"),
+                serde_json::json!({"three": 3}),
+                serde_json::json!([4]),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_json_stream_too_deep_element() {
+        let depth = 10_000;
+        let mut element = String::from("{");
+        for _ in 0..depth {
+            element.push_str("\"x\":{");
+        }
+        element.push_str("\"val\":1");
+        for _ in 0..depth {
+            element.push('}');
+        }
+        element.push('}');
+        let input = format!("[{}]", element);
+        let stream = parse_json_stream(input.as_bytes());
+        let result: Vec<Result<Value, ParseError>> = stream.collect();
+        assert!(result.len() == 1);
+        assert!(matches!(result[0], Err(ParseError::TooDeep)));
     }
 }
