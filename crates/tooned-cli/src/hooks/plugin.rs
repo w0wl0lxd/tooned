@@ -90,6 +90,18 @@ fn marker(agent: &PluginAgent) -> &str {
     }
 }
 
+/// A strong, tooned-specific fingerprint check: a generated plugin file
+/// always declares a `TOONED_BIN` constant AND invokes `tooned hook run
+/// --<flag>`. The bare [`marker`] substring (`--kilo`, `--opencode`, `--pi`)
+/// is far too common to trust on its own: a user's unrelated plugin at the
+/// same fixed path that merely mentions a CLI flag would otherwise be deleted
+/// by `uninstall`. Requiring both parts means `uninstall`/`status` only act on
+/// files tooned actually generated (finding: plugin uninstall could delete an
+/// unrelated user file on a substring match).
+fn is_tooned_plugin(text: &str, agent: &PluginAgent) -> bool {
+    text.contains("TOONED_BIN") && text.contains(marker(agent))
+}
+
 /// Verifies `tooned` resolves on `PATH` and writes the generated plugin file.
 pub(crate) fn install(agent: &PluginAgent, scope: Option<Scope>) -> Result<(), InstallError> {
     let Some(binary) = super::resolve_tooned_on_path() else {
@@ -108,7 +120,7 @@ pub(crate) fn uninstall(agent: &PluginAgent, scope: Option<Scope>) -> Result<boo
         return Ok(false);
     }
     let text = std::fs::read_to_string(&path).unwrap_or_else(|_| String::new());
-    if !text.contains(marker(agent)) {
+    if !is_tooned_plugin(&text, agent) {
         return Ok(false);
     }
     std::fs::remove_file(&path)?;
@@ -121,7 +133,7 @@ pub(crate) fn status(agent: &PluginAgent) -> bool {
         let Ok(path) = settings_path(agent, scope) else {
             return false;
         };
-        path.is_file() && std::fs::read_to_string(&path).is_ok_and(|s| s.contains(marker(agent)))
+        path.is_file() && std::fs::read_to_string(&path).is_ok_and(|s| is_tooned_plugin(&s, agent))
     })
 }
 

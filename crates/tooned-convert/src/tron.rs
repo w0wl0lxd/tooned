@@ -544,6 +544,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
             json_bytes,
             toon_bytes: tron_bytes,
             savings_pct: crate::compute_savings_pct(json_bytes, tron_bytes),
+            protected_fields: Vec::new(),
         },
     })
 }
