@@ -58,11 +58,11 @@ The `tooned check` results below are from the current build:
 | `complex/inventory.csv` | 55.4% savings, convertible | Flat CSV records |
 | `complex/sample_complex.json5` | not convertible — TOON 2.5% larger | JSON5; detected by the default adaptive path but TOON does not beat compact JSON |
 
-For CSV, TSV, and flat NDJSON fixtures such as `events_100.ndjson` and `events_attendees.ndjson`, `tooned` **did** convert to TOON and injected it as `additionalContext`. Those direct-comprehension prompts passed because the model could read the tabular header/row format.
+For CSV, TSV, and flat NDJSON fixtures such as `events_100.ndjson` and `events_attendees.ndjson`, `tooned` **did** convert to TOON. With an agent protocol that replaces the tool result with TOON, the model could read the tabular header/row format. `tooned` does not use `additionalContext` in `PostToolUse` because that would keep the original JSON in context alongside the TOON, inflating total token count.
 
 ## The mismatch test design issue
 
-The one ambiguous mismatch result was `complex/ecommerce_orders.json`. The mismatch hook always injects `products_20.json` TOON, but the original `ecommerce_orders.json` also contains `sku` fields. When the prompt asked for "the SKU of the first product", the model correctly answered from the original file output (`SKU-1010`) instead of from the injected TOON (`SKU-1001`). The fix is to ask for a field the original file does not contain, such as `name` (`Product 1`).
+The one ambiguous mismatch result was `complex/ecommerce_orders.json`. The mismatch hook always replaces the tool result with `products_20.json` TOON, but the original `ecommerce_orders.json` also contains `sku` fields. When the prompt asked for "the SKU of the first product", the model correctly answered from the original JSON (`SKU-1010`) instead of from the replacement TOON (`SKU-1001`). The fix is to ask for a field the original file does not contain, such as `name` (`Product 1`).
 
 The `matrix.json` mismatch result was previously marked as a failure because the test script expected `6.1` (the direct-comprehension expected value) rather than `SKU-1001`. The model's actual response was `SKU-1001`, which is correct for the mismatch prompt.
 

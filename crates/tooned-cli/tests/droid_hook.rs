@@ -3,10 +3,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 //! Integration tests for `tooned hook run --droid`.
+//!
 //! Droid `PostToolUse` stdin carries `tool_response` as either a raw string
 //! or an object whose schema is tool-specific; `hooks/mod.rs` extracts
 //! common string fields (`output`, `content`, `stdout`, `result`, `text`)
-//! and MCP-style `content` arrays. See <https://docs.factory.ai/reference/hooks-reference>.
+//! and MCP-style `content` arrays. Droid only supports `additionalContext` for
+//! PostToolUse, which would append the TOON to the original JSON rather than
+//! replace it, so `tooned` does not emit anything for Droid. Use
+//! `tooned wrap -- <cmd>` or `... | tooned pipe` when TOON-only output is
+//! required. See <https://docs.factory.ai/reference/hooks-reference>.
 
 use std::fmt::Write as _;
 
@@ -36,7 +41,7 @@ fn object_payload(output: &serde_json::Value) -> String {
 }
 
 #[test]
-fn convertible_output_field_prints_hook_specific_output_and_exits_0() {
+fn convertible_output_field_passthroughs_and_exits_0() {
     let tool_response = uniform_array_json(20);
     let stdin = object_payload(&serde_json::json!({
         "success": true,
@@ -44,32 +49,19 @@ fn convertible_output_field_prints_hook_specific_output_and_exits_0() {
         "error": null,
     }));
 
-    let assert = Command::cargo_bin("tooned")
+    // Droid cannot replace the native tool output, and `additionalContext`
+    // would inflate total context, so the hook passthroughs.
+    Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--droid"])
         .write_stdin(stdin)
         .assert()
-        .success();
-
-    let output = assert.get_output();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout must be valid JSON, got {stdout:?}: {e}"));
-
-    let additional_context = parsed
-        .get("hookSpecificOutput")
-        .and_then(|v| v.get("additionalContext"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_else(|| panic!("expected hookSpecificOutput.additionalContext, got {parsed}"));
-
-    assert!(
-        additional_context.contains("id,name,active,score"),
-        "expected TOON tabular header in additionalContext, got {additional_context:?}"
-    );
+        .success()
+        .stdout(predicate::eq(""));
 }
 
 #[test]
-fn string_tool_response_also_works() {
+fn string_tool_response_also_passthroughs() {
     let stdin = serde_json::json!({
         "hook_event_name": "PostToolUse",
         "tool_name": "Execute",
@@ -78,16 +70,14 @@ fn string_tool_response_also_works() {
     })
     .to_string();
 
-    let assert = Command::cargo_bin("tooned")
+    // Extraction works, but Droid cannot replace the output, so no stdout.
+    Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--droid"])
         .write_stdin(stdin)
         .assert()
-        .success();
-
-    let output = assert.get_output();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.is_empty(), "expected hook output for string tool_response");
+        .success()
+        .stdout(predicate::eq(""));
 }
 
 #[test]
@@ -110,21 +100,19 @@ fn content_array_extracts_text_items() {
 }
 
 #[test]
-fn content_array_with_only_json_text_item_converts() {
+fn content_array_with_only_json_text_item_passthroughs() {
     let stdin = object_payload(&serde_json::json!({
         "content": [{ "type": "text", "text": uniform_array_json(20) }],
     }));
 
-    let assert = Command::cargo_bin("tooned")
+    // Droid cannot replace the output, so extraction alone does not emit stdout.
+    Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--droid"])
         .write_stdin(stdin)
         .assert()
-        .success();
-
-    let output = assert.get_output();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.is_empty(), "expected hook output for content array");
+        .success()
+        .stdout(predicate::eq(""));
 }
 
 #[test]

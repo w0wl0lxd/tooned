@@ -46,11 +46,13 @@ pub(crate) fn settings_path(scope: Scope) -> Result<PathBuf, InstallError> {
     }
 }
 
-/// Runs the `PostToolUse` hook against stdin, printing
-/// `hookSpecificOutput.additionalContext` on a convert decision or nothing on
-/// passthrough. Never panics and never itself decides the process exit code
-/// -- the caller (`hooks::run`) always exits 0 for `hook run`, per Droid's
-/// command-hook fail-open expectation.
+/// Runs the `PostToolUse` hook against stdin. Droid only supports
+/// `additionalContext` in `PostToolUse`, which would append the TOON to the
+/// original JSON rather than replace it, so this hook passthroughs on a
+/// convert decision and prints nothing. Use `tooned wrap -- <cmd>` or
+/// `... | tooned pipe` when TOON-only output is required. Never panics and
+/// never itself decides the process exit code -- the caller (`hooks::run`)
+/// always exits 0 for `hook run`, per Droid's command-hook fail-open expectation.
 pub fn run_hook() {
     super::run_hook_protocol(super::HookProtocol::Droid);
 }

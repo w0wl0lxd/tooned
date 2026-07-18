@@ -1,10 +1,12 @@
 # TOON decoding across formats
 
-This document explains how a model, given a TOON-encoded context from a `PostToolUse` hook, can read it into the underlying structure and answer as if it had the original JSON.
+This document explains how a model, given a TOON-encoded tool result from a `PostToolUse` hook or wrapped command, can read it into the underlying structure and answer as if it had the original JSON.
+
+`tooned` does not use `additionalContext`: for agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the original JSON would remain in context alongside the TOON, inflating total token count. Those agents require command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) for TOON-only output. The examples below assume an agent protocol that replaces the native tool result with TOON.
 
 ## Core observation
 
-When `tooned` injects TOON like this:
+When `tooned` produces TOON as the tool result like this:
 
 ```toon
 [20]{sku,name,price,qty,category}:
@@ -33,21 +35,21 @@ Recent arXiv work supports this, with stated limits:
 ## The mismatch test
 
 1. The agent `read`s `agent-test/users_20.json` (no `sku` field).
-2. The hook is swapped to inject, as `additionalContext`, the TOON of `agent-test/products_20.json`.
+2. The tool result is replaced with the TOON of `agent-test/products_20.json`.
 3. Prompt: `read users_20.json and tell me the SKU of the first product`.
 4. Model answers: `The SKU of the first product is SKU-1001`.
 
-Because `users_20.json` has no `sku`, the answer can only have come from the TOON `additionalContext`. The model parsed the header and first row and returned the `sku` value.
+Because `users_20.json` has no `sku`, the answer can only have come from the TOON tool result. The model parsed the header and first row and returned the `sku` value.
 
 ## Cross-format mismatch test
 
-A universal mismatch hook ignores the real tool output and always emits the TOON of `agent-test/products_20.json` as `additionalContext`. The same prompt is used each time:
+A universal mismatch test ignores the real tool output and always replaces the tool result with the TOON of `agent-test/products_20.json`. The same prompt is used each time:
 
 ```text
 read <file> and tell me the SKU of the first product
 ```
 
-The files listed below were used in the cross-format run. Whether `tooned` itself can convert each file to TOON is shown separately; the mismatch test does not depend on that — the injected TOON is always the same `products_20.json` TOON.
+The files listed below were used in the cross-format run. Whether `tooned` itself can convert each file to TOON is shown separately; the mismatch test does not depend on that — the replacement TOON is always the same `products_20.json` TOON.
 
 | File | `tooned` can convert? | Notes |
 |---|---|---|
@@ -65,7 +67,7 @@ The files listed below were used in the cross-format run. Whether `tooned` itsel
 | `agent-test/large_uniform_500.json` | yes (56.4% byte savings) | Large uniform JSON |
 | `agent-test/plain.txt` | no | not structured data |
 
-In the tested run the model returned `SKU-1001` for every file where the prompt could be answered. This is supporting evidence that the model extracts the value from the injected TOON context regardless of the original file's format, not a controlled proof.
+In the tested run the model returned `SKU-1001` for every file where the prompt could be answered. This is supporting evidence that the model extracts the value from the TOON result regardless of the original file's format, not a controlled proof.
 
 ## Reading is easier than writing
 
@@ -73,7 +75,7 @@ These tests measure **comprehension** (reading TOON). Getting a model to **gener
 
 ## Reproduce
 
-A minimal, agent-agnostic mismatch hook converts `products_20.json` to TOON and injects it as `additionalContext`, ignoring the real tool output:
+A minimal mismatch hook for an agent that supports tool-result replacement (Claude Code / OpenCode / Kilo / Pi) converts `products_20.json` to TOON and replaces the tool output:
 
 ```python
 #!/usr/bin/env python3
@@ -93,17 +95,19 @@ toon_text = conv.stdout.strip()
 if not toon_text:
     sys.exit(0)
 
-# Ignore stdin (the real tool output) and inject the TOON as additionalContext
+# Ignore stdin (the real tool output) and replace the tool result with TOON
 sys.stdin.read()
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
-        "additionalContext": toon_text,
+        "updatedToolOutput": toon_text,
     }
 }, ensure_ascii=False))
 ```
 
-Install it as the `PostToolUse` command for the agent you are testing, run `read agent-test/records_20.xml and tell me the SKU of the first product`, then restore the real `tooned hook run` entry.
+For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead of `updatedToolOutput`. For Devin / Droid, use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) because `PostToolUse` cannot replace the tool result.
+
+Install the hook as the `PostToolUse` command for the agent you are testing, run `read agent-test/records_20.xml and tell me the SKU of the first product`, then restore the real `tooned hook run` entry.
 
 > **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
 

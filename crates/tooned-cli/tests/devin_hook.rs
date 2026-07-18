@@ -3,9 +3,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 //! Integration tests for `tooned hook run --devin`.
+//!
 //! Devin CLI `PostToolUse` stdin carries the tool's raw output under
 //! `tool_response.output` (an object with `success`, `output`, `error`).
-//! See <https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks>.
+//! Devin only supports `additionalContext` for PostToolUse, which would append
+//! the TOON to the original JSON rather than replace it, so `tooned` does not
+//! emit anything for Devin. Use `tooned wrap -- <cmd>` or `... | tooned pipe`
+//! when TOON-only output is required. See
+//! <https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks>.
 
 use std::fmt::Write as _;
 
@@ -38,32 +43,19 @@ fn post_tool_use_payload(tool_response: &str) -> String {
 }
 
 #[test]
-fn convertible_tool_response_prints_hook_specific_output_and_exits_0() {
+fn convertible_tool_response_passthrough_and_exits_0() {
     let tool_response = uniform_array_json(20);
     let stdin = post_tool_use_payload(&tool_response);
 
-    let assert = Command::cargo_bin("tooned")
+    // Devin cannot replace the native tool output, and `additionalContext`
+    // would inflate total context, so the hook passthroughs.
+    Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--devin"])
         .write_stdin(stdin)
         .assert()
-        .success();
-
-    let output = assert.get_output();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout must be valid JSON, got {stdout:?}: {e}"));
-
-    let additional_context = parsed
-        .get("hookSpecificOutput")
-        .and_then(|v| v.get("additionalContext"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_else(|| panic!("expected hookSpecificOutput.additionalContext, got {parsed}"));
-
-    assert!(
-        additional_context.contains("id,name,active,score"),
-        "expected TOON tabular header in additionalContext, got {additional_context:?}"
-    );
+        .success()
+        .stdout(predicate::eq(""));
 }
 
 #[test]
@@ -102,9 +94,10 @@ fn empty_stdin_produces_no_stdout_and_exits_0() {
 }
 
 #[test]
-fn tool_response_as_string_also_works() {
+fn tool_response_as_string_also_passthroughs() {
     // Defensive: if Devin ever passes `tool_response` as a plain string,
-    // the hook should still process it like Codex does.
+    // extraction still works, but the protocol cannot replace the output so the
+    // hook remains silent.
     let stdin = serde_json::json!({
         "tool_name": "exec",
         "tool_input": { "command": "cat data.json" },
@@ -112,14 +105,11 @@ fn tool_response_as_string_also_works() {
     })
     .to_string();
 
-    let assert = Command::cargo_bin("tooned")
+    Command::cargo_bin("tooned")
         .expect("binary exists")
         .args(["hook", "run", "--devin"])
         .write_stdin(stdin)
         .assert()
-        .success();
-
-    let output = assert.get_output();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.is_empty(), "expected hook output for string tool_response");
+        .success()
+        .stdout(predicate::eq(""));
 }

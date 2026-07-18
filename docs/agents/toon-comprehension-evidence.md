@@ -2,17 +2,19 @@
 
 This document backs the claim in [`README.md`](../../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
 
+`tooned` does not use `additionalContext`: for agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the original JSON would remain in context alongside the TOON, inflating total token count. For those agents, use command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) to deliver TOON-only output. The evidence below uses agent protocols that replace the native tool result with TOON (`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi, `continue: false` + `reason` feedback for Codex).
+
 ## What is being claimed
 
-When `tooned` rewrites a JSON tool response into a smaller TOON `additionalContext`, the model can still answer structured questions about the data. The syntax changed, but the data model did not.
+When `tooned` replaces a JSON tool response with a smaller TOON tool result, the model can still answer structured questions about the data. The syntax changed, but the data model did not.
 
 This is **supporting evidence**, not a formal proof: the strongest test is the controlled mismatch below, and the literature cited at the end shows the result is consistent with broader work on alternative LLM serializations.
 
 ## The decisive mismatch proof
 
-To isolate the model's reliance on TOON, the real tool output was replaced with data that did not contain the answer. The TOON `additionalContext` was the only place the answer existed.
+To isolate the model's reliance on TOON, the real tool output was replaced with data that did not contain the answer. The TOON tool result was the only place the answer existed.
 
-| File read by agent | Original tool output | Injected `additionalContext` |
+| File read by agent | Original tool output | Replaced tool result |
 |---|---|---|
 | `agent-test/users_20.json` | JSON array of 20 user objects | TOON encoding of `agent-test/products_20.json` |
 
@@ -34,18 +36,18 @@ The SKU of the first product is SKU-1001.
 ### Why this is decisive
 
 1. `users_20.json` contains no `sku` field.
-2. The only source of `SKU-1001` is the TOON `additionalContext`, which was the TOON encoding of `products_20.json`.
+2. The only source of `SKU-1001` is the TOON tool result, which was the TOON encoding of `products_20.json`.
 3. Therefore the model parsed the TOON header and first row and returned the `sku` value.
 
 ## Cross-format mismatch test
 
-A universal mismatch hook ignored the real tool output and always injected the TOON encoding of `agent-test/products_20.json` as `additionalContext`. For each file the prompt was:
+A universal mismatch hook ignored the real tool output and always replaced the tool result with the TOON encoding of `agent-test/products_20.json`. For each file the prompt was:
 
 ```text
 read <file> and tell me the SKU of the first product
 ```
 
-Whether `tooned` itself can convert the original file to TOON is irrelevant here — the injected TOON is always the same `products_20.json` TOON. The table below shows the current conversion status of each file and the mismatch result from the tested run.
+Whether `tooned` itself can convert the original file to TOON is irrelevant here — the replacement TOON is always the same `products_20.json` TOON. The table below shows the current conversion status of each file and the mismatch result from the tested run.
 
 | File | Original format | `tooned` converts? | Mismatch result | Notes |
 |---|---|---|---|---|
@@ -63,11 +65,11 @@ Whether `tooned` itself can convert the original file to TOON is irrelevant here
 | `large_uniform_500.json` | Large uniform JSON | yes (56.4% savings) | `SKU-1001` | Direct |
 | `plain.txt` | Plain text | no | `SKU-1001` | Direct, original not converted |
 
-In every tested case the model extracted `SKU-1001` from the injected TOON context. The "yes / no" conversion column reflects whether `tooned` would have converted that file on its own; the mismatch test does not require it.
+In every tested case the model extracted `SKU-1001` from the replacement TOON result. The "yes / no" conversion column reflects whether `tooned` would have converted that file on its own; the mismatch test does not require it.
 
 ## Direct comprehension test protocol
 
-The following prompts were used with the normal `tooned` hook installed. A passing answer means the model could extract the requested value from the data; it does **not** by itself prove the value came from TOON, because `tooned` falls back to the original output whenever TOON does not win. The "`tooned` converts?" column shows whether the model could have seen TOON for that fixture.
+The following prompts were used with the normal `tooned` hook installed, using an agent protocol that replaces the tool result with TOON when TOON wins. A passing answer means the model could extract the requested value from the data; for fixtures where TOON won, the model saw only TOON. The "`tooned` converts?" column shows whether the model could have seen TOON for that fixture.
 
 | # | Fixture | Prompt | Expected | `tooned` converts? |
 |---|---|---|---|---|
@@ -91,11 +93,11 @@ The following prompts were used with the normal `tooned` hook installed. A passi
 | 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the model could have been reading TOON; for those marked "no" `tooned` passed the original output unchanged.
+All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the tool result was replaced with TOON, so the model saw only TOON; for those marked "no" `tooned` passed the original JSON unchanged, so the answer came from the original syntax.
 
 ## Mismatch decoding cases
 
-The same complex fixtures were tested with a mismatch hook that always injected the TOON of `agent-test/products_20.json`.
+The same complex fixtures were tested with a mismatch hook that always replaced the tool result with the TOON of `agent-test/products_20.json`.
 
 | # | Fixture | Prompt | Expected | Result | Notes |
 |---|---|---|---|---|---|
@@ -112,7 +114,7 @@ The same complex fixtures were tested with a mismatch hook that always injected 
 | 11 | `complex/config_nested.yaml` | SKU of first product | `SKU-1001` | PASS | — |
 | 12 | `complex/sample_complex.json5` | SKU of first product | `SKU-1001` | PASS | — |
 
-Summary: **11/12 passed**, with one ambiguous case (`ecommerce_orders.json`) where the original file already contained a `sku` field, so the prompt could be answered from either the original output or the injected TOON.
+Summary: **11/12 passed**, with one ambiguous case (`ecommerce_orders.json`) where the original file already contained a `sku` field, so the prompt could be answered from either the original output or the replacement TOON.
 
 ## Current fixture conversion status
 
@@ -159,9 +161,11 @@ These results match the TOON specification: TOON's sweet spot is uniform arrays 
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original output. The mismatch test is the only one that specifically shows the model decoding the TOON `additionalContext` rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. The mismatch test is the only one that specifically shows the model decoding the TOON tool result rather than merely repeating the original tool output.
 
-For fixtures where `tooned` does not convert, the original output is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the model can still answer the same questions, and the mismatch test shows it can do so from TOON alone.
+For fixtures where `tooned` does not convert, the original JSON is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the tool result is replaced with TOON and the model can still answer the same questions; the mismatch test shows it can do so from TOON alone.
+
+For agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), `tooned` does not emit `additionalContext`; use `tooned wrap -- <cmd>` or `... | tooned pipe` to deliver TOON-only output with those agents.
 
 ## Research context
 
@@ -170,13 +174,13 @@ The finding is consistent with recent arXiv literature on alternative serializat
 - **McMillan, 2026** — *Structured Context Engineering for File-Native Agentic Systems* (arXiv:2602.05447v2): 9,649 experiments across 11 models and 4 formats (JSON, YAML, Markdown, TOON) found that "format does not significantly affect aggregate accuracy (chi-squared=2.45, p=0.484)," though individual models show format-specific sensitivities.
 - **Kutschka & Geiger, 2026** — *Notation Matters: A Benchmark Study of Token-Optimized Formats in Agentic AI Systems* (arXiv:2605.29676v2): TOON reduces tokens up to 18% with accuracy within 9 percentage points of JSON.
 - **Matveev, 2026** — *Token-Oriented Object Notation vs JSON* (arXiv:2603.03306v1): describes TOON as a serialization format for LLMs and notes "solid accuracy in LLM comprehension."
-- **Dong et al., 2024** — *SpreadsheetLLM: Encoding Spreadsheets for Large Language Models* (arXiv:2407.09025v2): compressed, structure-aware tabular encodings improve GPT-4 in-context learning by 25.6% and reach 78.9% F1.
+- **Dong et al., 2024** — *SpreadsheetLLM: Encoding Spreadsheets for Large Language Models* (arXiv:2407.09025v2): compressed, structure-aware tabular encodings improve GPT-4 in-context learning by 25.6% and reaches 78.9% F1.
 
 ## Reproducing the tests
 
 The tests are run manually by installing the real `tooned` hook or a mismatch hook in the agent's `PostToolUse` configuration and prompting the agent. There is no committed automation script for these prompts.
 
-A minimal, agent-agnostic mismatch hook converts `agent-test/products_20.json` to TOON and injects it as `additionalContext`, ignoring the real tool output:
+For Claude Code / OpenCode / Kilo / Pi, a minimal mismatch hook converts `agent-test/products_20.json` to TOON and replaces the tool output:
 
 ```python
 #!/usr/bin/env python3
@@ -199,11 +203,11 @@ sys.stdin.read()
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
-        "additionalContext": toon_text,
+        "updatedToolOutput": toon_text,
     }
 }, ensure_ascii=False))
 ```
 
-Install it as the `PostToolUse` command for the agent under test, run a prompt such as `read agent-test/users_20.json and tell me the SKU of the first product`, then restore the normal `tooned` hook entry.
+For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead. For Devin / Droid, `PostToolUse` cannot replace the tool result, so use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) and prompt the agent to read the wrapped output.
 
-> **Note:** The `agent-test/` fixtures are generated locally and excluded from version control. Ensure they exist before running the hook or `tooned check`.
+Install the appropriate hook as the `PostToolUse` command for the agent under test, run a prompt such as `read agent-test/users_20.json and tell me the SKU of the first product`, then restore the normal `tooned` hook entry.
