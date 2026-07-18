@@ -1,6 +1,6 @@
 # TOON comprehension evidence
 
-This document backs the claim in [`README.md`](../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
+This document backs the claim in [`README.md`](../../README.md) that a model can read and reason over TOON-encoded structured data without being given the original JSON syntax.
 
 ## What is being claimed
 
@@ -49,25 +49,25 @@ Whether `tooned` itself can convert the original file to TOON is irrelevant here
 
 | File | Original format | `tooned` converts? | Mismatch result | Notes |
 |---|---|---|---|---|
-| `agent-test/records_20.xml` | XML attributes | yes (51.5% savings) | `SKU-1001` | Direct |
-| `agent-test/config.yaml` | YAML | yes (11.7% savings) | `SKU-1001` | Direct |
-| `agent-test/settings.toml` | TOML | no | `SKU-1001` | Direct, original not converted |
-| `agent-test/sample.json5` | JSON5 | no | `SKU-1001` | Direct, original not converted |
-| `agent-test/orders_100.ndjson` | NDJSON | yes (62.7% savings) | `SKU-1001` | Direct |
-| `agent-test/events_100.ndjson` | NDJSON | yes (58.2% savings) | `SKU-1001` | Direct |
-| `agent-test/products_20.cbor` | CBOR (binary) | yes (50.2% savings) | `SKU-1001` | Direct |
-| `agent-test/users_20.msgpack` | MessagePack (binary) | yes (47.2% savings) | `SKU-1001` | Direct |
-| `agent-test/data_20.csv` | CSV | yes (53.7% savings) | `SKU-1001` | Direct |
-| `agent-test/data_20.tsv` | TSV | yes (53.7% savings) | `SKU-1001` | Direct |
-| `agent-test/nested_config.json` | Nested JSON | no | `SKU-1001` | Direct, original not converted |
-| `agent-test/large_uniform_500.json` | Large uniform JSON | yes (56.4% savings) | `SKU-1001` | Direct |
-| `agent-test/plain.txt` | Plain text | no | `SKU-1001` | Direct, original not converted |
+| `records_20.xml` | XML attributes | yes (51.5% savings) | `SKU-1001` | Direct |
+| `config.yaml` | YAML | yes (11.7% savings) | `SKU-1001` | Direct |
+| `settings.toml` | TOML | no | `SKU-1001` | Direct, original not converted |
+| `sample.json5` | JSON5 | no | `SKU-1001` | Direct, original not converted |
+| `orders_100.ndjson` | NDJSON | yes (62.7% savings) | `SKU-1001` | Direct |
+| `events_100.ndjson` | NDJSON | yes (58.2% savings) | `SKU-1001` | Direct |
+| `products_20.cbor` | CBOR (binary) | yes (50.2% savings) | `SKU-1001` | Direct |
+| `users_20.msgpack` | MessagePack (binary) | yes (47.2% savings) | `SKU-1001` | Direct |
+| `data_20.csv` | CSV | yes (53.7% savings) | `SKU-1001` | Direct |
+| `data_20.tsv` | TSV | yes (53.7% savings) | `SKU-1001` | Direct |
+| `nested_config.json` | Nested JSON | no | `SKU-1001` | Direct, original not converted |
+| `large_uniform_500.json` | Large uniform JSON | yes (56.4% savings) | `SKU-1001` | Direct |
+| `plain.txt` | Plain text | no | `SKU-1001` | Direct, original not converted |
 
 In every tested case the model extracted `SKU-1001` from the injected TOON context. The "yes / no" conversion column reflects whether `tooned` would have converted that file on its own; the mismatch test does not require it.
 
 ## Direct comprehension test protocol
 
-The following prompts were used with the normal `tooned` hook installed. A passing answer means the model could extract the requested value from the data; it does **not** by itself prove the value came from TOON, because `tooned` falls back to the original JSON whenever TOON does not win. The "`tooned` converts?" column shows whether the model could have seen TOON for that fixture.
+The following prompts were used with the normal `tooned` hook installed. A passing answer means the model could extract the requested value from the data; it does **not** by itself prove the value came from TOON, because `tooned` falls back to the original output whenever TOON does not win. The "`tooned` converts?" column shows whether the model could have seen TOON for that fixture.
 
 | # | Fixture | Prompt | Expected | `tooned` converts? |
 |---|---|---|---|---|
