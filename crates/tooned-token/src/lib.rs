@@ -90,7 +90,6 @@ pub fn resolve_model(name: &str) -> TokenizerProfile {
         || n.contains("o1")
         || n.contains("o3")
         || n.contains("o4")
-        || n.starts_with('o')
         || n.contains("o200k")
         || n.contains("chatgpt-4o")
     {
