@@ -28,6 +28,15 @@ pub struct Config {
     pub format_hint: Option<String>,
     /// Default `precise_tokens` for `tooned check`.
     pub precise_tokens: Option<bool>,
+    /// Default `dict_enabled` (dictionary-compression tier, #1).
+    pub dict_enabled: Option<bool>,
+    /// Default `auto_margin` (density-aware acceptance margin, #2).
+    pub auto_margin: Option<bool>,
+    /// Default `entropy_gate` (entropy-informed margin, #5).
+    pub entropy_gate: Option<bool>,
+    /// Default critical-field protection list (#3): column/key substrings
+    /// kept verbatim by the dictionary tier and density tuning.
+    pub protect: Option<Vec<String>>,
     /// `tooned index watch` defaults.
     pub watch: Option<WatchConfig>,
     /// Disable local metrics recording (mirrors the
@@ -132,12 +141,17 @@ impl Config {
     /// Build a `ConversionOptions` by layering config-file defaults underneath
     /// explicit CLI values. `max_bytes` is in `u64` because CLI flags expose
     /// it as such before clamping to `usize`.
+    #[allow(clippy::too_many_arguments)]
     pub fn conversion_options(
         &self,
         margin: Option<f64>,
         max_bytes: Option<u64>,
         format_hint: Option<FormatHint>,
         precise: Option<bool>,
+        dict: Option<bool>,
+        auto_margin: Option<bool>,
+        entropy_gate: Option<bool>,
+        protect: Option<Vec<String>>,
     ) -> ConversionOptions {
         let mut opts = ConversionOptions::default();
 
@@ -159,6 +173,26 @@ impl Config {
 
         if let Some(p) = precise.or(self.precise_tokens) {
             opts.precise_tokens = p;
+        }
+
+        // Encoder-win tiers (#1, #2, #5): CLI flags override config-file
+        // defaults, which override the constitution-mandated crate defaults.
+        if let Some(d) = dict.or(self.dict_enabled) {
+            opts.dict_enabled = d;
+        }
+        if let Some(a) = auto_margin.or(self.auto_margin) {
+            opts.auto_margin = a;
+        }
+        if let Some(e) = entropy_gate.or(self.entropy_gate) {
+            opts.entropy_gate = e;
+        }
+        if let Some(keys) = protect.or_else(|| self.protect.clone())
+            && !keys.is_empty()
+        {
+            opts.critical_policy = tooned_types::CriticalFieldPolicy {
+                protected: keys,
+                ..tooned_types::CriticalFieldPolicy::default_policy()
+            };
         }
 
         opts
