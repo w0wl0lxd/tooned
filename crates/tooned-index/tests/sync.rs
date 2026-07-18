@@ -41,10 +41,12 @@ fn sync_skips_rehashing_a_file_whose_mtime_is_unchanged() {
     let path = dir.path().join("data.json");
     fs::write(&path, uniform_array_json(10)).expect("write fixture");
 
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
     let before = tooned_index::show_file(dir.path(), "data.json").expect("show_file before sync");
 
-    let summary = tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
+    let summary =
+        tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
     assert_eq!(summary.unchanged, 1);
     assert_eq!(summary.updated, 0);
     assert_eq!(summary.added, 0);
@@ -62,7 +64,8 @@ fn sync_reclassifies_a_file_whose_content_changed() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("data.json");
     fs::write(&path, uniform_array_json(10)).expect("write fixture");
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
     let before = tooned_index::show_file(dir.path(), "data.json").expect("show_file before edit");
 
     // Bump mtime forward and change content, simulating a real edit.
@@ -70,7 +73,8 @@ fn sync_reclassifies_a_file_whose_content_changed() {
     let future = SystemTime::now() + Duration::from_mins(2);
     set_mtime(&path, future).expect("set_mtime");
 
-    let summary = tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
+    let summary =
+        tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
     assert_eq!(summary.updated, 1);
     assert_eq!(summary.unchanged, 0);
 
@@ -83,11 +87,13 @@ fn sync_prunes_rows_for_deleted_files() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("data.json");
     fs::write(&path, uniform_array_json(10)).expect("write fixture");
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
 
     fs::remove_file(&path).expect("remove fixture file");
 
-    let summary = tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
+    let summary =
+        tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
     assert_eq!(summary.removed, 1);
 
     let result = tooned_index::show_file(dir.path(), "data.json");
@@ -98,10 +104,12 @@ fn sync_prunes_rows_for_deleted_files() {
 fn sync_adds_a_newly_created_file() {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("first.json"), uniform_array_json(5)).expect("write fixture");
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
 
     fs::write(dir.path().join("second.json"), uniform_array_json(5)).expect("write new fixture");
-    let summary = tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
+    let summary =
+        tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
     assert_eq!(summary.added, 1);
 
     assert!(tooned_index::show_file(dir.path(), "second.json").is_ok());
@@ -114,8 +122,12 @@ fn sync_with_exclude_does_not_prune_excluded_files_that_still_exist() {
     fs::write(dir.path().join("excluded.json"), uniform_array_json(5)).expect("write fixture");
 
     // Initial scan without filter
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
-    assert!(tooned_index::show_file(dir.path(), "excluded.json").is_ok(), "excluded.json should be indexed initially");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
+    assert!(
+        tooned_index::show_file(dir.path(), "excluded.json").is_ok(),
+        "excluded.json should be indexed initially"
+    );
 
     // Sync with exclude filter - excluded.json should still exist on disk
     let filter = tooned_index::IndexFilter {
@@ -123,9 +135,12 @@ fn sync_with_exclude_does_not_prune_excluded_files_that_still_exist() {
         excludes: vec!["excluded.json".to_string()],
     };
     let summary = tooned_index::sync(dir.path(), &filter).expect("sync");
-    
+
     // excluded.json should NOT be pruned because it still exists on disk
-    assert!(tooned_index::show_file(dir.path(), "excluded.json").is_ok(), "excluded.json must NOT be pruned when it still exists");
+    assert!(
+        tooned_index::show_file(dir.path(), "excluded.json").is_ok(),
+        "excluded.json must NOT be pruned when it still exists"
+    );
     assert_eq!(summary.removed, 0, "no files should be removed");
 }
 
@@ -136,8 +151,12 @@ fn sync_with_type_filter_respects_filter() {
     fs::write(dir.path().join("config.toml"), "[section]\nkey = \"value\"").expect("write fixture");
 
     // Initial scan without filter
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
-    assert!(tooned_index::show_file(dir.path(), "config.toml").is_ok(), "config.toml should be indexed initially");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
+    assert!(
+        tooned_index::show_file(dir.path(), "config.toml").is_ok(),
+        "config.toml should be indexed initially"
+    );
 
     // Sync with type filter - only JSON files should be considered
     let filter = tooned_index::IndexFilter {
@@ -145,8 +164,11 @@ fn sync_with_type_filter_respects_filter() {
         excludes: vec![],
     };
     let summary = tooned_index::sync(dir.path(), &filter).expect("sync");
-    
+
     // config.toml should NOT be pruned because it still exists on disk and matches no filter
-    assert!(tooned_index::show_file(dir.path(), "config.toml").is_ok(), "config.toml must NOT be pruned when it still exists");
+    assert!(
+        tooned_index::show_file(dir.path(), "config.toml").is_ok(),
+        "config.toml must NOT be pruned when it still exists"
+    );
     assert_eq!(summary.removed, 0, "no files should be removed");
 }

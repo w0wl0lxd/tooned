@@ -31,7 +31,8 @@ fn full_scan_of_1000_plus_files_completes_well_under_a_minute() {
     populate_fixture_project(dir.path()).expect("populate fixture project");
 
     let start = Instant::now();
-    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("scan_full");
+    let summary = tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("scan_full");
     let elapsed = start.elapsed();
 
     assert_eq!(summary.files_scanned, FILE_COUNT);
@@ -47,7 +48,8 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     populate_fixture_project(dir.path()).expect("populate fixture project");
 
     let full_scan_start = Instant::now();
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("initial scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("initial scan_full");
     let full_scan_elapsed = full_scan_start.elapsed();
 
     // Establish a warm baseline for re-classifying every file from disk.
@@ -55,7 +57,8 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     // same cached filesystem state, giving a fair comparison without the noise
     // of a cold first scan.
     let baseline_start = Instant::now();
-    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default()).expect("warm baseline scan_full");
+    tooned_index::scan_full(dir.path(), &tooned_index::IndexFilter::default())
+        .expect("warm baseline scan_full");
     let baseline_elapsed = baseline_start.elapsed();
 
     // Touch (content + mtime change) only a handful of files.
@@ -70,7 +73,8 @@ fn incremental_sync_after_touching_a_few_files_is_markedly_faster_than_full_scan
     }
 
     let sync_start = Instant::now();
-    let summary = tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
+    let summary =
+        tooned_index::sync(dir.path(), &tooned_index::IndexFilter::default()).expect("sync");
     let sync_elapsed = sync_start.elapsed();
 
     assert_eq!(summary.updated, 5);
