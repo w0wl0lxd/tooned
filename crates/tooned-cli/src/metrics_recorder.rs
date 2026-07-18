@@ -110,13 +110,19 @@ pub struct ConvertOutcome {
     pub converted: bool,
     pub input_bytes: i64,
     pub output_bytes: i64,
+    /// Optional model-aware token-savings figure (measured by the caller via
+    /// `tooned-token`). When `Some`, it overrides the heuristic default and
+    /// flips `precise` on in the stored event.
+    pub tokens_saved: Option<u64>,
+    #[allow(dead_code)]
+    pub precise: bool,
 }
 
 impl ConvertOutcome {
     /// Compute the byte-savings percentage and record the event to both the
     /// global and project ledgers.
     pub fn record(self) {
-        let event = RecordBuilder::new(self.scope.surface())
+        let mut builder = RecordBuilder::new(self.scope.surface())
             .kind(EventKind::Actual)
             .source_label(self.source_label.as_opt())
             .doc_type(if self.doc_type.is_empty() { None } else { Some(self.doc_type) })
@@ -132,9 +138,14 @@ impl ConvertOutcome {
                     Ok(v) => v,
                     Err(_) => u64::MAX,
                 },
-            )
-            .build();
-        record(&event);
+            );
+        if let Some(tokens) = self.tokens_saved {
+            // The ledger records `precise` as a boolean only; the concrete
+            // tokenizer profile is not persisted (kept out of the schema to
+            // avoid a migration).
+            builder = builder.tokens_saved(tokens);
+        }
+        record(&builder.build());
     }
 }
 
@@ -178,6 +189,36 @@ pub fn record_convert_outcome(
         converted,
         input_bytes,
         output_bytes,
+        tokens_saved: None,
+        precise: false,
+    }
+    .record();
+}
+
+/// Like [`record_convert_outcome`], but carries an explicit model-aware
+/// token-savings figure (F1/F2) so the ledger records precise (not heuristic)
+/// savings when the caller measured them via `tooned-token`.
+#[allow(clippy::too_many_arguments)]
+pub fn record_convert_outcome_ex(
+    scope: CliSurface,
+    source_label: &SourceLabel,
+    doc_type: Option<DocType>,
+    converted: bool,
+    input_bytes: i64,
+    output_bytes: i64,
+    tokens_saved: Option<u64>,
+    precise: bool,
+) {
+    let dt = doc_type.map_or_else(String::new, |d| format!("{d:?}"));
+    ConvertOutcome {
+        scope,
+        source_label: source_label.clone(),
+        doc_type: dt,
+        converted,
+        input_bytes,
+        output_bytes,
+        tokens_saved,
+        precise,
     }
     .record();
 }
