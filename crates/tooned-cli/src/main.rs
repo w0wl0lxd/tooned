@@ -40,6 +40,12 @@ enum Command {
     /// Dry-run: prints doc type, shape class, byte-size comparison, convertible y/n.
     #[command(alias = "chk")]
     Check(cli::check::CheckArgs),
+    /// Report byte and BPE-token savings without emitting TOON text.
+    #[command(
+        alias = "ts",
+        after_help = "Examples:\n  tooned token-savings data.json\n  tooned token-savings --json data.json"
+    )]
+    TokenSavings(cli::token_savings::TokenSavingsArgs),
     /// stdin -> maybe_tooned -> stdout.
     #[command(
         alias = "p",
@@ -110,6 +116,7 @@ fn main() -> anyhow::Result<()> {
     match &cli.command {
         Command::Convert(args) => cli::convert::run(args),
         Command::Check(args) => cli::check::run(args),
+        Command::TokenSavings(args) => cli::token_savings::run(args),
         Command::Pipe(args) => cli::pipe::run(args),
         Command::Wrap(args) => cli::wrap::run(args),
         Command::Index(args) => cli::index::run(args),

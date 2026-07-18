@@ -30,6 +30,10 @@ pub struct LintArgs {
     /// Emit the result as machine-readable JSON.
     #[arg(short = 'j', long)]
     pub json: bool,
+
+    /// Treat warnings as errors and exit non-zero.
+    #[arg(long)]
+    pub fail_on_warning: bool,
 }
 
 #[derive(Serialize)]
@@ -127,7 +131,7 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
 
     if args.json {
         let result = LintResult {
-            valid: true,
+            valid: !args.fail_on_warning || warnings.is_empty(),
             warnings: warnings.iter().map(|w| (*w).to_string()).collect(),
         };
         println!("{}", sonic_rs::to_string(&result)?);
@@ -135,9 +139,13 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
         println!("ok: valid TOON and round-trips losslessly");
     } else {
         println!("ok: valid TOON and round-trips losslessly (with warnings)");
-        for warning in warnings {
+        for warning in &warnings {
             eprintln!("warning: {warning}");
         }
+    }
+
+    if args.fail_on_warning && !warnings.is_empty() {
+        anyhow::bail!("tooned lint: warnings treated as errors because of --fail-on-warning");
     }
     Ok(())
 }

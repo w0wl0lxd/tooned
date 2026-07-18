@@ -19,6 +19,7 @@ use tooned_core::ConversionOptions;
 use crate::cli::FormatHint;
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Default `margin_pct` for conversion operations.
     pub margin_pct: Option<f64>,
@@ -45,6 +46,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WatchConfig {
     /// Quiet period, in milliseconds, before a filesystem change triggers
     /// an incremental `tooned index sync`.

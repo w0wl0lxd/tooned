@@ -55,6 +55,75 @@ fn wrap_converts_captured_stdout_and_mirrors_exit_code() {
 }
 
 #[test]
+fn wrap_writes_converted_output_to_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.toon");
+    let json = uniform_array_json(20);
+    let mut cmd = Command::cargo_bin("tooned").unwrap();
+
+    if cfg!(windows) {
+        cmd.env("TOONED_TEST_TEXT", &json).args([
+            "wrap",
+            "--out",
+            out.to_str().unwrap(),
+            "--",
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "[Console]::Out.Write($env:TOONED_TEST_TEXT)",
+        ]);
+    } else {
+        cmd.args(["wrap", "--out", out.to_str().unwrap(), "--", "printf", "%s", &json]);
+    }
+
+    cmd.assert().success();
+
+    let contents = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        contents.contains("id,name,active,score"),
+        "file should contain converted TOON: {contents}"
+    );
+}
+
+#[test]
+fn wrap_streams_oversized_output_to_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.txt");
+    let text = "hello world"; // > --max-bytes 8, so it streams verbatim.
+    let mut cmd = Command::cargo_bin("tooned").unwrap();
+
+    if cfg!(windows) {
+        cmd.env("TOONED_TEST_TEXT", text).args([
+            "wrap",
+            "--max-bytes",
+            "8",
+            "--out",
+            out.to_str().unwrap(),
+            "--",
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "[Console]::Out.Write($env:TOONED_TEST_TEXT)",
+        ]);
+    } else {
+        cmd.args([
+            "wrap",
+            "--max-bytes",
+            "8",
+            "--out",
+            out.to_str().unwrap(),
+            "--",
+            "printf",
+            "%s",
+            text,
+        ]);
+    }
+
+    cmd.assert().success();
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), text);
+}
+
+#[test]
 fn wrap_mirrors_a_nonzero_exit_code() {
     let mut cmd = Command::cargo_bin("tooned").expect("binary exists");
     if cfg!(windows) {

@@ -15,6 +15,7 @@ pub mod lint;
 pub mod metrics;
 pub mod pipe;
 pub mod stats;
+pub mod token_savings;
 pub mod wrap;
 
 /// `--format-hint` value for `convert`/`check`/`pipe`: forces the parser's
