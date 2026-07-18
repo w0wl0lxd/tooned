@@ -121,11 +121,7 @@ pub fn watch_with_stop(
     })?;
     debouncer.watcher().watch(project_root, RecursiveMode::Recursive)?;
 
-    let gitignore_filter = build_gitignore_filter(project_root).unwrap_or_else(|_| {
-        // If we cannot read the gitignore file, still fall back to the
-        // hard-coded ignores so `.tooned/` updates don't self-trigger.
-        ignore::gitignore::Gitignore::empty()
-    });
+    let gitignore_filter = build_gitignore_filter(project_root)?;
 
     let mut count: u64 = 0;
     loop {
@@ -167,13 +163,15 @@ pub fn watch_with_stop(
 /// Watch `project_root` until the process is interrupted. Backs the
 /// `tooned index watch` CLI; for tests or other callers that need to
 /// stop the loop, use [`watch_with_stop`].
-pub fn watch(project_root: &Path, debounce_ms: u64) -> Result<(), IndexError> {
-    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), &IndexFilter::default())
+pub fn watch(
+    project_root: &Path,
+    debounce_ms: u64,
+    filter: &IndexFilter,
+) -> Result<(), IndexError> {
+    watch_with_stop(project_root, debounce_ms, &AtomicBool::new(false), filter)
 }
 
-fn build_gitignore_filter(
-    project_root: &Path,
-) -> Result<ignore::gitignore::Gitignore, ignore::Error> {
+fn build_gitignore_filter(project_root: &Path) -> Result<ignore::gitignore::Gitignore, IndexError> {
     let mut builder = ignore::gitignore::GitignoreBuilder::new(project_root);
     let gitignore = project_root.join(".gitignore");
     if gitignore.is_file() {
@@ -181,7 +179,7 @@ fn build_gitignore_filter(
     }
     builder.add_line(None, ".tooned/")?;
     builder.add_line(None, ".git/")?;
-    builder.build()
+    Ok(builder.build()?)
 }
 
 fn is_ignored(
@@ -204,6 +202,7 @@ fn is_ignored(
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum IndexError {
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
@@ -223,6 +222,8 @@ pub enum IndexError {
     ScanTooLarge(usize),
     #[error("unsupported schema version: {0}; delete or migrate the index database")]
     UnsupportedSchemaVersion(String),
+    #[error("failed to compile ignore/exclude pattern: {0}")]
+    Gitignore(#[from] ignore::Error),
 }
 
 /// `tooned index status` report: whether an index exists, how many files
