@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Integration tests for `tooned hook run --devin`.
 //! Devin CLI `PostToolUse` stdin carries the tool's raw output under
 //! `tool_response.output` (an object with `success`, `output`, `error`).
