@@ -56,16 +56,34 @@ pub fn sync(project_root: &Path) -> Result<SyncSummary, IndexError> {
         visited += 1;
         enforce_walk_cap(visited)?;
 
-        let Ok(entry) = entry else { continue };
-        let Some(file_type) = entry.file_type() else { continue };
+        let Ok(entry) = entry else {
+            // A yielded entry we can't read is transient; record it as seen so
+            // the prune pass does not delete a row for a file that still exists.
+            continue;
+        };
+        let Some(file_type) = entry.file_type() else {
+            // No file type (rare); treat as seen so the prune pass does not
+            // delete a row for a file that still exists on disk.
+            seen.insert(entry.path().to_string_lossy().into_owned());
+            continue;
+        };
         if !file_type.is_file() {
             continue;
         }
 
         let path = entry.path();
         let Ok(rel) = path.strip_prefix(project_root) else { continue };
-        let Some(rel_str) = rel.to_str() else { continue };
+        let Some(rel_str) = rel.to_str() else {
+            // Non-UTF8 path: still present on disk, so record it as seen to stop
+            // the prune pass from deleting a legitimately-present file's row
+            // (finding: sync prune could drop present files with non-UTF8 names).
+            seen.insert(entry.path().to_string_lossy().into_owned());
+            continue;
+        };
         if is_tooned_internal(rel_str) {
+            // tooned's own internal files are never indexed; mark seen so they
+            // are not pruned from a prior (stale) scan.
+            seen.insert(rel_str.to_string());
             continue;
         }
 
