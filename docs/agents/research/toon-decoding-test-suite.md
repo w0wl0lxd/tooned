@@ -1,13 +1,15 @@
 # TOON Decoding Test Suite
 
-This document records the cross-format test protocol and results for whether a Large Language Model, presented with a TOON-encoded `additionalContext` from a `PostToolUse` hook, can decode the TOON internally and answer questions correctly.
+This document records the cross-format test protocol and results for whether a Large Language Model, presented with a TOON-encoded tool result from a `PostToolUse` hook or wrapped command, can decode the TOON internally and answer questions correctly.
+
+> **Historical note.** Early versions of this test suite injected TOON as `additionalContext`. That approach is flawed: `additionalContext` keeps the original JSON in the model's context and appends the TOON, inflating total token count rather than reducing it. The current protocol uses tool-result replacement (`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi, `continue: false` + `reason` feedback for Codex) so the model sees *only* the TOON. For Devin and Droid, which only support `additionalContext` in `PostToolUse`, use command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) to deliver TOON-only output.
 
 ## Methodology
 
 Fixtures live under `agent-test/` and `agent-test/complex/`. Each fixture is tested with a live agent prompt while the real `tooned` hook or a mismatch hook is installed.
 
-- **Direct**: the normal `tooned hook run` converts the file to TOON (when it wins) and injects it as `additionalContext`; the original tool output is preserved.
-- **Mismatch**: a temporary hook replaces every tool response with the TOON encoding of `agent-test/products_20.json` and the prompt asks for the SKU of the first product. Because the original file does not contain `sku`, a correct `SKU-1001` answer must come from the injected TOON context.
+- **Direct**: the normal `tooned hook run` converts the file to TOON (when it wins) and replaces the tool result; the original JSON is no longer in that context item.
+- **Mismatch**: a temporary hook replaces every tool response with the TOON encoding of `agent-test/products_20.json` and the prompt asks for the SKU of the first product. Because the original file does not contain `sku`, a correct `SKU-1001` answer must come from the replacement TOON result.
 
 A response is marked **PASS** if it contains one of the expected strings (case-insensitive). A response is marked **AMBIGUOUS** if the original file already contains a field that could answer the prompt.
 
@@ -41,7 +43,7 @@ A response is marked **PASS** if it contains one of the expected strings (case-i
 | 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the model could have been reading TOON; for fixtures where `tooned` does not convert, the answer came from the original output.
+All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the tool result was replaced with TOON, so the model saw only TOON; for fixtures where `tooned` does not convert, the answer came from the original JSON.
 
 ## Mismatch decoding results
 
@@ -62,9 +64,11 @@ All 19 direct prompts produced a correct answer in the tested run. For fixtures 
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original output. A high pass rate on mismatch tests shows the model specifically decodes the TOON `additionalContext` rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. A high pass rate on mismatch tests shows the model specifically decodes the TOON tool result rather than merely repeating the original tool output.
 
-The one ambiguous mismatch case (`ecommerce_orders.json`) is a test-design issue: the original file already contains `sku` values, so the prompt is not a clean isolation of the TOON context. Asking for a field absent from the original file, such as the product `name` (`Product 1`), would make the test unambiguous.
+The one ambiguous mismatch case (`ecommerce_orders.json`) is a test-design issue: the original file already contains `sku` values, so the prompt is not a clean isolation of the TOON result. Asking for a field absent from the original file, such as the product `name` (`Product 1`), would make the test unambiguous.
+
+For agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), `tooned` does not emit `additionalContext`; use `tooned wrap -- <cmd>` or `... | tooned pipe` to deliver TOON-only output with those agents.
 
 ## Research context
 
@@ -77,7 +81,7 @@ This finding is consistent with recent arXiv literature:
 
 ## Reproduction
 
-The tests are run manually. A minimal, agent-agnostic mismatch hook converts `agent-test/products_20.json` to TOON and injects it as `additionalContext`:
+The tests are run manually. A minimal mismatch hook for an agent that supports tool-result replacement (Claude Code / OpenCode / Kilo / Pi) converts `agent-test/products_20.json` to TOON and replaces the tool output:
 
 ```python
 #!/usr/bin/env python3
@@ -100,12 +104,14 @@ sys.stdin.read()
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
-        "additionalContext": toon_text,
+        "updatedToolOutput": toon_text,
     }
 }, ensure_ascii=False))
 ```
 
-Install it as the `PostToolUse` command for the agent under test and run prompts such as:
+For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead. For Devin / Droid, `PostToolUse` cannot replace the tool result, so use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) and prompt the agent to read the wrapped output.
+
+Install the appropriate hook as the `PostToolUse` command for the agent under test and run prompts such as:
 
 ```text
 read agent-test/complex/company_org.json and tell me the SKU of the first product
