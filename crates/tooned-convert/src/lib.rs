@@ -13,10 +13,10 @@ use serde_json::Value;
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
-use tooned_toon::encode_toon;
+use tooned_toon::{apply_dict, encode_toon};
 use tooned_types::{
-    Conversion, ConversionOptions, ConversionReport, DocType, InspectReport, PassthroughReason,
-    ShapeClass, ToonedError,
+    Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
+    PassthroughReason, ShapeClass, ToonedError,
 };
 
 mod shape;
@@ -95,6 +95,7 @@ struct Attempt {
     json_text: Option<String>,
     toon: Option<AttemptToon>,
     reason: Option<PassthroughReason>,
+    protected_fields: Vec<String>,
 }
 
 impl Attempt {
@@ -106,6 +107,7 @@ impl Attempt {
             json_text: None,
             toon: None,
             reason: Some(PassthroughReason::NotStructuredData),
+            protected_fields: Vec::new(),
         }
     }
 
@@ -117,6 +119,7 @@ impl Attempt {
             json_text: None,
             toon: None,
             reason: Some(PassthroughReason::ParseFailed),
+            protected_fields: Vec::new(),
         }
     }
 }
@@ -172,6 +175,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
                 json_text: None,
                 toon: None,
                 reason: Some(PassthroughReason::ParseFailed),
+                protected_fields: Vec::new(),
             };
         };
         (text.len(), Some(text))
@@ -186,6 +190,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
                 json_text: None,
                 toon: None,
                 reason: Some(PassthroughReason::ParseFailed),
+                protected_fields: Vec::new(),
             };
         };
         // `to_writer` may not flush the `BufferedWriter`'s final buffer; drain
@@ -198,6 +203,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
                 json_text: None,
                 toon: None,
                 reason: Some(PassthroughReason::ParseFailed),
+                protected_fields: Vec::new(),
             };
         };
         (counter.0, None)
@@ -211,11 +217,38 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
             json_text,
             toon: None,
             reason: Some(PassthroughReason::ParseFailed),
+            protected_fields: Vec::new(),
         };
+    };
+
+    // Dict tier (#1): inline repeated cell values behind a legend. Only
+    // engaged when it strictly shrinks the output (net-win gate inside
+    // `apply_dict`), and never for keys matched by the critical-field policy
+    // (#3) so semantically-load-bearing columns stay verbatim.
+    let protected_keys = extract_protected_keys(&value, &opts.critical_policy);
+    let encoded = if opts.dict_enabled {
+        match apply_dict(&encoded, &protected_keys) {
+            Some(dict_encoded) => dict_encoded,
+            None => encoded,
+        }
+    } else {
+        encoded
     };
     let toon_bytes = encoded.len();
 
-    if !is_smaller_enough(json_bytes, toon_bytes, opts.margin_pct) {
+    // Density-aware auto margin (#2): when `auto_margin` is set, derive the
+    // acceptance margin from how uniform (redundant) the payload is rather
+    // than a single fixed floor -- dense/diverse inputs demand more headroom
+    // so TOON never "wins" on a rounding error.
+    let margin = if opts.auto_margin {
+        // The configured margin is a floor; never accept less than what the
+        // caller explicitly requested.
+        auto_margin_for(&shape).max(opts.margin_pct)
+    } else {
+        opts.margin_pct
+    };
+
+    if !is_smaller_enough(json_bytes, toon_bytes, margin) {
         return Attempt {
             doc_type: Some(doc_type),
             shape,
@@ -223,6 +256,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
             json_text,
             toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
             reason: Some(PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes }),
+            protected_fields: Vec::new(),
         };
     }
 
@@ -239,6 +273,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
             json_text,
             toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
             reason: Some(PassthroughReason::RoundTripMismatch),
+            protected_fields: Vec::new(),
         };
     }
 
@@ -249,6 +284,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         json_text,
         toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
         reason: None,
+        protected_fields: protected_keys,
     }
 }
 
@@ -260,7 +296,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
 /// path (`maybe_tooned`) never calls this function at all (constitution
 /// Principle II: "MUST NOT run on the default hot path").
 fn precise_token_savings_pct(json_text: &str, toon_text: &str) -> f64 {
-    let bpe = tiktoken_rs::cl100k_base_singleton();
+    let bpe = tiktoken_rs::cl100k_base_singleton().clone();
     let json_tokens = bpe.encode_ordinary(json_text).len();
     let toon_tokens = bpe.encode_ordinary(toon_text).len();
     if json_tokens == 0 {
@@ -289,6 +325,57 @@ pub(crate) fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
     (1.0 - (toon_bytes as f64 / json_bytes as f64)) * 100.0
 }
 
+/// Collect the object keys / array-of-objects column names that the
+/// critical-field policy (#3) protects from TOON's dict-tier inlining, so
+/// semantically-load-bearing fields always decode verbatim.
+fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<String> {
+    let mut keys = Vec::new();
+    match value {
+        Value::Object(map) => {
+            for k in map.keys() {
+                if policy.is_protected(k) {
+                    keys.push(k.clone());
+                }
+            }
+        }
+        Value::Array(arr) if !arr.is_empty() => {
+            for item in arr {
+                if let Value::Object(map) = item {
+                    for k in map.keys() {
+                        if policy.is_protected(k) && !keys.contains(k) {
+                            keys.push(k.clone());
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    keys
+}
+
+/// Density-aware acceptance margin (#2). Higher uniformity (more redundant
+/// payloads) can be accepted on even tiny savings; low-uniformity / dense,
+/// diverse payloads demand progressively more headroom so TOON never wins on
+/// a rounding error (TAAC / entropy-gate insight, arXiv 2602.15843,
+/// 2606.03739).
+fn auto_margin_for(shape: &ShapeClass) -> f64 {
+    match shape {
+        ShapeClass::UniformArrayOfObjects { uniformity_pct, .. } => {
+            if *uniformity_pct >= 70.0 {
+                0.0
+            } else if *uniformity_pct >= 40.0 {
+                2.0
+            } else if *uniformity_pct >= 20.0 {
+                5.0
+            } else {
+                10.0
+            }
+        }
+        _ => 10.0,
+    }
+}
+
 /// Never returns `Err` for payload-driven failure (malformed/oversized/
 /// ambiguous input) -- those always resolve to
 /// `Ok(Conversion::Passthrough { .. })`. `Err` is reserved for caller
@@ -308,7 +395,8 @@ pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion
         });
     }
 
-    let Attempt { doc_type, shape, json_bytes, json_text: _, toon, reason } = attempt(input, opts);
+    let Attempt { doc_type, shape, json_bytes, json_text: _, toon, reason, protected_fields } =
+        attempt(input, opts);
 
     if let Some(reason) = reason {
         return Ok(Conversion::Passthrough { bytes: input.to_vec(), reason });
@@ -332,6 +420,7 @@ pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion
             json_bytes,
             toon_bytes: toon.bytes,
             savings_pct: compute_savings_pct(json_bytes, toon.bytes),
+            protected_fields,
         },
     })
 }
@@ -354,10 +443,12 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
             precise_savings_pct: None,
             would_convert: false,
             reason: Some(PassthroughReason::InputTooLarge),
+            protected_fields: Vec::new(),
         };
     }
 
-    let Attempt { doc_type, shape, json_bytes, json_text, toon, reason } = attempt(input, opts);
+    let Attempt { doc_type, shape, json_bytes, json_text, toon, reason, protected_fields } =
+        attempt(input, opts);
     let toon_bytes = toon.as_ref().map(|t| t.bytes);
     let savings_pct = match (json_bytes, toon_bytes) {
         (Some(j), Some(t)) => Some(compute_savings_pct(j, t)),
@@ -383,6 +474,7 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
         precise_savings_pct,
         would_convert: reason.is_none(),
         reason,
+        protected_fields,
     }
 }
 
