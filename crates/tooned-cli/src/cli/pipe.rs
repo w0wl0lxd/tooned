@@ -20,26 +20,35 @@ use crate::cli::io::{BoundedRead, read_bounded};
 #[derive(Debug, Args)]
 pub struct PipeArgs {
     /// Minimum savings margin, as a percentage, required to convert (default 2%).
-    #[arg(long)]
+    #[arg(short = 'm', long)]
     pub margin: Option<f64>,
 
     /// Maximum input size in bytes before hard passthrough (default 2 MiB).
-    #[arg(long = "max-bytes")]
+    #[arg(short = 'b', long = "max-bytes")]
     pub max_bytes: Option<u64>,
 
     /// Force the parser's doc type instead of relying on content-sniffing.
-    #[arg(long = "format-hint", value_enum)]
+    #[arg(short = 'f', long = "format-hint", value_enum)]
     pub format_hint: Option<FormatHint>,
 
     /// Path to a tooned config file.
-    #[arg(long)]
+    #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
 }
 
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(args.margin, args.max_bytes, args.format_hint, None);
+    let opts = config.conversion_options(
+        args.margin,
+        args.max_bytes,
+        args.format_hint,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
 
     let mut stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
