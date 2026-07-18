@@ -32,32 +32,46 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// One-shot conversion; stdout by default.
+    #[command(alias = "c")]
     Convert(cli::convert::ConvertArgs),
     /// Dry-run: prints doc type, shape class, byte-size comparison, convertible y/n.
+    #[command(alias = "chk")]
     Check(cli::check::CheckArgs),
     /// stdin -> maybe_tooned -> stdout.
+    #[command(alias = "p")]
     Pipe(cli::pipe::PipeArgs),
     /// Runs a wrapped command and adaptively converts its captured stdout.
+    #[command(alias = "w")]
     Wrap(cli::wrap::WrapArgs),
     /// Full scan / sync / status / show against the `.tooned/` project index.
+    #[command(alias = "i")]
     Index(cli::index::IndexArgs),
     /// Ranked savings-opportunity report from the index.
+    #[command(alias = "s")]
     Stats(cli::stats::StatsArgs),
     /// Compare the original JSON with the TOON round-trip.
+    #[command(alias = "d")]
     Diff(cli::diff::DiffArgs),
     /// Validate a TOON file: parse, round-trip, and anti-pattern checks.
+    #[command(alias = "l")]
     Lint(cli::lint::LintArgs),
     /// Agent hook install/uninstall/status/doctor (Claude Code, Codex, Devin, Droid, OpenCode, Kilo, Pi).
+    #[command(alias = "h")]
     Hook(hooks::HookArgs),
     /// Model Context Protocol server.
+    #[command(alias = "m")]
     Mcp(mcp::McpArgs),
     /// GitHub/Codex-style token-savings heatmap.
+    #[command(alias = "hm")]
     Heatmap(cli::heatmap::HeatmapArgs),
     /// Inspect the local token-savings metrics ledger.
+    #[command(alias = "met")]
     Metrics(cli::metrics::MetricsArgs),
     /// Interactive ratatui metrics dashboard.
+    #[command(alias = "db")]
     Dashboard(cli::dashboard::DashboardArgs),
     /// Generate shell completion scripts (bash, zsh, fish, nushell, elvish, powershell).
+    #[command(alias = "comp")]
     Completions {
         /// Target shell.
         #[arg(long, value_name = "SHELL")]

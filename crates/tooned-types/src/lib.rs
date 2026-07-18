@@ -53,6 +53,7 @@ pub enum TokenizerProfile {
 /// Tunables for conversion functions. See [`ConversionOptions::default`]
 /// for the constitution-mandated defaults (2% margin, 2 MiB cap).
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionOptions {
     /// Minimum percentage by which TOON must beat compact JSON before it is
     /// surfaced as a conversion (constitution Principle II). Default: 2.0.
@@ -86,6 +87,15 @@ pub struct ConversionOptions {
     /// abbreviation and density-aware margin tuning (#3). Default:
     /// [`CriticalFieldPolicy::default_policy`].
     pub critical_policy: CriticalFieldPolicy,
+    /// Entropy gate (#5). When true, the effective acceptance margin is widened
+    /// for high-entropy / near-incompressible payloads so TOON only "wins" on
+    /// genuine *structural* savings rather than redundancy a generic compressor
+    /// would already capture. This is a margin *refinement*, never a hard deny:
+    /// constitution Principle II still requires the strict byte-size comparison
+    /// against compact JSON to make the final decision. Implemented with a
+    /// dependency-free Shannon-entropy estimate over the input bytes (no gzip/
+    /// zstd dependency, per Principle III). Default: true.
+    pub entropy_gate: bool,
     /// Tokenization profile used to measure real token savings. `None` keeps
     /// the constitution-mandated 4-bytes/token heuristic on the hot path
     /// (Principle II: MUST NOT run a BPE tokenizer by default). When `Some`,
@@ -104,6 +114,7 @@ impl Default for ConversionOptions {
             auto_margin: false,
             dict_enabled: true,
             critical_policy: CriticalFieldPolicy::default_policy(),
+            entropy_gate: false,
             tokenizer: None,
         }
     }

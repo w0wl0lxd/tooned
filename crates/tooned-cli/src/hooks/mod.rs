@@ -30,26 +30,39 @@ pub enum Scope {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args)]
 pub struct AgentSelector {
-    #[arg(long = "claude-code", group = "agent")]
+    #[arg(long = "claude-code")]
     pub claude_code: bool,
 
-    #[arg(long = "codex", group = "agent")]
+    #[arg(long = "codex")]
     pub codex: bool,
 
-    #[arg(long = "devin", group = "agent")]
+    #[arg(long = "devin")]
     pub devin: bool,
 
-    #[arg(long = "droid", group = "agent")]
+    #[arg(long = "droid")]
     pub droid: bool,
 
-    #[arg(long = "opencode", group = "agent")]
+    #[arg(long = "opencode")]
     pub opencode: bool,
 
-    #[arg(long = "kilo", group = "agent")]
+    #[arg(long = "kilo")]
     pub kilo: bool,
 
-    #[arg(long = "pi", group = "agent")]
+    #[arg(long = "pi")]
     pub pi: bool,
+}
+
+/// Agent selector that also supports `--all` for commands that can operate on
+/// every supported agent at once (`install`, `uninstall`, `status`).
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Args)]
+pub struct AgentSelectorWithAll {
+    #[command(flatten)]
+    pub inner: AgentSelector,
+
+    /// Target every supported agent instead of a single one.
+    #[arg(long, group = "agent")]
+    pub all: bool,
 }
 
 #[derive(Debug, Args)]
@@ -68,7 +81,7 @@ pub enum HookCommand {
     /// Idempotent installer; verifies the `tooned` binary resolves before writing.
     Install {
         #[command(flatten)]
-        agent: AgentSelector,
+        agent: AgentSelectorWithAll,
 
         #[arg(long, value_enum)]
         scope: Option<Scope>,
@@ -79,7 +92,7 @@ pub enum HookCommand {
     /// Removes only tooned's own entries.
     Uninstall {
         #[command(flatten)]
-        agent: AgentSelector,
+        agent: AgentSelectorWithAll,
 
         #[arg(long, value_enum)]
         scope: Option<Scope>,
@@ -87,17 +100,17 @@ pub enum HookCommand {
     /// Reports whether tooned's hook is currently installed.
     Status {
         #[command(flatten)]
-        agent: AgentSelector,
+        agent: AgentSelectorWithAll,
     },
     /// Reports all detected hook installations (tooned's and others') for all agents.
     Doctor,
 }
 
 /// Which agent an [`AgentSelector`] resolved to; `None` when neither or both
-/// flags were passed (clap's `group` tagging on `AgentSelector` doesn't by
-/// itself enforce "exactly one" for a flattened `Args` struct, so this is
-/// re-validated here rather than trusted).
+/// flags were passed. The `--all` variant is only produced by
+/// [`resolve_agent_with_all`] for commands that can operate on every agent.
 enum Agent {
+    All,
     ClaudeCode,
     Codex,
     Devin,
@@ -125,6 +138,103 @@ fn resolve_agent(agent: &AgentSelector) -> Option<Agent> {
         (false, false, false, false, false, true, false) => Some(Agent::Kilo),
         (false, false, false, false, false, false, true) => Some(Agent::Pi),
         _ => None,
+    }
+}
+
+fn resolve_agent_with_all(agent: &AgentSelectorWithAll) -> Option<Agent> {
+    if agent.all {
+        // `--all` must not be combined with a specific agent flag.
+        let any_specific = agent.inner.claude_code
+            || agent.inner.codex
+            || agent.inner.devin
+            || agent.inner.droid
+            || agent.inner.opencode
+            || agent.inner.kilo
+            || agent.inner.pi;
+        if any_specific {
+            return None;
+        }
+        return Some(Agent::All);
+    }
+    resolve_agent(&agent.inner)
+}
+
+const ALL_AGENTS: [Agent; 7] = [
+    Agent::ClaudeCode,
+    Agent::Codex,
+    Agent::Devin,
+    Agent::Droid,
+    Agent::OpenCode,
+    Agent::Kilo,
+    Agent::Pi,
+];
+
+fn agent_label(agent: &Agent) -> &'static str {
+    match agent {
+        Agent::ClaudeCode => "claude-code",
+        Agent::Codex => "codex",
+        Agent::Devin => "devin",
+        Agent::Droid => "droid",
+        Agent::OpenCode => "opencode",
+        Agent::Kilo => "kilo",
+        Agent::Pi => "pi",
+        Agent::All => "all",
+    }
+}
+
+fn agent_display_name(agent: &Agent) -> &'static str {
+    match agent {
+        Agent::ClaudeCode => "Claude Code hook",
+        Agent::Codex => "Codex hook",
+        Agent::Devin => "Devin hook",
+        Agent::Droid => "Droid hook",
+        Agent::OpenCode => "OpenCode plugin",
+        Agent::Kilo => "Kilo plugin",
+        Agent::Pi => "Pi extension",
+        Agent::All => "all hooks",
+    }
+}
+
+fn install_agent(agent: &Agent, scope: Option<Scope>, mcp: bool) -> Result<(), InstallError> {
+    match agent {
+        Agent::ClaudeCode => claude_code::install(scope, mcp),
+        Agent::Codex => codex::install(mcp),
+        Agent::Devin => devin::install(scope, mcp),
+        Agent::Droid => droid::install(scope, mcp),
+        Agent::OpenCode => opencode::install(scope, mcp),
+        Agent::Kilo => kilo::install(scope, mcp),
+        Agent::Pi => pi::install(scope, mcp),
+        Agent::All => Err(InstallError::Io(std::io::Error::other(
+            "internal error: Agent::All passed to single-agent install",
+        ))),
+    }
+}
+
+fn uninstall_agent(agent: &Agent, scope: Option<Scope>) -> Result<bool, InstallError> {
+    match agent {
+        Agent::ClaudeCode => claude_code::uninstall(scope),
+        Agent::Codex => codex::uninstall(),
+        Agent::Devin => devin::uninstall(scope),
+        Agent::Droid => droid::uninstall(scope),
+        Agent::OpenCode => opencode::uninstall(scope),
+        Agent::Kilo => kilo::uninstall(scope),
+        Agent::Pi => pi::uninstall(scope),
+        Agent::All => Err(InstallError::Io(std::io::Error::other(
+            "internal error: Agent::All passed to single-agent uninstall",
+        ))),
+    }
+}
+
+fn status_agent(agent: &Agent) -> bool {
+    match agent {
+        Agent::ClaudeCode => claude_code::status(),
+        Agent::Codex => codex::status(),
+        Agent::Devin => devin::status(),
+        Agent::Droid => droid::status(),
+        Agent::OpenCode => opencode::status(),
+        Agent::Kilo => kilo::status(),
+        Agent::Pi => pi::status(),
+        Agent::All => false,
     }
 }
 
@@ -668,14 +778,14 @@ pub fn run(args: &HookArgs) {
                 // No/ambiguous agent selection on `hook run` is itself a
                 // form of doubt -- the contract's fail-safe exit-0 guarantee
                 // applies uniformly, not just to payload-driven failure.
-                None => {}
+                None | Some(Agent::All) => {}
             }
             // Contract: `hook run` ALWAYS exits 0, regardless of internal
             // outcome -- a non-zero exit is itself a form of "loud failure"
             // the fail-safe principle forbids.
             std::process::exit(0);
         }
-        HookCommand::Install { agent, scope, mcp } => match resolve_agent(agent) {
+        HookCommand::Install { agent, scope, mcp } => match resolve_agent_with_all(agent) {
             Some(Agent::ClaudeCode) => {
                 if let Err(e) = claude_code::install(*scope, *mcp) {
                     eprintln!("tooned hook install --claude-code: {e}");
@@ -738,14 +848,55 @@ pub fn run(args: &HookArgs) {
                     std::process::exit(install_exit_code(&e));
                 }
             }
+            Some(Agent::All) => {
+                let mut failed = false;
+                let mut installed = Vec::new();
+                for a in &ALL_AGENTS {
+                    if matches!(a, Agent::Codex) && scope.is_some() {
+                        eprintln!(
+                            "tooned hook install --codex: --scope has no effect for Codex CLI \
+                             (no user/project scope concept exists); the plugin is always written \
+                             to ./.codex-plugin/ in the current directory"
+                        );
+                    }
+                    if matches!(a, Agent::Codex) {
+                        match codex::install(*mcp) {
+                            Ok(()) => {
+                                installed.push(agent_label(a));
+                                eprintln!(
+                                    "tooned: Codex CLI hook installed under .codex-plugin/. This is a \
+                                     non-managed hook, so Codex CLI requires an explicit trust review before \
+                                     it will fire: run `/hooks` inside Codex CLI now to review and trust it."
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("tooned hook install --codex: {e}");
+                                failed = true;
+                            }
+                        }
+                        continue;
+                    }
+                    match install_agent(a, *scope, *mcp) {
+                        Ok(()) => installed.push(agent_label(a)),
+                        Err(e) => {
+                            eprintln!("tooned hook install --{}: {e}", agent_label(a));
+                            failed = true;
+                        }
+                    }
+                }
+                if failed {
+                    std::process::exit(1);
+                }
+                println!("tooned: installed hooks for {}", installed.join(", "));
+            }
             None => {
                 eprintln!(
-                    "tooned hook install: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
+                    "tooned hook install: specify exactly one of --all, --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },
-        HookCommand::Uninstall { agent, scope } => match resolve_agent(agent) {
+        HookCommand::Uninstall { agent, scope } => match resolve_agent_with_all(agent) {
             Some(Agent::ClaudeCode) => match claude_code::uninstall(*scope) {
                 Ok(true) => println!("tooned: removed the Claude Code hook entry"),
                 Ok(false) => {
@@ -825,14 +976,43 @@ pub fn run(args: &HookArgs) {
                     std::process::exit(install_exit_code(&e));
                 }
             },
+            Some(Agent::All) => {
+                let mut failed = false;
+                let mut removed = Vec::new();
+                for a in &ALL_AGENTS {
+                    if matches!(a, Agent::Codex) && scope.is_some() {
+                        eprintln!(
+                            "tooned hook uninstall --codex: --scope has no effect for Codex CLI \
+                             (no user/project scope concept exists); only ./.codex-plugin/ in the \
+                             current directory is ever touched"
+                        );
+                    }
+                    match uninstall_agent(a, *scope) {
+                        Ok(true) => removed.push(agent_label(a)),
+                        Ok(false) => {}
+                        Err(e) => {
+                            eprintln!("tooned hook uninstall --{}: {e}", agent_label(a));
+                            failed = true;
+                        }
+                    }
+                }
+                if failed {
+                    std::process::exit(1);
+                }
+                if removed.is_empty() {
+                    println!("tooned: nothing to remove for any agent");
+                } else {
+                    println!("tooned: removed hooks for {}", removed.join(", "));
+                }
+            }
             None => {
                 eprintln!(
-                    "tooned hook uninstall: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
+                    "tooned hook uninstall: specify exactly one of --all, --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
         },
-        HookCommand::Status { agent } => match resolve_agent(agent) {
+        HookCommand::Status { agent } => match resolve_agent_with_all(agent) {
             Some(Agent::ClaudeCode) => {
                 let installed = claude_code::status();
                 println!(
@@ -882,9 +1062,19 @@ pub fn run(args: &HookArgs) {
                     if installed { "installed" } else { "not installed" }
                 );
             }
+            Some(Agent::All) => {
+                for a in &ALL_AGENTS {
+                    let installed = status_agent(a);
+                    println!(
+                        "tooned: {} is {}",
+                        agent_display_name(a),
+                        if installed { "installed" } else { "not installed" }
+                    );
+                }
+            }
             None => {
                 eprintln!(
-                    "tooned hook status: specify exactly one of --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
+                    "tooned hook status: specify exactly one of --all, --claude-code, --codex, --devin, --droid, --opencode, --kilo, or --pi"
                 );
                 std::process::exit(EXIT_USAGE_ERROR);
             }
