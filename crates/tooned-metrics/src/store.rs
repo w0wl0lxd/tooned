@@ -571,6 +571,26 @@ impl Store {
         rows.collect::<Result<Vec<_>, _>>().map_err(MetricsError::Sqlite)
     }
 
+    /// Most recent events in the query window, newest first.
+    pub fn recent_with_opts(
+        &self,
+        opts: &QueryOpts<'_>,
+        n: u32,
+    ) -> Result<Vec<EventRow>, MetricsError> {
+        let f = filter_clause(opts);
+        let sql = format!(
+            "SELECT * FROM events {where} ORDER BY ts DESC LIMIT ?",
+            where = f.where_sql()
+        );
+        let mut binds = f.binds;
+        binds.push(rusqlite::types::Value::Integer(i64::from(n)));
+        let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(binds), event_row_from)
+            .map_err(MetricsError::Sqlite)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(MetricsError::Sqlite)
+    }
+
     /// Export raw events as JSON or CSV.
     #[allow(clippy::manual_unwrap_or_default, clippy::manual_unwrap_or)]
     pub fn export(
@@ -864,6 +884,7 @@ impl Filter {
 fn filter_clause(opts: &QueryOpts<'_>) -> Filter {
     let mut clauses = Vec::new();
     let mut binds = Vec::new();
+
     if !opts.include_opportunity {
         clauses.push("kind = ?".to_string());
         binds.push(rusqlite::types::Value::Text("actual".into()));
@@ -872,6 +893,13 @@ fn filter_clause(opts: &QueryOpts<'_>) -> Filter {
         clauses.push("surface = ?".to_string());
         binds.push(rusqlite::types::Value::Text(surface.to_string()));
     }
+    // Apply the requested date window to every metrics query (summary,
+    // per_surface, leaderboard, daily_aggregates). Without this, --since /
+    // --until are ignored and the whole history is aggregated.
+    let (since, until) = window(opts);
+    clauses.push("day BETWEEN ? AND ?".to_string());
+    binds.push(rusqlite::types::Value::Integer(since));
+    binds.push(rusqlite::types::Value::Integer(until));
     Filter { clause: if clauses.is_empty() { String::new() } else { clauses.join(" AND ") }, binds }
 }
 

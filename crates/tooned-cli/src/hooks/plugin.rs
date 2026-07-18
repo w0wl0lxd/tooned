@@ -34,7 +34,7 @@ pub(crate) struct PluginAgent {
     pub content: fn(&Path) -> String,
 }
 
-fn default_scope(scope: Option<Scope>) -> Scope {
+pub(crate) fn default_scope(scope: Option<Scope>) -> Scope {
     match scope {
         Some(v) => v,
         None => Scope::Project,

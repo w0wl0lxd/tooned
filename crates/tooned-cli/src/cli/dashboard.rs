@@ -10,7 +10,7 @@ use crate::cli::metrics::{MetricsWindow, ledger_path};
 #[derive(Debug, Args)]
 pub struct DashboardArgs {
     /// Read from the user-global ledger instead of the project ledger.
-    #[arg(long)]
+    #[arg(short = 'g', long)]
     pub global: bool,
 
     #[command(flatten)]

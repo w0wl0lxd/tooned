@@ -25,7 +25,7 @@ pub struct MetricsArgs {
     /// Read the user-global ledger instead of the project-scoped one
     /// (`<root>/.tooned/metrics.db`). Auto-detects the project root (cwd, or
     /// the nearest ancestor with a `.tooned/` directory).
-    #[arg(long)]
+    #[arg(short = 'g', long)]
     pub global: bool,
 
     #[command(subcommand)]
@@ -35,14 +35,22 @@ pub struct MetricsArgs {
 #[derive(Debug, Subcommand)]
 pub enum MetricsCommand {
     /// Roll-up summary of saved tokens/bytes over the window (default).
+    #[command(
+        alias = "s",
+        after_help = "Examples:\n  tooned metrics summary\n  tooned metrics summary --since 2024-01-01 --until 2024-12-31\n  tooned metrics summary --metric bytes"
+    )]
     Summary(MetricsWindow),
     /// Per-surface breakdown (one row per originating surface).
+    #[command(alias = "b")]
     Breakdown(MetricsWindow),
     /// Leaderboard of the most-saved files or projects.
+    #[command(alias = "t")]
     Top(TopArgs),
     /// Most recent recorded events, newest first.
+    #[command(alias = "r")]
     Recent(MetricsWindow),
     /// Export every recorded event as JSON or CSV.
+    #[command(alias = "e")]
     Export(ExportArgs),
     /// Delete all recorded events from the ledger (requires `--yes`).
     Reset(ResetArgs),
@@ -51,19 +59,19 @@ pub enum MetricsCommand {
 #[derive(Clone, Debug, Args)]
 pub struct MetricsWindow {
     /// Inclusive lower bound, `YYYY-MM-DD` (default: 365 days before `--until`).
-    #[arg(long)]
+    #[arg(short = 's', long)]
     pub since: Option<String>,
     /// Inclusive upper bound, `YYYY-MM-DD` (default: today).
-    #[arg(long)]
+    #[arg(short = 'u', long)]
     pub until: Option<String>,
     /// Metric to aggregate: `tokens` (default) or `bytes`.
-    #[arg(long, value_enum)]
+    #[arg(short = 'm', long, value_enum)]
     pub metric: Option<MetricArg>,
     /// Also count `index` opportunity events (not just actual conversions).
-    #[arg(long)]
+    #[arg(short = 'o', long)]
     pub opportunity: bool,
     /// Restrict to a single surface string (e.g. `hook:claude`).
-    #[arg(long)]
+    #[arg(short = 'S', long)]
     pub surface: Option<String>,
 }
 
@@ -85,10 +93,10 @@ impl MetricArg {
 #[derive(Debug, Args)]
 pub struct TopArgs {
     /// Leaderboard dimension: `file` (default) or `project`.
-    #[arg(long, value_enum)]
+    #[arg(short = 'b', long, value_enum)]
     pub by: Option<TopByArg>,
     /// Number of rows to show (default 10).
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     pub n: Option<u32>,
     #[command(flatten)]
     pub window: MetricsWindow,
@@ -103,16 +111,16 @@ pub enum TopByArg {
 #[derive(Debug, Args)]
 pub struct ExportArgs {
     /// Output format: `json` (default), `csv`, `prometheus`, or `otel`.
-    #[arg(long, value_enum)]
+    #[arg(short = 'f', long, value_enum)]
     pub format: Option<ExportFormatArg>,
     /// Write to this file instead of stdout.
-    #[arg(long)]
+    #[arg(short = 'o', long)]
     pub out: Option<PathBuf>,
     /// Inclusive lower bound, `YYYY-MM-DD`.
-    #[arg(long)]
+    #[arg(short = 's', long)]
     pub since: Option<String>,
     /// Inclusive upper bound, `YYYY-MM-DD` (default: today).
-    #[arg(long)]
+    #[arg(short = 'u', long)]
     pub until: Option<String>,
     /// Push metrics to this URL (requires --format prometheus or otel).
     /// Enables periodic pushes. Example: http://localhost:9091/metrics
@@ -221,9 +229,8 @@ pub fn run(args: &MetricsArgs) -> anyhow::Result<()> {
             print_top(&rows, by_val);
         }
         MetricsCommand::Recent(w) => {
-            let rows = store.recent(50)?;
+            let rows = store.recent_with_opts(&opts_from(w), 50)?;
             print_recent(&rows);
-            let _ = w;
         }
         MetricsCommand::Export(e) => {
             let since = e.since.as_deref().and_then(ymd_to_day);
@@ -333,6 +340,20 @@ pub(crate) fn metric_word(m: Metric) -> &'static str {
     }
 }
 
+fn summary_value(s: &Summary, m: Metric) -> u64 {
+    match m {
+        Metric::Tokens => s.total_tokens_saved,
+        Metric::Bytes => s.total_saved_bytes,
+    }
+}
+
+fn per_surface_value(r: &PerSurface, m: Metric) -> u64 {
+    match m {
+        Metric::Tokens => r.tokens_saved,
+        Metric::Bytes => r.saved_bytes,
+    }
+}
+
 fn print_summary(s: &Summary, m: Metric) {
     let unit = metric_word(m);
     if s.total_events == 0 {
@@ -340,8 +361,9 @@ fn print_summary(s: &Summary, m: Metric) {
         println!("  no metrics recorded yet");
         return;
     }
+    let saved = summary_value(s, m);
     println!("tooned metrics -- summary");
-    println!("  total saved:    {} {unit}", s.total_saved_bytes);
+    println!("  total saved:    {} {unit}", saved);
     println!("  total tokens:  {}", s.total_tokens_saved);
     println!("  conversions:    {} event(s)", s.conversions);
     println!("  passthroughs:  {} event(s)", s.passthroughs);
@@ -368,7 +390,7 @@ fn print_breakdown(rows: &[PerSurface], m: Metric) {
         println!(
             "  {:<width$}  {:>10} {unit}  {:>6} conv  {:>6} evt",
             r.surface,
-            r.saved_bytes,
+            per_surface_value(r, m),
             r.conversions,
             r.events,
             width = width,
