@@ -53,8 +53,8 @@ pub enum TokenizerProfile {
 
 /// Tunables for conversion functions. See [`ConversionOptions::default`]
 /// for the constitution-mandated defaults (2% margin, 2 MiB cap).
+#[allow(clippy::struct_excessive_bools)] // four independent orthogonal encoding toggles, not a state machine
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionOptions {
     /// Minimum percentage by which TOON must beat compact JSON before it is
     /// surfaced as a conversion (constitution Principle II). Default: 2.0.
@@ -78,6 +78,15 @@ pub struct ConversionOptions {
     /// never weakens the lossless gate. Default: false (library); CLI turns
     /// it on.
     pub auto_margin: bool,
+    /// Cache-stable deterministic encoding (F4). When true, object keys are
+    /// sorted recursively before encoding so that two payloads carrying the
+    /// same data in different key orders produce byte-identical TOON -- keeping
+    /// the encoded observation a stable prompt-cache prefix across calls
+    /// (cf. "Don't Break the Cache", arXiv 2601.06007). The lossless
+    /// round-trip gate is preserved: the sorted value is what is encoded and
+    /// what the round-trip is checked against, so semantic content is never
+    /// lost. Default: false (library); the hook can opt in.
+    pub cache_stable: bool,
     /// Dictionary compression tier (#1). When true and a net-positive token
     /// dictionary can be extracted from the TOON text, the surfaced TOON is
     /// wrapped in a `legend:` block. Strictly net-win gated: applied only when
@@ -126,6 +135,7 @@ impl Default for ConversionOptions {
             format_hint: None,
             precise_tokens: false,
             auto_margin: false,
+            cache_stable: false,
             dict_enabled: true,
             critical_policy: CriticalFieldPolicy::default_policy(),
             entropy_gate: false,

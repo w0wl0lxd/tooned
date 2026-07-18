@@ -223,6 +223,26 @@ pub struct Summary {
     pub span_days: u64,
 }
 
+/// Estimated USD savings roll-up (F3). A conservative, token-proportional
+/// lower bound grounded in the July-2026 cost-composition study (arXiv
+/// 2607.12161): each saved token is priced as a fresh input/context token at
+/// the caller-supplied per-1M rate. `cache_compounded_usd` models the upside
+/// the study's cache-heavy cost composition implies -- a saved tool-output
+/// token is written once at the input rate then re-read at the (far cheaper)
+/// cache-read rate on every subsequent turn, so lossless context compression
+/// compounds across a session. Both fields are planning estimates, not
+/// invoices.
+#[derive(Debug, Clone, Serialize)]
+pub struct CostSummary {
+    /// Total tokens saved across the matching events.
+    pub total_tokens_saved: u64,
+    /// One-time saving: saved tokens priced once at the input rate.
+    pub estimated_usd_saved: f64,
+    /// Modeled session-compounded saving: saved tokens priced at the input
+    /// rate once plus the cache-read rate for `turn_reuse` subsequent reads.
+    pub cache_compounded_usd: f64,
+}
+
 /// Aggregate saved amount for one originating surface.
 #[derive(Debug, Clone, Serialize)]
 pub struct PerSurface {
@@ -559,6 +579,37 @@ impl Store {
         top_n: u32,
     ) -> Result<Vec<TopFile>, MetricsError> {
         leaderboard(self, opts, top_n, "project_id")
+    }
+
+    /// Estimated USD savings over the query window (F3). `input_per_million`
+    /// and `cache_read_per_million` are the provider's per-1M-token list
+    /// prices (the CLI resolves these from `tooned-token::ModelPricing` so
+    /// this crate stays dependency-light). `turn_reuse` is the assumed number
+    /// of subsequent turns a saved tool-output token is re-read from cache;
+    /// 0 yields the conservative one-time estimate. See [`CostSummary`].
+    ///
+    /// # Errors
+    /// Returns [`MetricsError::Sqlite`] only on a database error; an empty
+    /// ledger yields zeroed totals, never an error.
+    pub fn cost_summary(
+        &self,
+        opts: &QueryOpts<'_>,
+        input_per_million: f64,
+        cache_read_per_million: f64,
+        turn_reuse: u64,
+    ) -> Result<CostSummary, MetricsError> {
+        let f = filter_clause(opts);
+        let sql = format!("SELECT COALESCE(SUM(tokens_saved),0) FROM events {}", f.where_sql());
+        let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
+        let total: i64 = stmt
+            .query_row(rusqlite::params_from_iter(f.binds), |row| row.get(0))
+            .map_err(MetricsError::Sqlite)?;
+        let total_tokens_saved = total.max(0) as u64;
+        let per_m = total_tokens_saved as f64 / 1_000_000.0;
+        let estimated_usd_saved = per_m * input_per_million;
+        let cache_compounded_usd =
+            per_m * (input_per_million + (turn_reuse as f64) * cache_read_per_million);
+        Ok(CostSummary { total_tokens_saved, estimated_usd_saved, cache_compounded_usd })
     }
 
     /// Most recent events, newest first.
@@ -1274,5 +1325,50 @@ mod tests {
         let otel = store.export(ExportFormat::Otel, None, None).expect("otel");
         assert!(otel.contains("\"name\":\"tooned.conversion\""));
         assert!(otel.contains("\"saved_bytes\":60"));
+    }
+
+    #[test]
+    fn cost_summary_estimates_usd_from_tokens_saved() {
+        // F3: the ledger's token savings roll up to an estimated USD figure,
+        // priced per-bucket (input one-time + cache-read-compounded) so a flat
+        // "tokens * price" misestimate is avoided (arXiv 2607.12161).
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        store
+            .record(
+                &RecordBuilder::new("hook:claude")
+                    .kind(EventKind::Actual)
+                    .at(0)
+                    .sizes(100, 40)
+                    .converted(true)
+                    .tokens_saved(600_000)
+                    .build(),
+            )
+            .expect("r1");
+        store
+            .record(
+                &RecordBuilder::new("cli:convert")
+                    .kind(EventKind::Actual)
+                    .at(0)
+                    .sizes(200, 100)
+                    .converted(true)
+                    .tokens_saved(400_000)
+                    .build(),
+            )
+            .expect("r2");
+        let opts = QueryOpts {
+            since_day: Some(0),
+            until_day: Some(0),
+            by: Metric::Bytes,
+            include_opportunity: false,
+            surface: None,
+        };
+        let cs = store.cost_summary(&opts, 2.5, 0.625, 10).expect("cost");
+        assert_eq!(cs.total_tokens_saved, 1_000_000);
+        // 1M tokens at $2.50/1M input = $2.50 one-time.
+        assert!((cs.estimated_usd_saved - 2.5).abs() < 1e-9);
+        // Compounded: $2.50 + 10 * $0.625 = $8.75.
+        assert!((cs.cache_compounded_usd - 8.75).abs() < 1e-9);
     }
 }
