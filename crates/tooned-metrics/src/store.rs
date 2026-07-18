@@ -177,6 +177,8 @@ pub enum Metric {
 pub enum ExportFormat {
     Json,
     Csv,
+    Prometheus,
+    Otel,
 }
 
 /// Filter/aggregation options shared by every query.
@@ -592,6 +594,8 @@ impl Store {
                 MetricsError::Sqlite(rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
             }),
             ExportFormat::Csv => Ok(events_to_csv(&events)),
+            ExportFormat::Prometheus => Ok(events_to_prometheus(&events)),
+            ExportFormat::Otel => Ok(events_to_otel(&events)),
         }
     }
 
@@ -705,6 +709,100 @@ fn events_to_csv(events: &[EventRow]) -> String {
         );
     }
     s
+}
+
+fn escape_prometheus_label(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+}
+
+fn events_to_prometheus(events: &[EventRow]) -> String {
+    use std::fmt::Write;
+
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "# TYPE tooned_conversion_saved_bytes gauge\n# HELP tooned_conversion_saved_bytes Bytes saved by TOON conversion"
+    );
+    let _ = writeln!(
+        s,
+        "# TYPE tooned_conversion_tokens_saved gauge\n# HELP tooned_conversion_tokens_saved Tokens saved by TOON conversion"
+    );
+    let _ = writeln!(
+        s,
+        "# TYPE tooned_conversion_input_bytes gauge\n# HELP tooned_conversion_input_bytes Input bytes processed"
+    );
+    let _ = writeln!(
+        s,
+        "# TYPE tooned_conversion_output_bytes gauge\n# HELP tooned_conversion_output_bytes Output bytes after conversion"
+    );
+
+    for e in events {
+        let ts_ms = e.ts * 1000;
+        let surface = escape_prometheus_label(&e.surface);
+        let kind = escape_prometheus_label(&e.kind);
+        let project_id = e.project_id.as_deref().map_or_else(String::new, escape_prometheus_label);
+        let source_label =
+            e.source_label.as_deref().map_or_else(String::new, escape_prometheus_label);
+        let doc_type = e.doc_type.as_deref().map_or_else(String::new, escape_prometheus_label);
+        let _ = writeln!(
+            s,
+            "tooned_conversion_saved_bytes{{surface=\"{surface}\",kind=\"{kind}\",project_id=\"{project_id}\",source_label=\"{source_label}\",doc_type=\"{doc_type}\"}} {} {ts_ms}",
+            e.saved_bytes
+        );
+        let _ = writeln!(
+            s,
+            "tooned_conversion_tokens_saved{{surface=\"{surface}\",kind=\"{kind}\",project_id=\"{project_id}\",source_label=\"{source_label}\",doc_type=\"{doc_type}\"}} {} {ts_ms}",
+            e.tokens_saved
+        );
+        let _ = writeln!(
+            s,
+            "tooned_conversion_input_bytes{{surface=\"{surface}\",kind=\"{kind}\",project_id=\"{project_id}\",source_label=\"{source_label}\",doc_type=\"{doc_type}\"}} {} {ts_ms}",
+            e.input_bytes
+        );
+        let _ = writeln!(
+            s,
+            "tooned_conversion_output_bytes{{surface=\"{surface}\",kind=\"{kind}\",project_id=\"{project_id}\",source_label=\"{source_label}\",doc_type=\"{doc_type}\"}} {} {ts_ms}",
+            e.output_bytes
+        );
+    }
+    s
+}
+
+fn events_to_otel(events: &[EventRow]) -> String {
+    use std::fmt::Write;
+
+    let mut s = String::new();
+    for e in events {
+        let resource_service = escape_json_string("tooned");
+        let scope_name = escape_json_string("tooned-metrics");
+        let name = escape_json_string("tooned.conversion");
+        let description = escape_json_string("TOON conversion event");
+        let surface = escape_json_string(&e.surface);
+        let kind = escape_json_string(&e.kind);
+        let project_id = e.project_id.as_deref().map_or_else(String::new, escape_json_string);
+        let source_label = e.source_label.as_deref().map_or_else(String::new, escape_json_string);
+        let doc_type = e.doc_type.as_deref().map_or_else(String::new, escape_json_string);
+        let _ = writeln!(
+            s,
+            "{{\"resource\":{{\"service.name\":\"{resource_service}\"}},\"scope\":{{\"name\":\"{scope_name}\"}},\"metric\":{{\"name\":\"{name}\",\"description\":\"{description}\",\"unit\":\"1\",\"data\":{{\"points\":[{{\"attributes\":{{\"surface\":\"{surface}\",\"kind\":\"{kind}\",\"project_id\":\"{project_id}\",\"source_label\":\"{source_label}\",\"doc_type\":\"{doc_type}\",\"converted\":{},\"precise\":{}}},\"time_unix_nano\":{},\"as_double\":{{\"saved_bytes\":{},\"tokens_saved\":{},\"input_bytes\":{},\"output_bytes\":{}}}}}]}}}}}}",
+            e.converted,
+            e.precise,
+            e.ts * 1_000_000_000,
+            e.saved_bytes,
+            e.tokens_saved,
+            e.input_bytes,
+            e.output_bytes
+        );
+    }
+    s
+}
+
+fn escape_json_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Assign intensity levels (0..=4) across the present (non-zero) values using
@@ -1129,5 +1227,24 @@ mod tests {
 
         store.reset().expect("reset");
         assert_eq!(store.count().expect("count"), 0);
+    }
+
+    #[test]
+    fn export_prometheus_and_otel() {
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        store
+            .record(&sample("hook:claude", EventKind::Actual, 100, 40, Some("a.json")))
+            .expect("record");
+
+        let prom = store.export(ExportFormat::Prometheus, None, None).expect("prometheus");
+        assert!(prom.contains("# TYPE tooned_conversion_saved_bytes gauge"));
+        assert!(prom.contains("tooned_conversion_saved_bytes"));
+        assert!(prom.contains("surface=\"hook:claude\""));
+
+        let otel = store.export(ExportFormat::Otel, None, None).expect("otel");
+        assert!(otel.contains("\"name\":\"tooned.conversion\""));
+        assert!(otel.contains("\"saved_bytes\":60"));
     }
 }
