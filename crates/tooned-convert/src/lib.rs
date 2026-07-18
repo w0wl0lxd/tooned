@@ -395,13 +395,18 @@ fn shannon_entropy(bytes: &[u8]) -> f64 {
     if bytes.is_empty() {
         return 0.0;
     }
-    let mut freq: std::collections::HashMap<u8, u64> = std::collections::HashMap::new();
+    let mut freq = [0u64; 256];
     for &b in bytes {
-        *freq.entry(b).or_insert(0) += 1;
+        if let Some(c) = freq.get_mut(b as usize) {
+            *c += 1;
+        }
     }
     let n = bytes.len() as f64;
     let mut h = 0.0f64;
-    for &c in freq.values() {
+    for &c in &freq {
+        if c == 0 {
+            continue;
+        }
         let p = c as f64 / n;
         h -= p * p.log2();
     }

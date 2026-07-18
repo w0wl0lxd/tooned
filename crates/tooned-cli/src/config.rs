@@ -141,7 +141,7 @@ impl Config {
     /// Build a `ConversionOptions` by layering config-file defaults underneath
     /// explicit CLI values. `max_bytes` is in `u64` because CLI flags expose
     /// it as such before clamping to `usize`.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::manual_unwrap_or)]
     pub fn conversion_options(
         &self,
         margin: Option<f64>,
@@ -176,22 +176,24 @@ impl Config {
         }
 
         // Encoder-win tiers (#1, #2, #5): CLI flags override config-file
-        // defaults, which override the constitution-mandated crate defaults.
-        if let Some(d) = dict.or(self.dict_enabled) {
-            opts.dict_enabled = d;
-        }
-        if let Some(a) = auto_margin.or(self.auto_margin) {
-            opts.auto_margin = a;
-        }
-        if let Some(e) = entropy_gate.or(self.entropy_gate) {
-            opts.entropy_gate = e;
-        }
+        // values, which override the crate defaults. Each tier defaults ON at
+        // the CLI/MCP surface, while the base ConversionOptions stays conservative.
+        opts.dict_enabled = if let Some(v) = dict.or(self.dict_enabled) { v } else { true };
+        opts.auto_margin = if let Some(v) = auto_margin.or(self.auto_margin) { v } else { true };
+        opts.entropy_gate = if let Some(v) = entropy_gate.or(self.entropy_gate) { v } else { true };
         if let Some(keys) = protect.or_else(|| self.protect.clone())
             && !keys.is_empty()
         {
+            let default = tooned_types::CriticalFieldPolicy::default_policy();
+            let mut protected = default.protected.clone();
+            for key in keys {
+                if !protected.iter().any(|p| p.eq_ignore_ascii_case(&key)) {
+                    protected.push(key.to_lowercase());
+                }
+            }
             opts.critical_policy = tooned_types::CriticalFieldPolicy {
-                protected: keys,
-                ..tooned_types::CriticalFieldPolicy::default_policy()
+                protected,
+                min_benefit_bytes: default.min_benefit_bytes,
             };
         }
 
