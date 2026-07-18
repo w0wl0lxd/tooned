@@ -150,6 +150,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tooned-metrics** new crate and `tooned metrics`/`tooned heatmap` CLI views for the
   local-only, opt-out token-savings ledger. Records conversion outcomes from every
   `tooned` surface and renders a GitHub/Codex-style savings heatmap.
+- **tooned-cli:** added short flags for the most common options (`-t/--to`, `-o/--out`,
+  `-f/--format-hint`, `-m/--margin`, `-b/--max-bytes`, `-c/--config`, `-p/--precise`,
+  `-n/--top`, `-j/--json`), hidden subcommand aliases (`c`/`convert`, `p`/`pipe`,
+  `w`/`wrap`, `i`/`index`, `s`/`stats`, `d`/`diff`, `l`/`lint`, `h`/`hook`, `m`/`mcp`,
+  etc.), and `tooned hook install/uninstall/status --all` for installing or removing
+  hooks across every supported agent in one command.
+- Added an agent-agnostic `tooned` Agent Skills standard `SKILL.md` at
+  `.agents/skills/tooned/SKILL.md` so Claude Code, Codex, Devin, Cursor, Gemini CLI,
+  and other compatible agents know when and how to use `tooned`.
 
 ### Fixed
 
