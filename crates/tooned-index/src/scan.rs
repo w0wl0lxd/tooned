@@ -148,6 +148,17 @@ pub fn scan_full(project_root: &Path, filter: &IndexFilter) -> Result<ScanSummar
         if classified {
             summary.files_classified += 1;
         }
+
+        if summary.files_scanned % 100 == 0 {
+            eprint!(
+                "\rscanned {} files ({} classified)...",
+                summary.files_scanned, summary.files_classified
+            );
+        }
+    }
+
+    if summary.files_scanned >= 100 {
+        eprintln!();
     }
 
     tx.commit()?;
