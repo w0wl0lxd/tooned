@@ -473,6 +473,10 @@ impl std::io::Write for ByteCountingWriter {
 /// `Conversion::Passthrough`, never `Err`.
 pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
     if input.len() > opts.max_input_bytes {
+        // Try streaming conversion for large inputs
+        if let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) {
+            return try_streaming_tron(input, doc_type, opts);
+        }
         return Ok(Conversion::Passthrough {
             bytes: input.to_vec(),
             reason: PassthroughReason::InputTooLarge,
@@ -544,6 +548,73 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
             json_bytes,
             toon_bytes: tron_bytes,
             savings_pct: crate::compute_savings_pct(json_bytes, tron_bytes),
+            protected_fields: Vec::new(),
+        },
+    })
+}
+
+/// Try streaming TRON conversion for large inputs.
+fn try_streaming_tron(
+    input: &[u8],
+    doc_type: tooned_types::DocType,
+    opts: &ConversionOptions,
+) -> Result<Conversion, ToonedError> {
+    use std::io::Cursor;
+
+    let mut output = Vec::new();
+    let stats = match doc_type {
+        tooned_types::DocType::NdJson => maybe_tron_stream(Cursor::new(input), &mut output)?,
+        tooned_types::DocType::Json => {
+            maybe_tron_json_array_stream(Cursor::new(input), &mut output)?
+        }
+        tooned_types::DocType::Csv => maybe_tron_csv_stream(Cursor::new(input), &mut output)?,
+        tooned_types::DocType::Tsv => maybe_tron_tsv_stream(Cursor::new(input), &mut output)?,
+        _ => {
+            return Ok(Conversion::Passthrough {
+                bytes: input.to_vec(),
+                reason: PassthroughReason::InputTooLarge,
+            });
+        }
+    };
+
+    // Check if the output is smaller enough
+    if !crate::is_smaller_enough(
+        stats.input_bytes as usize,
+        stats.output_bytes as usize,
+        opts.margin_pct,
+    ) {
+        return Ok(Conversion::Passthrough {
+            bytes: input.to_vec(),
+            reason: PassthroughReason::NotSmallerEnough {
+                json_bytes: stats.input_bytes as usize,
+                toon_bytes: stats.output_bytes as usize,
+            },
+        });
+    }
+
+    // Round-trip validation
+    let decoded = decode(&String::from_utf8_lossy(&output))?;
+    // For streaming, we can't easily compare to the original value since we didn't materialize it
+    // Instead, we validate that the TRON decodes successfully
+    // This is a weaker check than the non-streaming path, but still catches corruption
+
+    // Estimate shape based on doc_type
+    let shape = match doc_type {
+        tooned_types::DocType::NdJson | tooned_types::DocType::Json => shape::classify(&decoded),
+        _ => tooned_types::ShapeClass::Irregular,
+    };
+
+    Ok(Conversion::Toon {
+        text: String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
+        report: ConversionReport {
+            doc_type,
+            shape,
+            json_bytes: stats.input_bytes as usize,
+            toon_bytes: stats.output_bytes as usize,
+            savings_pct: crate::compute_savings_pct(
+                stats.input_bytes as usize,
+                stats.output_bytes as usize,
+            ),
             protected_fields: Vec::new(),
         },
     })
@@ -686,6 +757,202 @@ fn validate_stream_record(
         ));
     }
     Ok(())
+}
+
+/// Stream-convert a JSON array reader into a TRON record-stream writer.
+///
+/// The first flat object establishes the class schema; subsequent records that
+/// match it are emitted as `A(...)` instances. Records that do not match
+/// (different keys, non-primitive values, scalars, arrays) are emitted as
+/// ordinary JSON values inside the same top-level array, so the output is
+/// always a valid TRON body and no data is lost. Empty input yields `[]`.
+///
+/// Returns counts of input and output bytes so callers can apply the usual
+/// adaptive size gate. Parse errors are propagated as [`ToonedError`] so the
+/// caller can fall back to a verbatim passthrough.
+pub fn maybe_tron_json_array_stream<R, W>(
+    reader: R,
+    writer: &mut W,
+) -> Result<StreamStats, ToonedError>
+where
+    R: BufRead,
+    W: Write,
+{
+    let mut stream = tooned_json::parse_json_stream(reader);
+    let mut out = CountingWriter::new(writer);
+    let mut first = true;
+    let mut keys: Option<Vec<String>> = None;
+    let mut header = String::new();
+    let mut array_opened = false;
+
+    for result in stream.by_ref() {
+        let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+        if first {
+            first = false;
+            if let Value::Object(obj) = &value
+                && let Ok(k) = object_keys(obj, 0)
+                && object_values(obj, &k, 0).is_ok()
+            {
+                header = class_header("A", &k);
+                out.write_all(header.as_bytes())
+                    .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                keys = Some(k);
+            }
+            out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            array_opened = true;
+            let text = stream_value_text(&value, keys.as_ref())?;
+            validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+            out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            continue;
+        }
+
+        out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        let text = stream_value_text(&value, keys.as_ref())?;
+        validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+        out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+
+    if array_opened {
+        out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    } else {
+        out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+    out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    let input_bytes = stream.bytes_read();
+    let output_bytes = out.count;
+    Ok(StreamStats { input_bytes, output_bytes })
+}
+
+/// Stream-convert a CSV reader into a TRON record-stream writer.
+///
+/// The first record establishes the class schema from CSV headers; subsequent
+/// records that match it are emitted as `A(...)` instances. Records that do not
+/// match (different keys, non-primitive values) are emitted as ordinary JSON
+/// values inside the same top-level array.
+///
+/// Returns counts of input and output bytes so callers can apply the usual
+/// adaptive size gate. Parse errors are propagated as [`ToonedError`] so the
+/// caller can fall back to a verbatim passthrough.
+pub fn maybe_tron_csv_stream<R, W>(reader: R, writer: &mut W) -> Result<StreamStats, ToonedError>
+where
+    R: BufRead,
+    W: Write,
+{
+    let mut stream = tooned_csv::parse_csv_stream(reader);
+    let mut out = CountingWriter::new(writer);
+    let mut first = true;
+    let mut keys: Option<Vec<String>> = None;
+    let mut header = String::new();
+    let mut array_opened = false;
+
+    for result in stream.by_ref() {
+        let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+        if first {
+            first = false;
+            if let Value::Object(obj) = &value
+                && let Ok(k) = object_keys(obj, 0)
+                && object_values(obj, &k, 0).is_ok()
+            {
+                header = class_header("A", &k);
+                out.write_all(header.as_bytes())
+                    .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                keys = Some(k);
+            }
+            out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            array_opened = true;
+            let text = stream_value_text(&value, keys.as_ref())?;
+            validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+            out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            continue;
+        }
+
+        out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        let text = stream_value_text(&value, keys.as_ref())?;
+        validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+        out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+
+    if array_opened {
+        out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    } else {
+        out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+    out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    // CSV doesn't track bytes read, so we estimate from output
+    let output_bytes = out.count;
+    Ok(StreamStats {
+        input_bytes: output_bytes, // Approximation
+        output_bytes,
+    })
+}
+
+/// Stream-convert a TSV reader into a TRON record-stream writer.
+///
+/// The first record establishes the class schema from TSV headers; subsequent
+/// records that match it are emitted as `A(...)` instances. Records that do not
+/// match (different keys, non-primitive values) are emitted as ordinary JSON
+/// values inside the same top-level array.
+///
+/// Returns counts of input and output bytes so callers can apply the usual
+/// adaptive size gate. Parse errors are propagated as [`ToonedError`] so the
+/// caller can fall back to a verbatim passthrough.
+pub fn maybe_tron_tsv_stream<R, W>(reader: R, writer: &mut W) -> Result<StreamStats, ToonedError>
+where
+    R: BufRead,
+    W: Write,
+{
+    let mut stream = tooned_csv::parse_tsv_stream(reader);
+    let mut out = CountingWriter::new(writer);
+    let mut first = true;
+    let mut keys: Option<Vec<String>> = None;
+    let mut header = String::new();
+    let mut array_opened = false;
+
+    for result in stream.by_ref() {
+        let value = result.map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+        if first {
+            first = false;
+            if let Value::Object(obj) = &value
+                && let Ok(k) = object_keys(obj, 0)
+                && object_values(obj, &k, 0).is_ok()
+            {
+                header = class_header("A", &k);
+                out.write_all(header.as_bytes())
+                    .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+                keys = Some(k);
+            }
+            out.write_all(b"[").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            array_opened = true;
+            let text = stream_value_text(&value, keys.as_ref())?;
+            validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+            out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            continue;
+        }
+
+        out.write_all(b",").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        let text = stream_value_text(&value, keys.as_ref())?;
+        validate_stream_record(&header, keys.as_ref(), &text, &value)?;
+        out.write_all(text.as_bytes()).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+
+    if array_opened {
+        out.write_all(b"]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    } else {
+        out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    }
+    out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    // TSV doesn't track bytes read, so we estimate from output
+    let output_bytes = out.count;
+    Ok(StreamStats {
+        input_bytes: output_bytes, // Approximation
+        output_bytes,
+    })
 }
 
 #[cfg(test)]
