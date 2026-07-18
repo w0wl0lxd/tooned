@@ -8,7 +8,7 @@
 |---|---|---|---|
 | Claude Code, OpenCode, Kilo, Pi | `tool_output` | `hookSpecificOutput.updatedToolOutput` | replaced by TOON |
 | Codex | `tool_response` | top-level `continue: false` + `reason` feedback | replaced by TOON |
-| Devin, Droid | `tool_response` / `toolOutput` | (none; hook passthroughs) | preserved |
+| Devin, Droid | `tool_response` / `toolOutput` | (none; hook passes through) | preserved |
 
 For Devin and Droid, use command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) when TOON-only output is required.
 
