@@ -441,11 +441,10 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "colored"
-version = "2.2.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
+checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "lazy_static",
  "windows-sys 0.59.0",
 ]
 
@@ -3312,9 +3311,9 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "toon-format"
-version = "0.4.6"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1dae994fe9adfb44bdc74fc17546651604a59af32136256515bc1218850832"
+checksum = "8f89570c1a68d73941f728cca32a4345b2ffca36667ad921af336c60309a3e7e"
 dependencies = [
  "indexmap",
  "serde",
@@ -3325,8 +3324,6 @@ dependencies = [
 [[package]]
 name = "toon-lsp"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9d1ac341decd4b6f1fcccf7b8990da7043d66521d8b95e54bd4bc6cc17903ac"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
