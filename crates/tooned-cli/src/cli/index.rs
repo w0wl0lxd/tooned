@@ -237,13 +237,13 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
                 Some(d) => d,
                 None => 1000,
             };
-            let _filter = build_filter(type_filter.as_ref(), exclude)?;
+            let filter = build_filter(type_filter.as_ref(), exclude)?;
             if *include_flake_inputs {
                 eprintln!(
                     "tooned index watch: --include-flake-inputs is not yet supported for watch mode"
                 );
             }
-            Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), debounce)?)
+            Ok(tooned_index::watch(&resolve_project_root(path.as_ref()), debounce, &filter)?)
         }
     }
 }

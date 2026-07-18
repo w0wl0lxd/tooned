@@ -187,6 +187,10 @@ pub enum DocTypeDto {
     Msgpack,
     Cbor,
     Json5,
+    /// A doctype added in a newer `tooned` version that this server does not
+    /// yet know how to describe precisely. Exposed for forward compatibility
+    /// rather than silently downgraded.
+    Unknown,
 }
 
 impl From<DocType> for DocTypeDto {
@@ -202,6 +206,7 @@ impl From<DocType> for DocTypeDto {
             DocType::Msgpack => Self::Msgpack,
             DocType::Cbor => Self::Cbor,
             DocType::Json5 => Self::Json5,
+            _ => Self::Unknown,
         }
     }
 }
@@ -213,9 +218,14 @@ impl From<DocType> for DocTypeDto {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ShapeClassDto {
-    UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
+    UniformArrayOfObjects {
+        uniformity_pct: f64,
+        sampled: usize,
+    },
     Irregular,
     Scalar,
+    /// A shape class added in a newer `tooned` version not yet described here.
+    Unknown,
 }
 
 impl From<ShapeClass> for ShapeClassDto {
@@ -226,6 +236,7 @@ impl From<ShapeClass> for ShapeClassDto {
             }
             ShapeClass::Irregular => Self::Irregular,
             ShapeClass::Scalar => Self::Scalar,
+            _ => Self::Unknown,
         }
     }
 }
@@ -241,8 +252,13 @@ pub enum PassthroughReasonDto {
     NotStructuredData,
     ParseFailed,
     InputTooLarge,
-    NotSmallerEnough { json_bytes: usize, toon_bytes: usize },
+    NotSmallerEnough {
+        json_bytes: usize,
+        toon_bytes: usize,
+    },
     RoundTripMismatch,
+    /// A passthrough reason added in a newer `tooned` version.
+    Unknown,
 }
 
 impl From<PassthroughReason> for PassthroughReasonDto {
@@ -255,6 +271,7 @@ impl From<PassthroughReason> for PassthroughReasonDto {
                 Self::NotSmallerEnough { json_bytes, toon_bytes }
             }
             PassthroughReason::RoundTripMismatch => Self::RoundTripMismatch,
+            _ => Self::Unknown,
         }
     }
 }

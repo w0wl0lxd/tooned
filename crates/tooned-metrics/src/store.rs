@@ -282,6 +282,7 @@ pub struct EventRow {
 
 /// Errors from the metrics store. Never fatal: recording callers swallow them.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MetricsError {
     #[error("i/o error: {0}")]
     Io(#[from] std::io::Error),
@@ -316,8 +317,8 @@ impl Store {
             #[cfg(unix)]
             set_mode(db_path, 0o600);
         }
-        let _ = conn.execute("PRAGMA journal_mode=WAL", []);
-        let _ = conn.execute("PRAGMA busy_timeout=50", []);
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "busy_timeout", 50)?;
         let store = Store { conn };
         store.create_schema_if_needed()?;
         Ok(store)
@@ -356,10 +357,10 @@ impl Store {
             )
             .map_err(MetricsError::Sqlite)?;
         // Insert schema version separately - ignore ExecuteReturnedResults error
-        let _ = self.conn.execute(
+        self.conn.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)",
             [SCHEMA_VERSION],
-        );
+        )?;
         Ok(())
     }
 
