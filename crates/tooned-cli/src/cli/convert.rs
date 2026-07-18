@@ -150,7 +150,15 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
         // in-place write path as the adaptive conversion to avoid leaving a
         // partially-written source on a crash.
         Some(Direction::Json) => {
-            let bytes = match read_input(&args.input) {
+            // Bound the read to the same `max_input_bytes` cap the decode path
+            // (decode_toon) enforces, so `convert --to json` can never be used
+            // to materialize an arbitrarily large file in memory before the cap
+            // is consulted (finding: the decode direction previously used the
+            // unbounded `read_input`, a local denial-of-memory vector).
+            let cap = config
+                .conversion_options(None, args.max_bytes, None, None, None, None, None, None)
+                .max_input_bytes;
+            let bytes = match crate::cli::io::read_input_bounded(&args.input, cap) {
                 Ok(bytes) => bytes,
                 Err(err) => {
                     eprintln!("tooned convert: failed to read {}: {err}", args.input.display());

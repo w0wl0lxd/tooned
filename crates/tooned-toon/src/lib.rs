@@ -10,7 +10,49 @@ use tooned_parse::exceeds_max_structural_depth;
 use tooned_types::{ConversionOptions, ToonedError};
 
 /// Encodes a `serde_json::Value` into TOON format.
+///
+/// Unlike the thin upstream codec it wraps, this function enforces the same
+/// round-trip fidelity guarantee the conversion pipeline relies on
+/// (`attempt`/`maybe_onto`/`maybe_tron` all assert `decode(encode(x)) == x`):
+/// after encoding it decodes the result and compares it to the original
+/// `value`, returning [`ToonedError::DecodeFailed`] when they differ. This
+/// matters because the upstream `toon_lsp` encoder normalizes numeric literals
+/// (e.g. `1.0` -> `1`, `-0.0` -> `0`), which silently drops the int/float
+/// distinction and the negative-zero sign. The `attempt`-level gate catches
+/// the int/float case for the main pipeline, but any direct caller of
+/// `encode_toon` (or a future MCP `tooned_encode` tool) would otherwise ship
+/// the lossy encoding. Failing closed here means a lossy value is surfaced as
+/// an error for the caller to handle (e.g. fall back to a passthrough) rather
+/// than emitted as corrupt TOON.
 pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
+    let encoded =
+        toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let round_trip_ok =
+        match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
+            Ok(decoded) => decoded == *value,
+            // A decode failure means the encoding is not faithfully reversible, so
+            // it is not lossless -- fail closed (refuse to emit).
+            Err(_) => false,
+        };
+    if !round_trip_ok {
+        return Err(ToonedError::DecodeFailed(
+            "TOON encoding is not lossless for this value (numeric type / negative-zero \
+             normalization); refusing to emit a corrupt encoding"
+                .to_string(),
+        ));
+    }
+    Ok(encoded)
+}
+
+/// Raw TOON encode with no round-trip fidelity check.
+///
+/// This is the thin upstream-codec wrapper that the conversion pipeline
+/// (`attempt`/`maybe_onto`/`maybe_tron`) uses internally: those callers apply
+/// their own strict `decode(encode(x)) == x` gate (and fall back to a
+/// passthrough on mismatch), so they do not need `encode_toon`'s extra guard.
+/// Direct callers that do NOT perform their own round-trip check should use
+/// [`encode_toon`] instead, which fails closed on lossy values.
+pub fn encode_toon_raw(value: &Value) -> Result<String, ToonedError> {
     toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
@@ -48,6 +90,9 @@ pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Valu
     // sees the text. The legend is purely a tooned addition layered on top of
     // standard TOON, so `toon-lsp` must receive plain TOON. Enforce the
     // caller's byte cap both before and during expansion.
+    if text.len() > max_input_bytes {
+        return Err(ToonedError::InputTooLarge);
+    }
     let text = expand_legend(text, max_input_bytes)?;
     if exceeds_max_structural_depth(text.as_bytes()) {
         return Err(ToonedError::DecodeFailed(
@@ -75,5 +120,18 @@ mod tests {
         // happily accept as a bare top-level string).
         let result = decode_toon("a: \"unterminated string");
         assert!(matches!(result, Err(ToonedError::DecodeFailed(_))));
+    }
+
+    #[test]
+    fn encode_toon_rejects_lossy_numeric_values() {
+        // The upstream codec normalizes whole-number floats to integers and
+        // collapses negative zero to zero, which would silently drop the
+        // int/float distinction and the negative-zero sign. encode_toon must
+        // refuse to emit a corrupt encoding rather than ship it.
+        assert!(encode_toon(&serde_json::json!({"x": 1.0})).is_err());
+        assert!(encode_toon(&serde_json::json!({"x": -0.0})).is_err());
+        // A genuinely lossless value still encodes successfully.
+        assert!(encode_toon(&serde_json::json!({"x": 1})).is_ok());
+        assert!(encode_toon(&serde_json::json!({"x": 1.5})).is_ok());
     }
 }
