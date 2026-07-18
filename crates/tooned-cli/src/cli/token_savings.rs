@@ -10,7 +10,6 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use serde::Serialize;
 use tooned_core::{InspectReport, PassthroughReason, ShapeClass, inspect};
 
 use crate::cli::FormatHint;
@@ -40,35 +39,6 @@ pub struct TokenSavingsArgs {
     /// Emit the report as machine-readable JSON.
     #[arg(short = 'j', long)]
     pub json: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct TokenSavingsReport {
-    doc_type: Option<String>,
-    shape: String,
-    input_bytes: usize,
-    json_bytes: Option<usize>,
-    toon_bytes: Option<usize>,
-    savings_pct: Option<f64>,
-    precise_savings_pct: Option<f64>,
-    would_convert: bool,
-    reason: Option<String>,
-}
-
-impl From<&InspectReport> for TokenSavingsReport {
-    fn from(r: &InspectReport) -> Self {
-        Self {
-            doc_type: r.doc_type.map(|dt| format!("{dt:?}")),
-            shape: format!("{:?}", r.shape),
-            input_bytes: r.input_bytes,
-            json_bytes: r.json_bytes,
-            toon_bytes: r.toon_bytes,
-            savings_pct: r.savings_pct,
-            precise_savings_pct: r.precise_savings_pct,
-            would_convert: r.would_convert,
-            reason: r.reason.as_ref().map(|reason| format!("{reason:?}")),
-        }
-    }
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -129,7 +99,7 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
     };
 
     if args.json {
-        println!("{}", sonic_rs::to_string(&TokenSavingsReport::from(&report))?);
+        println!("{}", sonic_rs::to_string(&report)?);
         return Ok(());
     }
 

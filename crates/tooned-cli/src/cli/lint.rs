@@ -131,7 +131,7 @@ pub fn run(args: &LintArgs) -> anyhow::Result<()> {
 
     if args.json {
         let result = LintResult {
-            valid: true,
+            valid: !args.fail_on_warning || warnings.is_empty(),
             warnings: warnings.iter().map(|w| (*w).to_string()).collect(),
         };
         println!("{}", sonic_rs::to_string(&result)?);
