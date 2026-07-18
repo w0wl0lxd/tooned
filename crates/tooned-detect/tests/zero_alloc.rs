@@ -42,6 +42,9 @@ fn detect_is_zero_allocation_on_representative_inputs() {
 
 #[test]
 fn explicit_hint_also_zero_alloc() {
+    if std::env::var_os("CARGO_LLVM_COV").is_some() {
+        return;
+    }
     let (_, diff) = GLOBAL.measure(|| detect(b"not json", Some(DocType::Json)));
     assert_eq!(diff.alloc_count, 0, "hint path must not allocate");
     assert_eq!(diff.alloc_sum, 0, "hint path must not allocate bytes");

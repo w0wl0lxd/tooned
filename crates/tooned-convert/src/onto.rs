@@ -289,6 +289,7 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
             json_bytes,
             toon_bytes: onto_bytes,
             savings_pct: crate::compute_savings_pct(json_bytes, onto_bytes),
+            protected_fields: Vec::new(),
         },
     })
 }
