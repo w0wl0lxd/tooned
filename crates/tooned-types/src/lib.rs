@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Supported source document types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DocType {
     Json,
     NdJson,
@@ -102,6 +103,19 @@ pub struct ConversionOptions {
     /// `precise_tokens` is implied and the reported `savings_pct` /
     /// `precise_savings_pct` reflect the chosen model's actual tokenizer.
     pub tokenizer: Option<TokenizerProfile>,
+    /// Encode: collapse single-key object chains into dotted keys via
+    /// `toon-lsp`. Default: true (tooned enables folding for more compact
+    /// nested objects).
+    pub fold_keys: bool,
+    /// Encode: flatten nested objects into dotted keys (more aggressive than
+    /// `fold_keys`). Default: false.
+    pub flatten_keys: bool,
+    /// Decode: expand dotted keys back into nested objects (the inverse of
+    /// folding/flattening). Default: true so folded encodings round-trip.
+    pub expand_paths: bool,
+    /// Decode: preserve the source int/float distinction (e.g. `1.0` stays a
+    /// float). Default: true so numeric values round-trip losslessly.
+    pub preserve_number_types: bool,
 }
 
 impl Default for ConversionOptions {
@@ -116,6 +130,10 @@ impl Default for ConversionOptions {
             critical_policy: CriticalFieldPolicy::default_policy(),
             entropy_gate: false,
             tokenizer: None,
+            fold_keys: true,
+            flatten_keys: false,
+            expand_paths: true,
+            preserve_number_types: true,
         }
     }
 }
@@ -168,7 +186,7 @@ impl CriticalFieldPolicy {
 /// Why conversion did not surface a `Toon` conversion (or, when it did,
 /// the internal decision path an equivalent `PassthroughReason` would have
 /// taken).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum PassthroughReason {
     /// `detect` could not sniff a supported doctype from the content, and no
     /// `format_hint` was given.
@@ -207,7 +225,7 @@ pub enum ToonedError {
 }
 
 /// Dry-run diagnostic report (contract: never carries TOON text).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InspectReport {
     pub doc_type: Option<DocType>,
     pub shape: ShapeClass,
@@ -237,7 +255,7 @@ pub enum Conversion {
 
 /// Diagnostic detail attached to a successful `Conversion::Toon`
 /// (data-model.md).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ConversionReport {
     pub doc_type: DocType,
     pub shape: ShapeClass,
@@ -256,7 +274,7 @@ pub struct ConversionReport {
 /// Descriptive/diagnostic only -- per data-model, this does
 /// NOT gate the conversion decision on its own; the byte-size comparison is
 /// the sole gate.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum ShapeClass {
     UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
     Irregular,

@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
+use serde::Serialize;
 
 use crate::config::Config;
 use tooned_index::{DocTypeFilter, IndexFilter};
@@ -23,12 +24,20 @@ pub struct IndexArgs {
     pub path: Option<PathBuf>,
 
     /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
-    #[arg(long, value_name = "TYPE")]
+    #[arg(short = 't', long, value_name = "TYPE")]
     pub type_filter: Option<String>,
 
     /// Exclude paths matching these gitignore-style globs (repeatable).
-    #[arg(long, value_name = "GLOB")]
+    #[arg(short = 'x', long, value_name = "GLOB")]
     pub exclude: Vec<String>,
+
+    /// Emit the result as machine-readable JSON.
+    #[arg(short = 'j', long)]
+    pub json: bool,
+
+    /// Show what would be done without modifying the index.
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// Also index local `path`-type flake inputs discovered in `flake.lock`.
     #[arg(long)]
@@ -44,33 +53,57 @@ pub enum IndexSubcommand {
     Sync {
         path: Option<PathBuf>,
         /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
-        #[arg(long, value_name = "TYPE")]
+        #[arg(short = 't', long, value_name = "TYPE")]
         type_filter: Option<String>,
         /// Exclude paths matching these gitignore-style globs (repeatable).
-        #[arg(long, value_name = "GLOB")]
+        #[arg(short = 'x', long, value_name = "GLOB")]
         exclude: Vec<String>,
+        /// Emit the result as machine-readable JSON.
+        #[arg(short = 'j', long)]
+        json: bool,
+        /// Show what would be synced without modifying the index.
+        #[arg(long)]
+        dry_run: bool,
         /// Also index local `path`-type flake inputs discovered in `flake.lock`.
         #[arg(long)]
         include_flake_inputs: bool,
     },
     /// Reports index existence, file count, last scan time.
-    Status { path: Option<PathBuf> },
+    Status {
+        path: Option<PathBuf>,
+        /// Emit the result as machine-readable JSON.
+        #[arg(short = 'j', long)]
+        json: bool,
+    },
     /// Reports the indexed record for one file.
-    Show { file: PathBuf },
+    Show {
+        file: PathBuf,
+        /// Emit the result as machine-readable JSON.
+        #[arg(short = 'j', long)]
+        json: bool,
+    },
     /// Checkpoint the SQLite WAL and truncate the `-wal` file.
-    Compact { path: Option<PathBuf> },
+    Compact {
+        path: Option<PathBuf>,
+        /// Emit the result as machine-readable JSON.
+        #[arg(short = 'j', long)]
+        json: bool,
+        /// Show what would be compacted without modifying the index.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Watch `project_root` and run `index sync` on debounced filesystem
     /// events.
     Watch {
         path: Option<PathBuf>,
         /// Quiet period in milliseconds before a change triggers a sync.
-        #[arg(long)]
+        #[arg(short = 'd', long)]
         debounce_ms: Option<u64>,
         /// Only include files of this document type (json, ndjson, yaml, toml, csv, tsv, xml, msgpack, cbor, json5, bin).
-        #[arg(long, value_name = "TYPE")]
+        #[arg(short = 't', long, value_name = "TYPE")]
         type_filter: Option<String>,
         /// Exclude paths matching these gitignore-style globs (repeatable).
-        #[arg(long, value_name = "GLOB")]
+        #[arg(short = 'x', long, value_name = "GLOB")]
         exclude: Vec<String>,
         /// Also index local `path`-type flake inputs discovered in `flake.lock`.
         #[arg(long)]
@@ -84,6 +117,59 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
         None => PathBuf::from("."),
     };
     tooned_core::project_root(&start)
+}
+
+#[derive(Serialize)]
+struct ScanJson {
+    files_scanned: usize,
+    files_classified: usize,
+    index_path: String,
+}
+
+#[derive(Serialize)]
+struct SyncJson {
+    added: usize,
+    updated: usize,
+    unchanged: usize,
+    removed: usize,
+}
+
+#[derive(Serialize)]
+struct StatusJson {
+    exists: bool,
+    file_count: i64,
+    last_scanned_at: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct ShowFileJson<'a> {
+    path: &'a str,
+    size_bytes: i64,
+    content_hash: &'a str,
+    doc_type: Option<&'a str>,
+    shapes: Vec<ShapeJson<'a>>,
+    conversions: Vec<ConversionJson>,
+}
+
+#[derive(Serialize)]
+struct ShapeJson<'a> {
+    json_pointer: &'a str,
+    shape_class: &'a str,
+    uniformity_pct: Option<f64>,
+    sampled_count: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct ConversionJson {
+    json_bytes: i64,
+    toon_bytes: i64,
+    savings_pct: f64,
+}
+
+#[derive(Serialize)]
+struct CompactJson {
+    compacted: bool,
+    index_path: String,
 }
 
 fn build_filter(type_filter: Option<&String>, exclude: &[String]) -> anyhow::Result<IndexFilter> {
@@ -102,16 +188,37 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
     match &args.command {
         None => {
             let filter = build_filter(args.type_filter.as_ref(), &args.exclude)?;
-            run_scan(&resolve_project_root(args.path.as_ref()), &filter, args.include_flake_inputs)
+            run_scan(
+                &resolve_project_root(args.path.as_ref()),
+                &filter,
+                args.json,
+                args.dry_run,
+                args.include_flake_inputs,
+            )
         }
-        Some(IndexSubcommand::Sync { path, type_filter, exclude, include_flake_inputs }) => {
+        Some(IndexSubcommand::Sync {
+            path,
+            type_filter,
+            exclude,
+            json,
+            dry_run,
+            include_flake_inputs,
+        }) => {
             let filter = build_filter(type_filter.as_ref(), exclude)?;
-            run_sync(&resolve_project_root(path.as_ref()), &filter, *include_flake_inputs)
+            run_sync(
+                &resolve_project_root(path.as_ref()),
+                &filter,
+                *json,
+                *dry_run,
+                *include_flake_inputs,
+            )
         }
-        Some(IndexSubcommand::Status { path }) => run_status(&resolve_project_root(path.as_ref())),
-        Some(IndexSubcommand::Show { file }) => run_show(file),
-        Some(IndexSubcommand::Compact { path }) => {
-            run_compact(&resolve_project_root(path.as_ref()))
+        Some(IndexSubcommand::Status { path, json }) => {
+            run_status(&resolve_project_root(path.as_ref()), *json)
+        }
+        Some(IndexSubcommand::Show { file, json }) => run_show(file, *json),
+        Some(IndexSubcommand::Compact { path, json, dry_run }) => {
+            run_compact(&resolve_project_root(path.as_ref()), *json, *dry_run)
         }
         Some(IndexSubcommand::Watch {
             path,
@@ -141,10 +248,36 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
     }
 }
 
-fn run_scan(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> anyhow::Result<()> {
+fn run_scan(
+    root: &Path,
+    filter: &IndexFilter,
+    json: bool,
+    dry_run: bool,
+    include_flake_inputs: bool,
+) -> anyhow::Result<()> {
     if !root.is_dir() {
         eprintln!("tooned index: path not found: {}", root.display());
         std::process::exit(2);
+    }
+
+    if dry_run {
+        if json {
+            println!(
+                "{}",
+                sonic_rs::to_string(&ScanJson {
+                    files_scanned: 0,
+                    files_classified: 0,
+                    index_path: tooned_index::index_db_path(root).display().to_string(),
+                })?
+            );
+        } else {
+            println!(
+                "Dry run: would scan {} and write index to {}",
+                root.display(),
+                tooned_index::index_db_path(root).display()
+            );
+        }
+        return Ok(());
     }
 
     let mut summary = tooned_index::scan_full(root, filter)?;
@@ -163,17 +296,48 @@ fn run_scan(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> an
             }
         }
     }
-    println!(
-        "Indexed {} file(s) ({} classified) at {}",
-        summary.files_scanned,
-        summary.files_classified,
-        tooned_index::index_db_path(root).display()
-    );
+    if json {
+        println!(
+            "{}",
+            sonic_rs::to_string(&ScanJson {
+                files_scanned: summary.files_scanned,
+                files_classified: summary.files_classified,
+                index_path: tooned_index::index_db_path(root).display().to_string(),
+            })?
+        );
+    } else {
+        println!(
+            "Indexed {} file(s) ({} classified) at {}",
+            summary.files_scanned,
+            summary.files_classified,
+            tooned_index::index_db_path(root).display()
+        );
+    }
     crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Index, "scan");
     Ok(())
 }
 
-fn run_sync(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> anyhow::Result<()> {
+fn run_sync(
+    root: &Path,
+    filter: &IndexFilter,
+    json: bool,
+    dry_run: bool,
+    include_flake_inputs: bool,
+) -> anyhow::Result<()> {
+    if dry_run {
+        if json {
+            println!(
+                "{}",
+                sonic_rs::to_string(&SyncJson { added: 0, updated: 0, unchanged: 0, removed: 0 })?
+            );
+        } else {
+            println!(
+                "Dry run: would sync index at {}",
+                tooned_index::index_db_path(root).display()
+            );
+        }
+        return Ok(());
+    }
     let mut summary = match tooned_index::sync(root, filter) {
         Ok(summary) => summary,
         Err(tooned_index::IndexError::NoIndex(path)) => {
@@ -218,20 +382,43 @@ fn run_sync(root: &Path, filter: &IndexFilter, include_flake_inputs: bool) -> an
         }
     }
 
-    println!(
-        "Synced {}: {} added, {} updated, {} unchanged, {} removed",
-        root.display(),
-        summary.added,
-        summary.updated,
-        summary.unchanged,
-        summary.removed
-    );
+    if json {
+        println!(
+            "{}",
+            sonic_rs::to_string(&SyncJson {
+                added: summary.added,
+                updated: summary.updated,
+                unchanged: summary.unchanged,
+                removed: summary.removed,
+            })?
+        );
+    } else {
+        println!(
+            "Synced {}: {} added, {} updated, {} unchanged, {} removed",
+            root.display(),
+            summary.added,
+            summary.updated,
+            summary.unchanged,
+            summary.removed
+        );
+    }
     crate::metrics_recorder::record_activity(crate::metrics_recorder::CliSurface::Index, "sync");
     Ok(())
 }
 
-fn run_status(root: &Path) -> anyhow::Result<()> {
+fn run_status(root: &Path, json: bool) -> anyhow::Result<()> {
     let status = tooned_index::status(root)?;
+    if json {
+        println!(
+            "{}",
+            sonic_rs::to_string(&StatusJson {
+                exists: status.exists,
+                file_count: status.file_count,
+                last_scanned_at: status.last_scanned_at,
+            })?
+        );
+        return Ok(());
+    }
     if !status.exists {
         println!("No index yet at {}. Run `tooned index` to create one.", root.display());
         return Ok(());
@@ -252,7 +439,7 @@ fn run_status(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_show(file: &Path) -> anyhow::Result<()> {
+fn run_show(file: &Path, json: bool) -> anyhow::Result<()> {
     // `index show <file>` takes no project-root argument per the CLI
     // contract -- the project root is always the current directory, and
     // `file` is looked up relative to it (matching the path format
@@ -269,6 +456,37 @@ fn run_show(file: &Path) -> anyhow::Result<()> {
 
     match tooned_index::show_file(&root, rel_str) {
         Ok(detail) => {
+            if json {
+                let shapes: Vec<ShapeJson> = detail
+                    .shapes
+                    .iter()
+                    .map(|s| ShapeJson {
+                        json_pointer: &s.json_pointer,
+                        shape_class: &s.shape_class,
+                        uniformity_pct: s.uniformity_pct,
+                        sampled_count: s.sampled_count,
+                    })
+                    .collect();
+                let conversions: Vec<ConversionJson> = detail
+                    .conversions
+                    .iter()
+                    .map(|c| ConversionJson {
+                        json_bytes: c.json_bytes,
+                        toon_bytes: c.toon_bytes,
+                        savings_pct: c.savings_pct,
+                    })
+                    .collect();
+                let out = ShowFileJson {
+                    path: &detail.file.path,
+                    size_bytes: detail.file.size_bytes,
+                    content_hash: &detail.file.content_hash,
+                    doc_type: detail.file.doc_type.as_deref(),
+                    shapes,
+                    conversions,
+                };
+                println!("{}", sonic_rs::to_string(&out)?);
+                return Ok(());
+            }
             println!("{}", detail.file.path);
             println!("  size_bytes:   {}", detail.file.size_bytes);
             println!("  content_hash: {}", detail.file.content_hash);
@@ -302,10 +520,34 @@ fn run_show(file: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn run_compact(root: &Path) -> anyhow::Result<()> {
+fn run_compact(root: &Path, json: bool, dry_run: bool) -> anyhow::Result<()> {
+    if dry_run {
+        if json {
+            println!(
+                "{}",
+                sonic_rs::to_string(&CompactJson {
+                    compacted: false,
+                    index_path: tooned_index::index_db_path(root).display().to_string(),
+                })?
+            );
+        } else {
+            println!("Dry run: would compact {}", tooned_index::index_db_path(root).display());
+        }
+        return Ok(());
+    }
     match tooned_index::compact(root) {
         Ok(()) => {
-            println!("Compacted {}", tooned_index::index_db_path(root).display());
+            if json {
+                println!(
+                    "{}",
+                    sonic_rs::to_string(&CompactJson {
+                        compacted: true,
+                        index_path: tooned_index::index_db_path(root).display().to_string(),
+                    })?
+                );
+            } else {
+                println!("Compacted {}", tooned_index::index_db_path(root).display());
+            }
             Ok(())
         }
         Err(tooned_index::IndexError::NoIndex(path)) => {

@@ -62,12 +62,15 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
         return None;
     }
 
+    let protected_lower: HashSet<String> =
+        protected_keys.iter().map(|p| p.to_ascii_lowercase()).collect();
+
     let protected_idx: HashSet<usize> = if object_mode {
         HashSet::new()
     } else {
         keys.iter()
             .enumerate()
-            .filter(|(_, k)| protected_keys.iter().any(|p| key_protected(k, p)))
+            .filter(|(_, k)| key_is_protected(&k.to_ascii_lowercase(), &protected_lower))
             .map(|(i, _)| i)
             .collect()
     };
@@ -86,7 +89,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
             if let Some(sp) = line.find(": ") {
                 let key = or_fallback(line.get(..sp), "");
                 let val = or_fallback(line.get(sp + 2..), "");
-                if protected_keys.iter().any(|p| key_protected(key, p)) {
+                if key_is_protected(&key.to_ascii_lowercase(), &protected_lower) {
                     continue;
                 }
                 for cell in split_cells(val) {
@@ -188,6 +191,9 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
         return Ok(text.to_string());
     }
 
+    let use_crlf = text.contains("\r\n");
+    let eol = if use_crlf { "\r\n" } else { "\n" };
+
     let lines: Vec<&str> = text
         .split('\n')
         .map(|s| if let Some(stripped) = s.strip_suffix('\r') { stripped } else { s })
@@ -218,10 +224,10 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
         }
         out.push_str(&expanded);
         if lines_iter.peek().is_some() {
-            if out.len() + 1 > max_output_bytes {
+            if out.len() + eol.len() > max_output_bytes {
                 return Err(ToonedError::InputTooLarge);
             }
-            out.push('\n');
+            out.push_str(eol);
         }
     }
     Ok(out)
@@ -354,10 +360,10 @@ fn find_structure(lines: &[&str]) -> (bool, usize, Vec<String>) {
     (true, 0, Vec::new())
 }
 
-/// Case-insensitive substring protection check between a TOON header key and a
-/// configured protected key name.
-fn key_protected(header_key: &str, protected: &str) -> bool {
-    header_key.to_ascii_lowercase().contains(&protected.to_ascii_lowercase())
+/// Case-insensitive substring protection check between a lowercased TOON header
+/// key and the pre-lowercased set of configured protected key names.
+fn key_is_protected(header_key_lower: &str, protected_lower: &HashSet<String>) -> bool {
+    protected_lower.iter().any(|p| header_key_lower.contains(p.as_str()))
 }
 
 #[cfg(test)]
@@ -420,5 +426,24 @@ c: this_is_a_very_long_repeated_value
         let protected = vec!["role".to_string()];
         let dict = apply_dict(toon, &protected);
         assert!(dict.is_none(), "protected column must not be compressed");
+    }
+
+    #[test]
+    fn round_trips_crlf_line_endings() {
+        let toon = "[8]{id,name,role}:\r\n\r\n  1,Alice,administrator\r\n  2,Bob,administrator\r\n  3,Cara,administrator\r\n  4,Dan,administrator\r\n  5,Eve,administrator\r\n  6,Fay,administrator\r\n  7,Gus,administrator\r\n  8,Hal,administrator\r\n";
+        let protected: Vec<String> = vec![];
+        let dict = apply_dict(toon, &protected).expect("should compress");
+        assert!(dict.contains("\r\n"), "compressed output must preserve CRLF");
+        let expanded = expand_legend(&dict, usize::MAX).unwrap();
+        assert_eq!(expanded, toon, "CRLF round trip must be lossless");
+    }
+
+    #[test]
+    fn object_mode_fallback_preserves_key() {
+        let toon = "note: repeated_long_token, repeated_long_token\r\nrole: repeated_long_token, repeated_long_token\r\n";
+        let protected: Vec<String> = vec![];
+        let dict = apply_dict(toon, &protected).expect("should compress");
+        let expanded = expand_legend(&dict, usize::MAX).unwrap();
+        assert_eq!(expanded, toon, "object-mode value fallback must not corrupt key");
     }
 }

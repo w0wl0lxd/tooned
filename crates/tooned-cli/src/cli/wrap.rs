@@ -7,16 +7,73 @@
 //! passed through unchanged.
 
 use std::io::{Read as _, Write as _};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use clap::Args;
-use tooned_core::{Conversion, ConversionOptions};
+use tooned_core::Conversion;
+
+use crate::cli::FormatHint;
 
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WrapArgs {
+    /// Force the parser's doc type instead of relying on content-sniffing.
+    #[arg(short = 'f', long = "format-hint", value_enum)]
+    pub format_hint: Option<FormatHint>,
+
+    /// Minimum savings margin, as a percentage, required to convert (default 2%).
+    #[arg(short = 'm', long)]
+    pub margin: Option<f64>,
+
+    /// Maximum input size in bytes before hard passthrough (default 2 MiB).
+    #[arg(short = 'b', long = "max-bytes")]
+    pub max_bytes: Option<u64>,
+
+    /// Enable the dictionary-compression tier (#1). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_dict")]
+    pub dict: bool,
+    /// Disable the dictionary-compression tier (#1).
+    #[arg(long = "no-dict", action = clap::ArgAction::SetTrue, conflicts_with = "dict")]
+    pub no_dict: bool,
+
+    /// Enable the density-aware acceptance margin (#2). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_auto_margin")]
+    pub auto_margin: bool,
+    /// Disable the density-aware acceptance margin (#2).
+    #[arg(long = "no-auto-margin", action = clap::ArgAction::SetTrue, conflicts_with = "auto_margin")]
+    pub no_auto_margin: bool,
+
+    /// Enable the entropy gate (#5). Default: on.
+    #[arg(long, action = clap::ArgAction::SetTrue, conflicts_with = "no_entropy_gate")]
+    pub entropy_gate: bool,
+    /// Disable the entropy gate (#5).
+    #[arg(long = "no-entropy-gate", action = clap::ArgAction::SetTrue, conflicts_with = "entropy_gate")]
+    pub no_entropy_gate: bool,
+
+    /// Protect these column/key substrings from dictionary abbreviation (#3).
+    /// Repeatable.
+    #[arg(long = "protect", action = clap::ArgAction::Append)]
+    pub protect: Vec<String>,
+
+    /// Path to a tooned config file.
+    #[arg(short = 'c', long)]
+    pub config: Option<PathBuf>,
+
     /// The command (and its arguments) to run, after `--`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,
+}
+
+/// Collapse the `--flag` / `--no-flag` pair into a single `Option<bool>`.
+fn flag_value(yes: bool, no: bool) -> Option<bool> {
+    if no {
+        Some(false)
+    } else if yes {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 /// `code()` is `None` only when the process was killed by a signal (no
@@ -51,7 +108,19 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         }
     };
 
-    let opts = ConversionOptions::default();
+    let config = crate::config::Config::load(args.config.as_deref())?;
+    let opts = config.conversion_options(
+        args.margin,
+        args.max_bytes,
+        args.format_hint,
+        None,
+        flag_value(args.dict, args.no_dict),
+        flag_value(args.auto_margin, args.no_auto_margin),
+        flag_value(args.entropy_gate, args.no_entropy_gate),
+        if args.protect.is_empty() { None } else { Some(args.protect.clone()) },
+        None,
+        None,
+    );
 
     // Bound how much of the wrapped command's stdout is ever buffered in
     // memory: read up to `max_input_bytes + 1` bytes (the `+1` is only to
