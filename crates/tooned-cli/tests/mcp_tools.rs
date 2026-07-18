@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Contract tests for `tooned_convert`/`tooned_detect`/`tooned_decode`
 //! (T073). See `specs/001-adaptive-toon-conversion/contracts/mcp-tools.md`.
 //!

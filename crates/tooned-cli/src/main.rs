@@ -45,6 +45,8 @@ enum Command {
     Stats(cli::stats::StatsArgs),
     /// Compare the original JSON with the TOON round-trip.
     Diff(cli::diff::DiffArgs),
+    /// Validate a TOON file: parse, round-trip, and anti-pattern checks.
+    Lint(cli::lint::LintArgs),
     /// Agent hook install/uninstall/status/doctor (Claude Code, Codex, Devin, Droid, OpenCode, Kilo, Pi).
     Hook(hooks::HookArgs),
     /// Model Context Protocol server.
@@ -55,11 +57,13 @@ enum Command {
     Metrics(cli::metrics::MetricsArgs),
     /// Interactive ratatui metrics dashboard.
     Dashboard(cli::dashboard::DashboardArgs),
-    /// Generate shell completion scripts (release/packaging helper).
-    #[command(hide = true)]
-    Completions { shell: Shell },
-    /// Generate the man page (release/packaging helper).
-    #[command(hide = true)]
+    /// Generate shell completion scripts (bash, zsh, fish, nushell, elvish, powershell).
+    Completions {
+        /// Target shell.
+        #[arg(long, value_name = "SHELL")]
+        shell: Shell,
+    },
+    /// Generate the man page (roff).
     Man,
 }
 
@@ -73,6 +77,7 @@ fn main() -> anyhow::Result<()> {
         Command::Index(args) => cli::index::run(args),
         Command::Stats(args) => cli::stats::run(args),
         Command::Diff(args) => cli::diff::run(args),
+        Command::Lint(args) => cli::lint::run(args),
         Command::Hook(args) => {
             hooks::run(args);
             Ok(())
