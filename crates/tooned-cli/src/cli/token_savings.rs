@@ -134,10 +134,13 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
         Ok(v) => v,
         Err(_) => i64::MAX,
     };
-    let (input_bytes, output_bytes) = match (report.json_bytes, report.toon_bytes) {
-        (Some(j), Some(t)) => (clamp(j), clamp(t)),
-        _ => (clamp(report.input_bytes), clamp(report.input_bytes)),
-    };
+    let (input_bytes, output_bytes) =
+        if let (Some(j), Some(t)) = (report.json_bytes, report.toon_bytes) {
+            (clamp(j), clamp(t))
+        } else {
+            let bytes = clamp(report.input_bytes);
+            (bytes, bytes)
+        };
     crate::metrics_recorder::record_convert_outcome(
         crate::metrics_recorder::CliSurface::TokenSavings,
         &crate::metrics_recorder::label_from_path(&args.input),
