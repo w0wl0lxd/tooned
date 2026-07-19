@@ -23,6 +23,11 @@ pub fn parse_json(input: &[u8]) -> Result<Value, ParseError> {
 
 /// Parses NDJSON input into a `serde_json::Value` (as an array).
 pub fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
+    // Guard the entire NDJSON stream once rather than re-scanning every line.
+    if exceeds_max_structural_depth(input) {
+        return Err(ParseError::TooDeep);
+    }
+
     #[allow(clippy::naive_bytecount)]
     let estimated_lines = input.iter().filter(|&&b| b == b'\n').count() + 1;
     let mut items = Vec::with_capacity(estimated_lines);
@@ -30,9 +35,6 @@ pub fn parse_ndjson(input: &[u8]) -> Result<Value, ParseError> {
         let trimmed = line.trim_ascii();
         if trimmed.is_empty() {
             continue;
-        }
-        if exceeds_max_structural_depth(trimmed) {
-            return Err(ParseError::TooDeep);
         }
         let value =
             sonic_rs::from_slice::<Value>(trimmed).map_err(|e| ParseError::Json(e.to_string()))?;

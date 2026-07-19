@@ -284,23 +284,23 @@ fn is_json5(input: &[u8]) -> bool {
     let mut in_string = false;
     let mut escaped = false;
 
-    for (i, &b) in input.iter().enumerate() {
+    for (pos, &byte) in input.iter().enumerate() {
         if in_string {
             if escaped {
                 escaped = false;
-            } else if b == b'\\' {
+            } else if byte == b'\\' {
                 escaped = true;
-            } else if b == b'"' {
+            } else if byte == b'"' {
                 in_string = false;
             }
             continue;
         }
 
-        match b {
+        match byte {
             b'"' => in_string = true,
             b'\'' => return true,
             b'/' => {
-                if let Some(next) = input.get(i.saturating_add(1))
+                if let Some(next) = input.get(pos + 1)
                     && (*next == b'/' || *next == b'*')
                 {
                     return true;
@@ -308,8 +308,10 @@ fn is_json5(input: &[u8]) -> bool {
             }
             b',' => {
                 // trailing comma if the next non-whitespace byte is } or ]
-                for &after in input.iter().skip(i.saturating_add(1)) {
+                let mut next = pos + 1;
+                while let Some(&after) = input.get(next) {
                     if after.is_ascii_whitespace() {
+                        next += 1;
                         continue;
                     }
                     if after == b'}' || after == b']' {
@@ -320,20 +322,23 @@ fn is_json5(input: &[u8]) -> bool {
             }
             _ => {
                 // bare identifier followed by ':' means an unquoted key.
-                if b.is_ascii_alphabetic() || b == b'_' || b == b'$' {
-                    let mut j = i.saturating_add(1);
-                    while j < input.len()
-                        && input.get(j).copied().is_some_and(is_json5_identifier_char)
-                    {
-                        j = j.saturating_add(1);
-                    }
-                    if j > i {
-                        // skip whitespace after the identifier
-                        let mut k = j;
-                        while k < input.len() && input.get(k).is_some_and(u8::is_ascii_whitespace) {
-                            k = k.saturating_add(1);
+                if byte.is_ascii_alphabetic() || byte == b'_' || byte == b'$' {
+                    let mut end = pos + 1;
+                    while let Some(&candidate) = input.get(end) {
+                        if !is_json5_identifier_char(candidate) {
+                            break;
                         }
-                        if input.get(k) == Some(&b':') {
+                        end += 1;
+                    }
+                    if end > pos {
+                        // skip whitespace after the identifier
+                        let mut after = end;
+                        while let Some(&candidate) = input.get(after)
+                            && candidate.is_ascii_whitespace()
+                        {
+                            after += 1;
+                        }
+                        if input.get(after) == Some(&b':') {
                             return true;
                         }
                     }
