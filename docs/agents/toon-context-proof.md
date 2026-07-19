@@ -101,7 +101,7 @@ read the file users_20.json and tell me the SKU of the first product
 
 ### Why this is strong evidence
 
-The original tool output (`users_20.json`) contains no `sku` field. The only place `SKU-1001` exists is inside the TOON result, which was the TOON encoding of `products_20.json`. Because the model produced `SKU-1001`, it read and understood the TOON result.
+The original tool output (`users_20.json`) contains no `sku` field. The only place `SKU-1001` exists is inside the TOON result, which was the TOON encoding of `products_20.json`. Because the model produced `SKU-1001`, this strongly supports that it read and understood the TOON result.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffebee', 'primaryTextColor': '#b71c1c', 'primaryBorderColor': '#b71c1c', 'lineColor': '#d32f2f', 'secondaryColor': '#fff3e0'}}}%%
@@ -125,7 +125,7 @@ sequenceDiagram
 The exchange below is the actual live test, with only the agent and local path names generalized:
 
 - **Baseline prompt:** `read agent-test/users_20.json`
-- **Baseline response:** "Done. I read `agent-test/users_20.json` — it's a JSON array of 20 user objects with `id`, `name`, `email`, `active`, and `role` fields." (response driven by the users TOON result)
+- **Baseline response:** "Done. I read `agent-test/users_20.json` — it's a JSON array of 20 user objects with `id`, `name`, `email`, `active`, and `role` fields." (response consistent with either the original JSON or the users TOON result)
 - **Mismatch prompt:** `read the file users_20.json and tell me the SKU of the first product`
 - **Mismatch response:** `The SKU of the first product is SKU-1001.`
 
@@ -133,7 +133,7 @@ The exchange below is the actual live test, with only the agent and local path n
 
 1. The baseline summary could come from either the original JSON or a TOON result containing the same user records. It only confirms the conversion pipeline ran and the model received coherent structured data.
 2. The mismatch prompt asks for `sku`, which the original `users_20.json` does not contain. The only source of `SKU-1001` is the TOON result (the TOON of `products_20.json`).
-3. Therefore the model parsed the TOON result: it identified the header `products[20]{sku,name,price,qty,category}:`, understood the first column is `sku`, took the first row, and returned `SKU-1001`. This is not a surface string match; it requires mapping header/row structure to the question.
+3. This strongly supports that the model parsed the TOON result: it identified the header `products[20]{sku,name,price,qty,category}:`, understood the first column is `sku`, took the first row, and returned `SKU-1001`. This is not a surface string match; it requires mapping header/row structure to the question.
 4. With replacement protocols, exact-output requests return the TOON text, confirming the original JSON is not in that context item.
 
 ### External validation

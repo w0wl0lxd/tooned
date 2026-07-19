@@ -23,7 +23,7 @@ This supports: the conversion pipeline ran and the model received a coherent str
 
 ## Finding 2 — Output alone cannot prove the model used the TOON
 
-The summary in Finding 1 could have come from either the original JSON or a TOON result that contained equivalent data; both were in context. This honest null result motivated the controlled mismatch test in Finding 3.
+The summary in Finding 1 is compatible with either the original JSON or a TOON result that contained equivalent data, but it does not prove the model used the TOON rather than the original source. This honest null result motivated the controlled mismatch test in Finding 3.
 
 ---
 

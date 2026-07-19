@@ -30,11 +30,11 @@ The response:
 The SKU of the first product is SKU-1001.
 ```
 
-`users_20.json` contains no `sku` field. The only place `SKU-1001` exists is the TOON tool result (the TOON of `products_20.json`). Because the model returned that value, it read and understood the TOON result.
+`users_20.json` contains no `sku` field. The only place `SKU-1001` exists is the TOON tool result (the TOON of `products_20.json`). Because the model returned that value, this strongly supports that it read and understood the TOON result.
 
 ## Exact-content requests
 
-When the tool result is replaced with TOON, exact-content prompts ("print the file unchanged") return the TOON text, because the original JSON is no longer in that context item. If you need the original JSON verbatim, do not run `tooned` on that read, or use `tooned wrap -- <cmd>` in a way that keeps the original output available.
+When the tool result is replaced with TOON, exact-content prompts ("print the file unchanged") return the TOON text, because the original JSON is no longer in that context item. If you need the original JSON verbatim, do not run `tooned` on that read, or capture the unwrapped command output. `tooned wrap -- <cmd>` is for TOON-only output, not for preserving the original JSON.
 
 ## What this supports
 

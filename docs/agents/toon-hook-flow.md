@@ -44,6 +44,7 @@ sequenceDiagram
 ## What the user sees
 
 - `updatedToolOutput` / feedback replacement protocols: the model sees only the TOON for that tool call. Exact-output prompts return the TOON or a summary of it; the original raw JSON is no longer in that context item. Fidelity for exact copies is therefore a protocol-level concern, not a `tooned` concern.
+
 - Devin / Droid `PostToolUse` hooks: `tooned` prints nothing. The model sees the original JSON. To get TOON output, wrap the command with `tooned` so the tool output itself is TOON.
 
 For the proof that the model can read the TOON result, see [`toon-context-proof.md`](toon-context-proof.md). For cross-format decoding, see [`toon-decoding.md`](toon-decoding.md).

@@ -37,7 +37,7 @@ The SKU of the first product is SKU-1001.
 
 1. `users_20.json` contains no `sku` field.
 2. The only source of `SKU-1001` is the TOON tool result, which was the TOON encoding of `products_20.json`.
-3. Therefore the model parsed the TOON header and first row and returned the `sku` value.
+3. This strongly supports that the model parsed the TOON header and first row and returned the `sku` value.
 
 ## Cross-format mismatch test
 
@@ -93,7 +93,7 @@ The following prompts were used with the normal `tooned` hook installed, using a
 | 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the tool result was replaced with TOON, so the model saw only TOON; for those marked "no" `tooned` passed the original JSON unchanged, so the answer came from the original syntax.
+All 19 prompts produced a correct answer in the tested run. For fixtures marked "yes" the tool result was replaced with TOON, so the model saw only TOON; for those marked "no" `tooned` passed the original tool output unchanged, so the answer came from the original source format.
 
 ## Mismatch decoding cases
 
@@ -161,11 +161,11 @@ These results match the TOON specification: TOON's sweet spot is uniform arrays 
 
 ## Interpretation
 
-A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original JSON. The mismatch test is the only one that specifically shows the model decoding the TOON tool result rather than merely repeating the original tool output.
+A high pass rate on direct comprehension shows the model can answer structured questions from the data, whether it reaches the model as TOON or as the original tool output. The mismatch test is the only one that specifically shows the model decoding the TOON tool result rather than merely repeating the original tool output.
 
-For fixtures where `tooned` does not convert, the original JSON is preserved, so normal behavior is unaffected. For fixtures where TOON wins, the tool result is replaced with TOON and the model can still answer the same questions; the mismatch test shows it can do so from TOON alone.
+When `tooned` does not convert, the original tool output is preserved, so normal behavior is unaffected. When TOON wins, the tool result is replaced with TOON and the model can still answer the same questions; the mismatch test shows it can do so from TOON alone.
 
-For agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), `tooned` does not emit `additionalContext`; use `tooned wrap -- <cmd>` or `... | tooned pipe` to deliver TOON-only output with those agents.
+Agents that only support `additionalContext` in `PostToolUse` (Devin, Droid) do not receive `additionalContext` from `tooned`; use `tooned wrap -- <cmd>` or `... | tooned pipe` to deliver TOON-only output with those agents.
 
 ## Research context
 
@@ -208,6 +208,6 @@ print(json.dumps({
 }, ensure_ascii=False))
 ```
 
-For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead. For Devin / Droid, `PostToolUse` cannot replace the tool result, so use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) and prompt the agent to read the wrapped output.
+For Codex, use `{"continue": false, "reason": toon_text, "hookSpecificOutput": {"hookEventName": "PostToolUse"}}` instead. With Devin / Droid, `PostToolUse` cannot replace the tool result, so use command-level wrapping (`tooned wrap -- cat agent-test/products_20.json`) and prompt the agent to read the wrapped output.
 
 Install the appropriate hook as the `PostToolUse` command for the agent under test, run a prompt such as `read agent-test/users_20.json and tell me the SKU of the first product`, then restore the normal `tooned` hook entry.
