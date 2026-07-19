@@ -72,7 +72,7 @@ fn opencode_convertible_tool_output_prints_updated_tool_output() {
 }
 
 #[test]
-fn opencode_non_json_tool_output_passthrough() {
+fn opencode_non_json_tool_output_passes_through() {
     run_with_flag("--opencode", &passthrough_payload()).stdout(predicate::eq(""));
 }
 
@@ -94,7 +94,7 @@ fn kilo_convertible_tool_output_prints_updated_tool_output() {
 }
 
 #[test]
-fn kilo_non_json_tool_output_passthrough() {
+fn kilo_non_json_tool_output_passes_through() {
     run_with_flag("--kilo", &passthrough_payload()).stdout(predicate::eq(""));
 }
 
@@ -116,6 +116,6 @@ fn pi_convertible_tool_output_prints_updated_tool_output() {
 }
 
 #[test]
-fn pi_non_json_tool_output_passthrough() {
+fn pi_non_json_tool_output_passes_through() {
     run_with_flag("--pi", &passthrough_payload()).stdout(predicate::eq(""));
 }

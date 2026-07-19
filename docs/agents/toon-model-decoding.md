@@ -1,10 +1,12 @@
 # TOON Model-Side Decoding — A Live Cross-Format Test
 
-This document shows that a Large Language Model, given a TOON-encoded `additionalContext` from a `PostToolUse` hook, can decode the TOON into the underlying structured data model and answer as if it had read the original JSON, with no external decoder involved.
+This document shows that a Large Language Model, given a TOON-encoded tool result from a `PostToolUse` hook or wrapped command, can decode the TOON into the underlying structured data model and answer as if it had read the original JSON, with no external decoder involved.
+
+`tooned` does not use `additionalContext`: for agents that only support `additionalContext` in `PostToolUse` (Devin, Droid), the original JSON would remain in context alongside the TOON, inflating total token count. Those agents require command-level wrapping (`tooned wrap -- <cmd>` or `... | tooned pipe`) for TOON-only output. The examples below assume an agent protocol that replaces the native tool result with TOON.
 
 ## The core observation
 
-When `tooned` injects TOON into the model context like this:
+When `tooned` feeds TOON to the model as the tool result like this:
 
 ```toon
 [20]{sku,name,price,qty,category}:
@@ -25,11 +27,11 @@ TOON was deliberately designed to be human-readable and structurally explicit. T
 ## The decisive mismatch test
 
 1. The agent `read`s `agent-test/users_20.json` (JSON array of user objects, no `sku` field).
-2. The hook was temporarily swapped to inject, as `additionalContext`, the TOON encoding of `agent-test/products_20.json`.
+2. The tool result is replaced with the TOON encoding of `agent-test/products_20.json`.
 3. Prompt: `read the file users_20.json and tell me the SKU of the first product`.
 4. Model answered: `The SKU of the first product is SKU-1001.`
 
-Because `users_20.json` contains no `sku` field, the answer can only have come from the TOON `additionalContext`. The model parsed the TOON header and first row and returned the `sku` value.
+Because `users_20.json` contains no `sku` field, the answer strongly supports that it came from the TOON tool result. This is consistent with the model parsing the TOON header and first row and returning the `sku` value.
 
 ## Observed transcript
 
@@ -45,9 +47,9 @@ The SKU of the first product is SKU-1001.
 
 It is a useful result in practice, but it is not a new discovery about how models work. LLMs can already read and reason over alternative structured-data serializations as long as the logical structure is preserved. The specific demonstration here is valuable because it shows that:
 
-1. A `PostToolUse` hook can feed TOON to the model without breaking normal behavior.
-2. The model can use that TOON context to answer questions exactly as it would from JSON.
-3. The original tool output can remain available, so exact-copy and verbatim-output requests still work.
+1. A `PostToolUse` hook or wrapped command can feed TOON to the model as the tool result without breaking normal behavior.
+2. The model can use that TOON result to answer questions exactly as it would from JSON.
+3. When the agent protocol replaces the tool result, the original JSON is not in that context item; exact-copy and verbatim-output requests return the TOON text.
 
 In other words, `tooned` does not have to ship a decoder or teach the model TOON. The model already knows how to read it from its pretraining.
 

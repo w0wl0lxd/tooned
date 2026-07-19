@@ -2,7 +2,12 @@
 
 //! Codex CLI hook integration: `tooned hook run --codex`,
 //! `hook install --codex`.
-//! See `specs/001-adaptive-toon-conversion/contracts/codex-hook.md`.
+//!
+//! Codex `PostToolUse` does not support `updatedToolOutput` for native tools;
+//! the supported mechanism for replacing the model-visible tool result is to
+//! return `continue: false` and a `reason` string, which Codex treats as
+//! PostToolUse feedback and surfaces as the tool result. See
+//! `docs/agents/toon-hook-flow.md`.
 
 use std::io::Read as _;
 use std::time::Duration;

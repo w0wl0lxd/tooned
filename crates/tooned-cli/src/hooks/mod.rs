@@ -751,10 +751,16 @@ impl HookProtocol {
 /// echoing the original bytes back out -- the host platform already preserves
 /// the original tool output whenever the hook prints nothing).
 ///
-/// The emitted `hookSpecificOutput` shape depends on `protocol`: Claude Code
-/// supports replacing the tool's output in place via `updatedToolOutput`;
-/// Codex and Devin only recognize `additionalContext` for surfacing extra
-/// content, so that's emitted for those protocols.
+/// The emitted shape depends on `protocol`:
+/// - Claude Code, OpenCode, Kilo, and Pi support replacing the tool's output in
+///   place via `hookSpecificOutput.updatedToolOutput`.
+/// - Codex supports replacing the model-visible tool result by returning
+///   `continue: false` and a `reason` (treated as PostToolUse feedback).
+/// - Devin and Droid do not support output replacement in `PostToolUse`. Using
+///   `additionalContext` would keep the original JSON in context and append the
+///   TOON, inflating total token count, so those protocols intentionally
+///   pass through. Use command-level wrapping (`tooned wrap -- <cmd>` or
+///   `... | tooned pipe`) with those agents if TOON-only output is required.
 ///
 /// Never panics for any `stdin` byte slice, including invalid UTF-8 or
 /// malformed/adversarial JSON -- every fallible step folds into `None`
@@ -768,28 +774,36 @@ pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option
     let opts = tooned_core::ConversionOptions::default();
     let conversion = tooned_core::maybe_tooned(&bytes, &opts).ok()?;
     let result = match conversion {
-        tooned_core::Conversion::Toon { text, .. } => {
-            let out = match protocol {
-                HookProtocol::ClaudeCode
-                | HookProtocol::OpenCode
-                | HookProtocol::Kilo
-                | HookProtocol::Pi => serde_json::json!({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PostToolUse",
-                        "updatedToolOutput": text,
-                    }
-                }),
-                HookProtocol::Codex | HookProtocol::Devin | HookProtocol::Droid => {
-                    serde_json::json!({
-                        "hookSpecificOutput": {
-                            "hookEventName": "PostToolUse",
-                            "additionalContext": text,
-                        }
-                    })
+        tooned_core::Conversion::Toon { text, .. } => match protocol {
+            HookProtocol::ClaudeCode
+            | HookProtocol::OpenCode
+            | HookProtocol::Kilo
+            | HookProtocol::Pi => sonic_rs::to_string(&serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "updatedToolOutput": text,
                 }
-            };
-            sonic_rs::to_string(&out).ok()
-        }
+            }))
+            .ok(),
+            // Codex replaces the model-visible tool result with the hook's
+            // `reason` text when `continue` is false. Emit TOON as `reason` so
+            // the model sees only the compressed representation, not the
+            // original JSON plus an `additionalContext` appendix.
+            HookProtocol::Codex => sonic_rs::to_string(&serde_json::json!({
+                "continue": false,
+                "reason": text,
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                }
+            }))
+            .ok(),
+            // Devin and Droid only support `additionalContext` in PostToolUse.
+            // `additionalContext` appends content to the original tool output,
+            // so the model receives both JSON and TOON -- larger, not smaller.
+            // Passthrough and let the user use `tooned wrap`/`tooned pipe` for
+            // those agents when TOON-only output is needed.
+            HookProtocol::Devin | HookProtocol::Droid => None,
+        },
         tooned_core::Conversion::Passthrough { .. } => None,
     };
     {
