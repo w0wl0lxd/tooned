@@ -174,8 +174,10 @@ pub fn watch(
 fn build_gitignore_filter(project_root: &Path) -> Result<ignore::gitignore::Gitignore, IndexError> {
     let mut builder = ignore::gitignore::GitignoreBuilder::new(project_root);
     let gitignore = project_root.join(".gitignore");
-    if gitignore.is_file() {
-        builder.add(gitignore);
+    if gitignore.is_file()
+        && let Some(err) = builder.add(gitignore)
+    {
+        return Err(err.into());
     }
     builder.add_line(None, ".tooned/")?;
     builder.add_line(None, ".git/")?;
