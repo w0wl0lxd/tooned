@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+
 //! Integration tests for plugin-wrapped agent installs (OpenCode, Kilo, Pi).
 
 use std::path::PathBuf;

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+
 //! Integration tests for the local metrics ledger and the tooned heatmap /
 //! tooned metrics views. All reads/writes are scoped to a unique temp dir via
 //! TOONED_METRICS_DIR (see store::user_global_db_path), so tests never touch a
@@ -21,7 +24,7 @@ fn tmp_metrics_dir() -> PathBuf {
 }
 
 fn cmd_with(dir: &PathBuf) -> Command {
-    let mut cmd = Command::cargo_bin("tooned").expect("binary exists");
+    let mut cmd = Command::cargo_bin("tooned").unwrap();
     cmd.env("TOONED_METRICS_DIR", dir);
     cmd
 }
@@ -39,7 +42,7 @@ fn summary_records_events() {
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
     cmd.args(["metrics", "--global", "summary"]);
-    let out = cmd.output().expect("run metrics summary");
+    let out = cmd.output().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("tooned metrics -- summary"), "summary header missing: {s}");
     assert!(s.contains("passthroughs:"), "summary missing passthroughs: {s}");
@@ -51,7 +54,7 @@ fn heatmap_global_renders() {
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
     cmd.args(["heatmap", "--global"]);
-    let out = cmd.output().expect("run heatmap global");
+    let out = cmd.output().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("tokens saved"), "heatmap missing header: {s}");
 }
@@ -62,7 +65,7 @@ fn breakdown_lists_surfaces() {
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
     cmd.args(["metrics", "--global", "breakdown"]);
-    let out = cmd.output().expect("run breakdown");
+    let out = cmd.output().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.to_lowercase().contains("surface"), "breakdown missing surface label: {s}");
 }
@@ -73,12 +76,12 @@ fn reset_clears_ledger() {
     record_one_event(&dir);
     let mut cmd = cmd_with(&dir);
     cmd.args(["metrics", "--global", "reset", "--yes"]);
-    let out = cmd.output().expect("run reset");
+    let out = cmd.output().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("reset ledger"), "reset missing confirmation: {s}");
     let mut cmd2 = cmd_with(&dir);
     cmd2.args(["metrics", "--global", "summary"]);
-    let out2 = cmd2.output().expect("run summary after reset");
+    let out2 = cmd2.output().unwrap();
     let s2 = String::from_utf8_lossy(&out2.stdout);
     assert!(
         s2.contains("no metrics recorded yet") || s2.contains("total saved:    0 tokens"),
@@ -92,7 +95,7 @@ fn project_scope_clean_when_empty() {
     let mut cmd = cmd_with(&dir);
     cmd.current_dir(&dir);
     cmd.args(["heatmap"]);
-    let out = cmd.output().expect("run project heatmap");
+    let out = cmd.output().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("no metrics recorded yet") || s.contains("tokens saved"), "unexpected: {s}");
 }
