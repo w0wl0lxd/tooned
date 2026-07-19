@@ -1,0 +1,1 @@
+**tooned-convert / tooned-cli:** added prototype TRON (`Token-Reduced Object Notation`) record-stream encoder/decoder for flat objects and uniform arrays of flat objects, with `tooned convert --to tron` producing a class header and compact `A(value, value, ...)` record bodies, and `tooned convert --to json` decoding TRON back to compact JSON.

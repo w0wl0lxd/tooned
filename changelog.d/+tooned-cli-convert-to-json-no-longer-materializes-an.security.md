@@ -1,0 +1,1 @@
+**tooned-cli:** `convert --to json` no longer materializes an arbitrarily large file in memory before its decoder's `max_input_bytes` cap is consulted. The decode direction now reads through the new bounded `read_input_bounded` (capped at `ConversionOptions.max_input_bytes`) instead of the unbounded `read_input`, closing a local denial-of-memory vector.

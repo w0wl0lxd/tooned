@@ -1,0 +1,1 @@
+**tooned-core:** removed the JSON-style structural-depth pre-check from YAML and TOML parsing; the parsers have their own recursion limits and the pre-check produced false positives on brackets inside YAML single-quoted strings/comments and TOML basic strings.

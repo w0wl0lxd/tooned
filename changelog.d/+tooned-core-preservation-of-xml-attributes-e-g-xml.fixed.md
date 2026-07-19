@@ -1,0 +1,1 @@
+**tooned-core:** preservation of `xml:*` attributes (e.g., `xml:lang`, `xml:space`) in parsed XML output; custom entity references are preserved as literal text rather than being stripped. (, dd63632, d014002)

@@ -1,0 +1,1 @@
+Added an agent-agnostic `tooned` Agent Skills standard `SKILL.md` at `.agents/skills/tooned/SKILL.md` so Claude Code, Codex, Devin, Cursor, Gemini CLI, and other compatible agents know when and how to use `tooned`.

@@ -77,4 +77,21 @@ rail-unify-check:
 rail-unify:
     cargo rail unify
 
-validate: fmt-check check clippy test rail-unify-check
+changelog-check:
+    ./tools/check-changelog.sh
+
+changelog-preview:
+    @if command -v towncrier >/dev/null 2>&1; then \
+        towncrier build --draft --version 0.0.0; \
+    else \
+        uvx --from towncrier towncrier build --draft --version 0.0.0; \
+    fi
+
+changelog-build version:
+    @if command -v towncrier >/dev/null 2>&1; then \
+        towncrier build --yes --version {{version}}; \
+    else \
+        uvx --from towncrier towncrier build --yes --version {{version}}; \
+    fi
+
+validate: fmt-check check clippy test rail-unify-check changelog-check

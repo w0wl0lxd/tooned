@@ -1,0 +1,1 @@
+**tooned-metrics** new crate and `tooned metrics`/`tooned heatmap` CLI views for the local-only, opt-out token-savings ledger. Records conversion outcomes from every `tooned` surface and renders a GitHub/Codex-style savings heatmap.
