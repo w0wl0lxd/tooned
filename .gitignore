@@ -49,6 +49,7 @@ __pycache__/
 .cursor/
 .kilo/
 .gstack/
+.rtk/
 
 # Local agent/skill/tooling state
 .devin/
