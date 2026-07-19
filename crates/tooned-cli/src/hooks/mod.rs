@@ -14,6 +14,7 @@ pub mod opencode;
 pub mod pi;
 pub mod plugin;
 
+use std::borrow::Cow;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -654,7 +655,10 @@ impl HookProtocol {
     /// Claude Code uses `tool_output`; Codex uses `tool_response` as a raw
     /// string/object; Devin uses `tool_response.output` (a string inside an
     /// object that also carries `success`/`error`).
-    fn extract_bytes(self, payload: &serde_json::Value) -> Option<Vec<u8>> {
+    ///
+    /// Returns a `Cow` so string-valued tool outputs can be borrowed directly
+    /// from the parsed JSON payload without an extra `to_vec` allocation.
+    fn extract_bytes(self, payload: &serde_json::Value) -> Option<Cow<'_, [u8]>> {
         match self {
             HookProtocol::ClaudeCode
             | HookProtocol::OpenCode
@@ -662,57 +666,57 @@ impl HookProtocol {
             | HookProtocol::Pi => {
                 let value = payload.get("tool_output")?;
                 Some(match value {
-                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
-                    other => sonic_rs::to_vec(other).ok()?,
+                    serde_json::Value::String(s) => Cow::Borrowed(s.as_bytes()),
+                    other => Cow::Owned(sonic_rs::to_vec(other).ok()?),
                 })
             }
             HookProtocol::Codex => {
                 let value = payload.get("tool_response")?;
                 Some(match value {
-                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
-                    other => sonic_rs::to_vec(other).ok()?,
+                    serde_json::Value::String(s) => Cow::Borrowed(s.as_bytes()),
+                    other => Cow::Owned(sonic_rs::to_vec(other).ok()?),
                 })
             }
             HookProtocol::Devin => {
                 let response = payload.get("tool_response")?;
                 match response {
-                    serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
+                    serde_json::Value::String(s) => Some(Cow::Borrowed(s.as_bytes())),
                     serde_json::Value::Object(_) => {
                         let output = response.get("output")?;
                         match output {
-                            serde_json::Value::String(s) => Some(s.as_bytes().to_vec()),
-                            other => sonic_rs::to_vec(other).ok(),
+                            serde_json::Value::String(s) => Some(Cow::Borrowed(s.as_bytes())),
+                            other => Some(Cow::Owned(sonic_rs::to_vec(other).ok()?)),
                         }
                     }
-                    other => sonic_rs::to_vec(other).ok(),
+                    other => Some(Cow::Owned(sonic_rs::to_vec(other).ok()?)),
                 }
             }
             HookProtocol::Droid => {
                 let value = payload.get("tool_response")?;
                 Some(match value {
-                    serde_json::Value::String(s) => s.as_bytes().to_vec(),
+                    serde_json::Value::String(s) => Cow::Borrowed(s.as_bytes()),
                     serde_json::Value::Object(obj) => {
                         // Droid tool_response schemas are tool-specific. Try the
                         // common string-valued output fields first, then MCP-style
                         // content arrays, then arrays/objects that are themselves
                         // the payload to encode. Fall back to the full object JSON.
                         if let Some(s) = obj.get("output").and_then(serde_json::Value::as_str) {
-                            s.as_bytes().to_vec()
+                            Cow::Borrowed(s.as_bytes())
                         } else if let Some(s) =
                             obj.get("content").and_then(serde_json::Value::as_str)
                         {
-                            s.as_bytes().to_vec()
+                            Cow::Borrowed(s.as_bytes())
                         } else if let Some(s) =
                             obj.get("stdout").and_then(serde_json::Value::as_str)
                         {
-                            s.as_bytes().to_vec()
+                            Cow::Borrowed(s.as_bytes())
                         } else if let Some(s) =
                             obj.get("result").and_then(serde_json::Value::as_str)
                         {
-                            s.as_bytes().to_vec()
+                            Cow::Borrowed(s.as_bytes())
                         } else if let Some(s) = obj.get("text").and_then(serde_json::Value::as_str)
                         {
-                            s.as_bytes().to_vec()
+                            Cow::Borrowed(s.as_bytes())
                         } else if let Some(arr) =
                             obj.get("content").and_then(serde_json::Value::as_array)
                         {
@@ -728,15 +732,15 @@ impl HookProtocol {
                                 }
                             }
                             if text.is_empty() {
-                                sonic_rs::to_vec(value).ok()?
+                                Cow::Owned(sonic_rs::to_vec(value).ok()?)
                             } else {
-                                text.into_bytes()
+                                Cow::Owned(text.into_bytes())
                             }
                         } else {
-                            sonic_rs::to_vec(value).ok()?
+                            Cow::Owned(sonic_rs::to_vec(value).ok()?)
                         }
                     }
-                    other => sonic_rs::to_vec(other).ok()?,
+                    other => Cow::Owned(sonic_rs::to_vec(other).ok()?),
                 })
             }
         }
@@ -744,12 +748,13 @@ impl HookProtocol {
 }
 
 /// Reads a `PostToolUse` stdin payload (per `contracts/claude-code-hook.md`,
-/// `contracts/codex-hook.md`, and Devin CLI's hook docs), extracts the tool's
-/// raw output, and runs it through [`tooned_core::maybe_tooned`]. Returns the
-/// JSON string to print to stdout on a convert decision, or `None` for
-/// passthrough (passthrough means "print nothing" per the contracts, not
-/// echoing the original bytes back out -- the host platform already preserves
-/// the original tool output whenever the hook prints nothing).
+/// `contracts/codex-hook.md`, and Devin CLI's hook docs`), extracts the tool's
+/// raw output, and runs it through [`tooned_core::maybe_tooned_in`] using the
+/// caller-supplied `out` buffer. Returns the JSON string to print to stdout on
+/// a convert decision, or `None` for passthrough (passthrough means "print
+/// nothing" per the contracts, not echoing the original bytes back out -- the
+/// host platform already preserves the original tool output whenever the hook
+/// prints nothing).
 ///
 /// The emitted shape depends on `protocol`:
 /// - Claude Code, OpenCode, Kilo, and Pi support replacing the tool's output in
@@ -767,12 +772,16 @@ impl HookProtocol {
 /// rather than propagating an error or panicking (constitution Principle I).
 /// Callers additionally wrap this in `std::panic::catch_unwind` as
 /// defense-in-depth (see `claude_code::run_hook`/`codex::run_hook`/`devin::run_hook`).
-pub(crate) fn process_hook_stdin(stdin: &[u8], protocol: HookProtocol) -> Option<String> {
+pub(crate) fn process_hook_stdin(
+    stdin: &[u8],
+    protocol: HookProtocol,
+    out: &mut String,
+) -> Option<String> {
     let payload: serde_json::Value = sonic_rs::from_slice::<serde_json::Value>(stdin).ok()?;
     let bytes = protocol.extract_bytes(&payload)?;
 
     let opts = tooned_core::ConversionOptions::default();
-    let conversion = tooned_core::maybe_tooned(&bytes, &opts).ok()?;
+    let conversion = tooned_core::maybe_tooned_in(bytes.as_ref(), &opts, out).ok()?;
     let result = match conversion {
         tooned_core::Conversion::Toon { text, .. } => match protocol {
             HookProtocol::ClaudeCode
@@ -862,7 +871,10 @@ pub(crate) fn run_hook_protocol(protocol: HookProtocol) {
         return;
     }
 
-    let outcome = std::panic::catch_unwind(|| process_hook_stdin(&buf, protocol));
+    let mut out = String::new();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        process_hook_stdin(&buf, protocol, &mut out)
+    }));
     if let Ok(Some(output)) = outcome {
         println!("{output}");
     }
