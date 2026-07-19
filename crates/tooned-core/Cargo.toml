@@ -25,6 +25,7 @@ tooned-xml = { workspace = true }     #unified
 [dev-dependencies]
 criterion = { workspace = true }  #unified
 csv = { workspace = true }        #unified
+heapster = "0.9.0"
 proptest = { workspace = true }   #unified
 serde_yaml = { workspace = true } #unified
 sonic-rs = { workspace = true }
