@@ -58,3 +58,34 @@ fn an_existing_gitignore_entry_is_not_duplicated() {
     let count = contents.lines().filter(|l| l.trim() == ".tooned/").count();
     assert_eq!(count, 1);
 }
+
+#[test]
+fn disabling_gitignore_respect_indexes_ignored_files() {
+    let dir = tempdir().expect("tempdir");
+    fs::write(dir.path().join("kept.json"), "{\"a\":1}").expect("write kept");
+    fs::write(dir.path().join("ignored.json"), "{\"b\":2}").expect("write ignored");
+    fs::write(dir.path().join(".gitignore"), "ignored.json\n").expect("write .gitignore");
+
+    let default_filter = tooned_index::IndexFilter::default();
+    let no_gitignore_filter =
+        tooned_index::IndexFilter { respect_gitignore: false, ..default_filter.clone() };
+
+    let default_summary =
+        tooned_index::scan_full(dir.path(), &default_filter).expect("scan with gitignore");
+    assert_eq!(default_summary.files_scanned, 1, "default scan should skip ignored.json");
+    assert_eq!(default_summary.files_classified, 1);
+    assert!(tooned_index::show_file(dir.path(), "kept.json").is_ok());
+    assert!(
+        tooned_index::show_file(dir.path(), "ignored.json").is_err(),
+        "ignored.json should not be indexed by default"
+    );
+
+    let no_gitignore_summary =
+        tooned_index::scan_full(dir.path(), &no_gitignore_filter).expect("scan without gitignore");
+    assert_eq!(
+        no_gitignore_summary.files_scanned, 2,
+        "--no-gitignore scan should include ignored.json"
+    );
+    assert_eq!(no_gitignore_summary.files_classified, 2);
+    assert!(tooned_index::show_file(dir.path(), "ignored.json").is_ok());
+}

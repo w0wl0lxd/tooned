@@ -634,7 +634,11 @@ mod tests {
         insert_file_and_conversion_with_doc_type(&conn, "", "a.json", 100, 50, 50.0, 100, "json");
         insert_file_and_conversion_with_doc_type(&conn, "", "b.toml", 100, 10, 90.0, 100, "toml");
 
-        let filter = IndexFilter { type_filter: Some(DocTypeFilter::Json), excludes: vec![] };
+        let filter = IndexFilter {
+            type_filter: Some(DocTypeFilter::Json),
+            excludes: vec![],
+            respect_gitignore: true,
+        };
         let ranked = stats_sorted(dir.path(), None, SortBy::Savings, &filter).expect("stats");
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked.first().expect("first").path, "a.json");

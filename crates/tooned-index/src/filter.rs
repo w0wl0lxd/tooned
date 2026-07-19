@@ -9,13 +9,22 @@ use tooned_types::DocType;
 
 /// Filters that can be applied to `tooned index`, `tooned index sync`, and
 /// `tooned stats`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexFilter {
     /// Only include files whose detected document type matches this value.
     /// `None` means "any recognized or unrecognized type".
     pub type_filter: Option<DocTypeFilter>,
     /// Paths matching any of these gitignore-style globs are skipped.
     pub excludes: Vec<String>,
+    /// Whether to respect `.gitignore` and other ignore files when walking
+    /// the project tree. Default: `true`.
+    pub respect_gitignore: bool,
+}
+
+impl Default for IndexFilter {
+    fn default() -> Self {
+        Self { type_filter: None, excludes: Vec::new(), respect_gitignore: true }
+    }
 }
 
 /// Document-type filter values accepted by the CLI.
@@ -109,9 +118,10 @@ impl DocTypeFilter {
 }
 
 impl IndexFilter {
-    /// True when no type or exclude constraint is present.
+    /// True when no type or exclude constraint is present and gitignore
+    /// respect is the default.
     pub fn is_empty(&self) -> bool {
-        self.type_filter.is_none() && self.excludes.is_empty()
+        self.type_filter.is_none() && self.excludes.is_empty() && self.respect_gitignore
     }
 
     /// Does `doc_type` satisfy the type filter? Always true when no filter is set.

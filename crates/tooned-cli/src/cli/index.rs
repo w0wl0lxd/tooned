@@ -19,6 +19,7 @@ use crate::config::Config;
 use tooned_index::{DocTypeFilter, IndexFilter};
 
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct IndexArgs {
     /// Project path (default: current directory). Ignored when a subcommand is given.
     pub path: Option<PathBuf>,
@@ -42,6 +43,10 @@ pub struct IndexArgs {
     /// Also index local `path`-type flake inputs discovered in `flake.lock`.
     #[arg(long)]
     pub include_flake_inputs: bool,
+
+    /// Do not respect `.gitignore` or other ignore files when scanning.
+    #[arg(long = "no-gitignore")]
+    pub no_gitignore: bool,
 
     #[command(subcommand)]
     pub command: Option<IndexSubcommand>,
@@ -67,6 +72,10 @@ pub enum IndexSubcommand {
         /// Also index local `path`-type flake inputs discovered in `flake.lock`.
         #[arg(long)]
         include_flake_inputs: bool,
+
+        /// Do not respect `.gitignore` or other ignore files when syncing.
+        #[arg(long = "no-gitignore")]
+        no_gitignore: bool,
     },
     /// Reports index existence, file count, last scan time.
     Status {
@@ -108,6 +117,10 @@ pub enum IndexSubcommand {
         /// Also index local `path`-type flake inputs discovered in `flake.lock`.
         #[arg(long)]
         include_flake_inputs: bool,
+
+        /// Do not respect `.gitignore` or other ignore files when watching.
+        #[arg(long = "no-gitignore")]
+        no_gitignore: bool,
     },
 }
 
@@ -172,7 +185,11 @@ struct CompactJson {
     index_path: String,
 }
 
-fn build_filter(type_filter: Option<&String>, exclude: &[String]) -> anyhow::Result<IndexFilter> {
+fn build_filter(
+    type_filter: Option<&String>,
+    exclude: &[String],
+    no_gitignore: bool,
+) -> anyhow::Result<IndexFilter> {
     let type_filter = match type_filter {
         Some(s) => {
             let parsed = DocTypeFilter::parse(s)
@@ -181,13 +198,13 @@ fn build_filter(type_filter: Option<&String>, exclude: &[String]) -> anyhow::Res
         }
         None => None,
     };
-    Ok(IndexFilter { type_filter, excludes: exclude.to_vec() })
+    Ok(IndexFilter { type_filter, excludes: exclude.to_vec(), respect_gitignore: !no_gitignore })
 }
 
 pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
     match &args.command {
         None => {
-            let filter = build_filter(args.type_filter.as_ref(), &args.exclude)?;
+            let filter = build_filter(args.type_filter.as_ref(), &args.exclude, args.no_gitignore)?;
             run_scan(
                 &resolve_project_root(args.path.as_ref()),
                 &filter,
@@ -203,8 +220,9 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
             json,
             dry_run,
             include_flake_inputs,
+            no_gitignore,
         }) => {
-            let filter = build_filter(type_filter.as_ref(), exclude)?;
+            let filter = build_filter(type_filter.as_ref(), exclude, *no_gitignore)?;
             run_sync(
                 &resolve_project_root(path.as_ref()),
                 &filter,
@@ -226,6 +244,7 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
             type_filter,
             exclude,
             include_flake_inputs,
+            no_gitignore,
         }) => {
             let config = Config::load(None)?;
             let configured_debounce = config.watch.as_ref().and_then(|w| w.debounce_ms);
@@ -237,7 +256,7 @@ pub fn run(args: &IndexArgs) -> anyhow::Result<()> {
                 Some(d) => d,
                 None => 1000,
             };
-            let filter = build_filter(type_filter.as_ref(), exclude)?;
+            let filter = build_filter(type_filter.as_ref(), exclude, *no_gitignore)?;
             if *include_flake_inputs {
                 eprintln!(
                     "tooned index watch: --include-flake-inputs is not yet supported for watch mode"
