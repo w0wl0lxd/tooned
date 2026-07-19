@@ -10,12 +10,14 @@
 //! a convertible y/n verdict) but never returns the TOON text itself.
 
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::io::Write;
+use toon_lsp::toon::{encode_into, verify_round_trip_with_scratch};
 use tooned_detect::detect;
 use tooned_parse::ParseError;
 use tooned_toon::{
     apply_dict, decode_toon_raw_with_options, decode_toon_with_options,
-    encode_toon_raw_with_options,
+    encode_toon_raw_with_options, toon_config,
 };
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
@@ -65,8 +67,8 @@ pub fn parse_to_value(input: &[u8], format_hint: Option<DocType>) -> Result<Valu
 
 /// A successfully-encoded TOON candidate, kept internal to `attempt`'s
 /// result -- only `maybe_tooned` ever surfaces the `text` field publicly.
-struct AttemptToon {
-    text: String,
+struct AttemptToon<'a> {
+    text: Cow<'a, str>,
     bytes: usize,
 }
 
@@ -91,19 +93,19 @@ impl std::io::Write for ByteCountingWriter {
 /// pipeline once. `reason.is_none()` means "convertible" -- `toon` is
 /// guaranteed `Some` in that case (see `attempt`'s postcondition, enforced
 /// defensively rather than assumed at every call site).
-struct Attempt {
+struct Attempt<'a> {
     doc_type: Option<DocType>,
     shape: ShapeClass,
     json_bytes: Option<usize>,
     /// The compact-JSON text itself, kept only for the opt-in precise-token
     /// estimate (T076) -- never surfaced on `maybe_tooned`'s hot path.
     json_text: Option<String>,
-    toon: Option<AttemptToon>,
+    toon: Option<AttemptToon<'a>>,
     reason: Option<PassthroughReason>,
     protected_fields: Vec<String>,
 }
 
-impl Attempt {
+impl Attempt<'_> {
     fn not_structured() -> Self {
         Attempt {
             doc_type: None,
@@ -150,7 +152,7 @@ pub(crate) fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value
 /// into a `PassthroughReason` rather than propagating a panic or an `Err`
 /// (constitution Principle I; `maybe_tooned`/`inspect` never `Err` for
 /// payload-driven failure).
-fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
+fn attempt<'a>(input: &'a [u8], opts: &ConversionOptions) -> Attempt<'a> {
     let Some(doc_type) = detect(input, opts.format_hint) else {
         return Attempt::not_structured();
     };
@@ -273,7 +275,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
             shape,
             json_bytes: Some(json_bytes),
             json_text,
-            toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
+            toon: Some(AttemptToon { text: Cow::Owned(encoded), bytes: toon_bytes }),
             reason: Some(PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes }),
             protected_fields: Vec::new(),
         };
@@ -303,7 +305,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
             shape,
             json_bytes: Some(json_bytes),
             json_text,
-            toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
+            toon: Some(AttemptToon { text: Cow::Owned(encoded), bytes: toon_bytes }),
             reason: Some(PassthroughReason::RoundTripMismatch),
             protected_fields: Vec::new(),
         };
@@ -314,7 +316,7 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         shape,
         json_bytes: Some(json_bytes),
         json_text,
-        toon: Some(AttemptToon { text: encoded, bytes: toon_bytes }),
+        toon: Some(AttemptToon { text: Cow::Owned(encoded), bytes: toon_bytes }),
         reason: None,
         protected_fields: protected_keys,
     }
@@ -502,10 +504,13 @@ fn entropy_margin_for(input: &[u8]) -> f64 {
 /// see `is_smaller_enough`); the `Result` return type is kept per the
 /// contract to leave room for future caller-misuse validation without a
 /// breaking signature change.
-pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
+pub fn maybe_tooned<'a>(
+    input: &'a [u8],
+    opts: &ConversionOptions,
+) -> Result<Conversion<'a>, ToonedError> {
     if input.len() > opts.max_input_bytes {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::InputTooLarge,
         });
     }
@@ -514,7 +519,7 @@ pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion
         attempt(input, opts);
 
     if let Some(reason) = reason {
-        return Ok(Conversion::Passthrough { bytes: input.to_vec(), reason });
+        return Ok(Conversion::Passthrough { bytes: Cow::Borrowed(input), reason });
     }
 
     let (Some(doc_type), Some(json_bytes), Some(toon)) = (doc_type, json_bytes, toon) else {
@@ -522,7 +527,7 @@ pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion
         // all three are Some), but an internal-invariant slip must still
         // fail safe to Passthrough, never panic.
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -590,6 +595,118 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
         would_convert: reason.is_none(),
         reason,
         protected_fields,
+    }
+}
+
+// Thread-local scratch buffer reused by `toon_from_value` for round-trip
+// verification. It grows on first use and is then allocation-free for
+// similarly-sized inputs.
+thread_local! {
+    static TOON_VERIFY_SCRATCH: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Zero-allocation conversion from an already-parsed [`serde_json::Value`] into
+/// a caller-owned output buffer.
+///
+/// `out` is cleared and the canonical TOON text is appended. If `out` was
+/// pre-sized to hold the encoded text, the hot path performs no heap
+/// allocations. The round-trip fidelity check uses a thread-local scratch
+/// buffer; call this once outside any measured closure to warm it up.
+///
+/// The returned [`Conversion::Toon`] borrows `out` for its text. It is the
+/// caller's responsibility to apply any size/margin gate if desired.
+pub fn toon_from_value<'a>(
+    value: &Value,
+    opts: &ConversionOptions,
+    out: &'a mut String,
+) -> Result<Conversion<'a>, ToonedError> {
+    let mut counter = ByteCountingWriter(0);
+    serde_json::to_writer(&mut counter, value)
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let json_bytes = counter.0;
+
+    let mut config = toon_config(opts);
+    // The zero-alloc hot path borrows `value`. Key folding/flattening builds an
+    // owned intermediate `Value`, so it is disabled here; the caller can use
+    // the regular `maybe_tooned` path if they need those transforms.
+    config.fold_keys = false;
+    config.flatten_keys = false;
+    out.clear();
+    encode_into(value, &config, out).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let toon_bytes = out.len();
+
+    TOON_VERIFY_SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        verify_round_trip_with_scratch(out.as_str(), value, &config, &mut scratch)
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    })?;
+
+    Ok(Conversion::Toon {
+        text: Cow::Borrowed(&*out),
+        report: ConversionReport {
+            doc_type: DocType::Json,
+            shape: ShapeClass::NotClassified,
+            json_bytes,
+            toon_bytes,
+            savings_pct: compute_savings_pct(json_bytes, toon_bytes),
+            protected_fields: Vec::new(),
+        },
+    })
+}
+
+/// Low-level, zero-allocation-possible conversion entry point.
+///
+/// Detects the source format, parses it into a [`Value`], then delegates to
+/// [`toon_from_value`] to encode into the caller-supplied `out` buffer. If the
+/// conversion does not beat the configured margin, returns the original input
+/// bytes as [`Conversion::Passthrough`].
+pub fn maybe_tooned_in<'a>(
+    input: &'a [u8],
+    opts: &ConversionOptions,
+    out: &'a mut String,
+) -> Result<Conversion<'a>, ToonedError> {
+    if input.len() > opts.max_input_bytes {
+        return Ok(Conversion::Passthrough {
+            bytes: Cow::Borrowed(input),
+            reason: PassthroughReason::InputTooLarge,
+        });
+    }
+
+    let Some(doc_type) = detect(input, opts.format_hint) else {
+        return Ok(Conversion::Passthrough {
+            bytes: Cow::Borrowed(input),
+            reason: PassthroughReason::NotStructuredData,
+        });
+    };
+
+    let Ok(value) = parse_by_doc_type(input, doc_type) else {
+        return Ok(Conversion::Passthrough {
+            bytes: Cow::Borrowed(input),
+            reason: PassthroughReason::ParseFailed,
+        });
+    };
+
+    match toon_from_value(&value, opts, out) {
+        Ok(Conversion::Toon { text, report }) => {
+            if is_smaller_enough(report.json_bytes, report.toon_bytes, opts.margin_pct) {
+                let mut report = report;
+                report.doc_type = doc_type;
+                Ok(Conversion::Toon { text, report })
+            } else {
+                Ok(Conversion::Passthrough {
+                    bytes: Cow::Borrowed(input),
+                    reason: PassthroughReason::NotSmallerEnough {
+                        json_bytes: report.json_bytes,
+                        toon_bytes: report.toon_bytes,
+                    },
+                })
+            }
+        }
+        Ok(other) => Ok(other),
+        Err(_) => Ok(Conversion::Passthrough {
+            bytes: Cow::Borrowed(input),
+            reason: PassthroughReason::RoundTripMismatch,
+        }),
     }
 }
 
@@ -717,7 +834,7 @@ mod tests {
         let result = maybe_tooned(&payload, &opts).expect("infallible for payload-driven input");
         match result {
             Conversion::Passthrough { reason: PassthroughReason::InputTooLarge, bytes } => {
-                assert_eq!(bytes, payload);
+                assert_eq!(bytes.as_ref(), payload.as_slice());
             }
             other => panic!("expected Passthrough(InputTooLarge), got {other:?}"),
         }
@@ -828,7 +945,7 @@ mod tests {
         let result = maybe_tooned(payload, &opts).expect("infallible for payload-driven input");
         match result {
             Conversion::Passthrough { reason: PassthroughReason::NotStructuredData, bytes } => {
-                assert_eq!(bytes, payload);
+                assert_eq!(bytes.as_ref(), payload.as_slice());
             }
             other => panic!("expected Passthrough(NotStructuredData), got {other:?}"),
         }
@@ -841,7 +958,7 @@ mod tests {
         let result = maybe_tooned(payload, &opts).expect("infallible for payload-driven input");
         match result {
             Conversion::Passthrough { reason: PassthroughReason::ParseFailed, bytes } => {
-                assert_eq!(bytes, payload);
+                assert_eq!(bytes.as_ref(), payload.as_slice());
             }
             other => panic!("expected Passthrough(ParseFailed), got {other:?}"),
         }
