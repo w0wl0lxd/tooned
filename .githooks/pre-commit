@@ -24,4 +24,8 @@ if [ -n "$STAGED_RS_FILES" ]; then
     echo "    Clippy passed."
 fi
 
+echo "==> Running changelog fragment check..."
+./tools/check-changelog.sh
+echo "    Changelog fragment check passed."
+
 echo "==> Pre-commit checks passed."

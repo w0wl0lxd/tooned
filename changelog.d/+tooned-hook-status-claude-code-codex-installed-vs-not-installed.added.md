@@ -1,0 +1,1 @@
+`tooned hook status (--claude-code|--codex)` (installed vs. not-installed) and `tooned hook doctor` (read-only report of every detected `PostToolUse`/hooks entry, tooned's own and any foreign tool's, across both agents — never writes).
