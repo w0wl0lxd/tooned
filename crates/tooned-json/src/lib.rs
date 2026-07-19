@@ -140,6 +140,43 @@ impl<R: BufRead> JsonArrayStream<R> {
         self.bytes_read
     }
 
+    /// Verify that no non-whitespace bytes remain after the closing `]`.
+    /// Whitespace (including newlines) is allowed; anything else is treated as
+    /// trailing data and returned as an error.
+    pub fn check_trailing(&mut self) -> Result<(), ParseError> {
+        if !matches!(self.state, StreamState::After) {
+            return Ok(());
+        }
+
+        while self.pos < self.buf.len() {
+            if let Some(c) = self.buf[self.pos..].chars().next() {
+                if c.is_ascii_whitespace() {
+                    self.pos += c.len_utf8();
+                } else {
+                    return Err(ParseError::Json("trailing data after JSON array".into()));
+                }
+            } else {
+                break;
+            }
+        }
+
+        loop {
+            self.buf.clear();
+            self.pos = 0;
+            match self.reader.read_line(&mut self.buf) {
+                Ok(0) => return Ok(()),
+                Ok(n) => {
+                    self.bytes_read += n as u64;
+                    if self.buf.trim().is_empty() {
+                        continue;
+                    }
+                    return Err(ParseError::Json("trailing data after JSON array".into()));
+                }
+                Err(e) => return Err(ParseError::Json(e.to_string())),
+            }
+        }
+    }
+
     /// Ensure we have data in the buffer. Returns false on EOF.
     fn fill_buf(&mut self) -> bool {
         if self.pos < self.buf.len() {

@@ -1255,12 +1255,28 @@ mod tests {
     fn open_creates_and_counts() {
         let dir = tempdir().expect("tempdir");
         let db = dir.path().join("metrics.db");
+        // The refactor/error-and-enum-fixes change made the PRAGMA setup
+        // propagate errors instead of swallowing them; `open` must still
+        // succeed on a fresh on-disk DB and actually apply WAL + busy_timeout
+        // + the schema-version row (pinning the review's info finding that the
+        // previously-swallowed pragma errors are now surfaced).
         let store = Store::open(&db).expect("open");
         assert_eq!(store.count().expect("count"), 0);
         store
             .record(&sample("hook:claude", EventKind::Actual, 100, 40, Some("a.json")))
             .expect("record");
         assert_eq!(store.count().expect("count"), 1);
+
+        // Reopen a raw connection to the same file and verify the PRAGMAs that
+        // `Store::open` now applies via `pragma_update` / `busy_timeout`.
+        let conn = Connection::open(&db).expect("reopen");
+        let journal_mode: String =
+            conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).expect("journal_mode");
+        assert_eq!(journal_mode.to_uppercase(), "WAL");
+        let schema_version: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+            .ok();
+        assert_eq!(schema_version.as_deref(), Some("1"));
     }
 
     #[test]

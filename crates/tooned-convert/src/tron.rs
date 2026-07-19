@@ -589,10 +589,14 @@ fn try_streaming_tron(
         }
     };
 
-    // The streaming CSV/TSV helpers cannot track consumed bytes accurately
-    // (they sit on top of `csv::Reader`), but `input.len()` is the
-    // authoritative source size here.
-    let input_bytes = input.len() as u64;
+    // JSON/NDJSON streaming helpers now verify that the entire input was
+    // consumed (no trailing data after the array/records), so their reported
+    // `input_bytes` is authoritative. CSV/TSV sit on top of `csv::Reader` and
+    // cannot accurately count consumed bytes, so we fall back to `input.len()`.
+    let input_bytes = match doc_type {
+        tooned_types::DocType::Json | tooned_types::DocType::NdJson => stats.input_bytes,
+        _ => input.len() as u64,
+    };
 
     // Check if the output is smaller enough
     if !crate::is_smaller_enough(input_bytes as usize, stats.output_bytes as usize, opts.margin_pct)
@@ -831,6 +835,8 @@ where
         out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
     }
     out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    stream.check_trailing().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
 
     let input_bytes = stream.bytes_read();
     let output_bytes = out.count;
