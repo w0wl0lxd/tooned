@@ -66,23 +66,23 @@ The prompts below were run with the normal `tooned` hook installed. A correct an
 | # | Fixture | Prompt | Expected | `tooned` converts? |
 |---|---|---|---|---|
 | 1 | `complex/people_addresses.json` | city of person with id 3 | `City3` | no — TOON larger |
-| 2 | `complex/people_addresses.json` | how many people in state CA | `3` | no — TOON larger |
+| 2 | `complex/people_addresses.json` | how many people in state CA | `3 / three` | no — TOON larger |
 | 3 | `complex/ecommerce_orders.json` | sku of first item in order ORD-1002 | `SKU-1020` | yes (12.7%) |
 | 4 | `complex/ecommerce_orders.json` | status of order ORD-1005 | `delivered` | yes |
 | 5 | `complex/company_org.json` | name of first employee in Engineering | `Alice` | yes (20.7%) |
-| 6 | `complex/company_org.json` | total employees across all departments | `9` | yes |
+| 6 | `complex/company_org.json` | total employees across all departments | `9 / nine` | yes |
 | 7 | `complex/sensor_readings.ndjson` | device_id of first reading | `DEV-001` | yes (28.5%) |
-| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29` | yes |
+| 8 | `complex/sensor_readings.ndjson` | highest temperature value recorded | `29 / twenty-nine` | yes |
 | 9 | `complex/inventory.csv` | category of item with sku INV-1003 | `A` | yes (55.4%) |
 | 10 | `complex/inventory.csv` | price of item with id 7 | `9.99` | yes |
 | 11 | `complex/webhooks.toml` | url of payments webhook | `https://example.com/payments` | no — TOON larger |
 | 12 | `complex/events_attendees.ndjson` | name of first attendee of event EVT-01 | `attendee_1` | yes (36.2%) |
-| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4` | yes |
+| 13 | `complex/events_attendees.ndjson` | how many attendees event EVT-03 has | `4 / four` | yes |
 | 14 | `complex/matrix.json` | value at row 2, column 3 (1-indexed) | `6.1` | no — TOON larger |
 | 15 | `complex/mixed_schema.json` | special_field value for mixed-2 | `machinery-value` | no — TOON larger |
 | 16 | `complex/geo_markers.json` | name of marker with id 4 | `Marker 4` | no — TOON larger |
 | 17 | `complex/config_nested.yaml` | path of second server endpoint | `/convert` | yes (11.0%) |
-| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false` | yes |
+| 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no — TOON larger |
 
 All 19 direct prompts produced a correct answer in the tested run.
@@ -112,35 +112,9 @@ These tests measure comprehension: the model reads TOON and answers. Getting a m
 
 ## Reproducing the tests
 
-Install the normal `tooned` hook or a temporary mismatch hook in the agent's `PostToolUse` configuration and prompt the agent. A minimal mismatch hook that converts `agent-test/products_20.json` to TOON and injects it as `additionalContext` is below:
+For agents that support tool result replacement (Claude Code/OpenCode/Kilo/Pi with `updatedToolOutput`, Codex with `continue: false` + `reason`), install the normal `tooned` hook and prompt the agent. The mismatch test requires a temporary hook that replaces the tool result with the TOON of a different file.
 
-```python
-#!/usr/bin/env python3
-import json, os, subprocess, sys
-from pathlib import Path
-
-repo_root = Path(os.environ.get("REPO_ROOT", "."))
-tooned = os.environ.get("TOONED_BIN", "tooned")
-
-products = repo_root / "agent-test" / "products_20.json"
-conv = subprocess.run(
-    [tooned, "convert", str(products), "--to", "toon"],
-    capture_output=True, text=True,
-)
-toon_text = conv.stdout.strip()
-if not toon_text:
-    sys.exit(0)
-
-sys.stdin.read()
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "PostToolUse",
-        "additionalContext": toon_text,
-    }
-}, ensure_ascii=False))
-```
-
-Run a prompt such as `read agent-test/complex/company_org.json and tell me the SKU of the first product`, then restore the real `tooned hook run` entry. On agents that use `updatedToolOutput` (Claude Code, OpenCode, Kilo, Pi), emit `updatedToolOutput` instead of `additionalContext`.
+For Devin/Droid, which do not support tool result replacement in `PostToolUse`, use command-level wrapping instead: `tooned wrap -- <cmd>` or pipe the output through `tooned pipe`. This delivers TOON-only output without using `additionalContext`.
 
 ## More
 
