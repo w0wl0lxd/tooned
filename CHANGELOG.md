@@ -178,7 +178,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scan`/`sync` exclude filter) now propagates `ignore::Error`;
   the `watch`/`index run` pipeline threads the `filter` argument through;
   SQLite `journal_mode` uses `pragma_update` and `busy_timeout` uses the
-  type-safe `Connection::busy_timeout` method so errors are not swallowed.
+  type-safe `Connection::busy_timeout` method so errors are not swallowed;
+  metrics database file and parent-directory permission setting now
+  propagates `std::io::Error` instead of silently ignoring `set_permissions`
+  failures.
   `DocType`, `ShapeClass`, `TokenizerProfile`, `PassthroughReason`,
   `ParseError`, `IndexError`, and `MetricsError` are now `#[non_exhaustive]`,
   with MCP DTOs gaining `Unknown` fallback variants.

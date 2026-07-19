@@ -315,7 +315,7 @@ impl Store {
         let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
         if !existed {
             #[cfg(unix)]
-            set_mode(db_path, 0o600);
+            set_mode(db_path, 0o600)?;
         }
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.busy_timeout(Duration::from_millis(50))?;
@@ -1116,19 +1116,18 @@ fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
         // on an existing directory that may be shared (e.g. /tmp or a system dir).
         #[cfg(unix)]
         if !parent_existed {
-            set_mode(parent, 0o700);
+            set_mode(parent, 0o700)?;
         }
     }
     Ok(())
 }
 
 #[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) {
+fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    if let Ok(mut perms) = std::fs::metadata(path).map(|m| m.permissions()) {
-        perms.set_mode(mode);
-        let _ = std::fs::set_permissions(path, perms);
-    }
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(mode);
+    std::fs::set_permissions(path, perms)
 }
 
 // ---------------------------------------------------------------------------
