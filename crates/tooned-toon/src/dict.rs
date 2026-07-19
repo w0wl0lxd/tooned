@@ -89,8 +89,7 @@ pub fn apply_dict(toon: &str, protected_keys: &[String]) -> Option<String> {
     // Frequency of each cell token across data lines (skipping protected
     // columns/keys so critical values stay verbatim). Keys borrow from `lines`
     // to avoid cloning every token before we know any of them will compress.
-    let mut freq: HashMap<&str, usize> =
-        HashMap::with_capacity(data_indices.len().saturating_mul(4));
+    let mut freq: HashMap<&str, usize> = HashMap::new();
     for &di in &data_indices {
         let line = match lines.get(di) {
             Some(l) => l.trim(),
@@ -229,18 +228,13 @@ pub fn expand_legend(text: &str, max_output_bytes: usize) -> Result<String, Toon
         i += 1;
     }
 
-    let mut out = String::with_capacity(text.len());
+    let mut out = String::with_capacity(text.len().min(max_output_bytes));
+    let (object_mode, _, _) = find_structure(&lines);
     let mut lines_iter = lines.iter().skip(i).peekable();
     while let Some(&line) = lines_iter.next() {
-        expand_line(line, &map, &mut out);
-        if out.len() > max_output_bytes {
-            return Err(ToonedError::InputTooLarge);
-        }
+        expand_line(line, &map, object_mode, max_output_bytes, &mut out)?;
         if lines_iter.peek().is_some() {
-            if out.len() + eol.len() > max_output_bytes {
-                return Err(ToonedError::InputTooLarge);
-            }
-            out.push_str(eol);
+            append_checked(&mut out, eol, max_output_bytes)?;
         }
     }
     Ok(out)
@@ -293,15 +287,64 @@ fn replace_cells_into(s: &str, map: &HashMap<&str, &str>, out: &mut String) {
 }
 
 /// Append the cells of `s` to `out`, replacing any sentinel that appears in
-/// `map` with its original token. `map` is sentinel -> original.
-fn replace_cells_expand_into(s: &str, map: &HashMap<&str, &str>, out: &mut String) {
+/// `map` with its original token. `map` is sentinel -> original. Each segment
+/// is checked against `max_output_bytes` so expansion aborts before a line
+/// exceeds the caller's limit.
+fn replace_cells_expand_into(
+    s: &str,
+    map: &HashMap<&str, &str>,
+    max_output_bytes: usize,
+    out: &mut String,
+) -> Result<(), ToonedError> {
     let cells = split_cells(s);
     for (i, c) in cells.iter().enumerate() {
         if i > 0 {
-            out.push(',');
+            append_checked(out, ",", max_output_bytes)?;
         }
-        out.push_str(or_fallback(map.get(c).copied(), c));
+        append_checked(out, or_fallback(map.get(c).copied(), c), max_output_bytes)?;
     }
+    Ok(())
+}
+
+/// Append `s` to `out`, returning `ToonedError::InputTooLarge` if doing so would
+/// exceed `max_output_bytes`.
+fn append_checked(out: &mut String, s: &str, max_output_bytes: usize) -> Result<(), ToonedError> {
+    if s.len() > max_output_bytes.saturating_sub(out.len()) {
+        return Err(ToonedError::InputTooLarge);
+    }
+    out.push_str(s);
+    Ok(())
+}
+
+/// Replace sentinel tokens in `line` with their originals. Writes directly to `out`.
+fn expand_line(
+    line: &str,
+    map: &HashMap<&str, &str>,
+    object_mode: bool,
+    max_output_bytes: usize,
+    out: &mut String,
+) -> Result<(), ToonedError> {
+    let indent = line.len() - line.trim_start().len();
+    let trimmed = line.trim();
+    append_checked(out, &line[..indent], max_output_bytes)?;
+    if object_mode {
+        if let Some(sp) = trimmed.find(": ") {
+            let key = or_fallback(trimmed.get(..sp), "");
+            let val = or_fallback(trimmed.get(sp + 2..), "");
+            append_checked(out, key, max_output_bytes)?;
+            append_checked(out, ": ", max_output_bytes)?;
+            if let Some(orig) = map.get(val).copied() {
+                append_checked(out, orig, max_output_bytes)?;
+            } else {
+                replace_cells_expand_into(val, map, max_output_bytes, out)?;
+            }
+        } else {
+            replace_cells_expand_into(trimmed, map, max_output_bytes, out)?;
+        }
+    } else {
+        replace_cells_expand_into(trimmed, map, max_output_bytes, out)?;
+    }
+    Ok(())
 }
 
 /// Replace mapped cell tokens in `line` with their sentinels (array mode) or
@@ -326,26 +369,6 @@ fn transform_line(line: &str, map: &HashMap<&str, &str>, object_mode: bool, out:
         }
     } else {
         replace_cells_into(trimmed, map, out);
-    }
-}
-
-/// Replace sentinel tokens in `line` with their originals. Writes directly to `out`.
-fn expand_line(line: &str, map: &HashMap<&str, &str>, out: &mut String) {
-    let indent = line.len() - line.trim_start().len();
-    let trimmed = line.trim();
-    out.push_str(&line[..indent]);
-    if let Some(sp) = trimmed.find(": ") {
-        let key = or_fallback(trimmed.get(..sp), "");
-        let val = or_fallback(trimmed.get(sp + 2..), "");
-        out.push_str(key);
-        out.push_str(": ");
-        if let Some(orig) = map.get(val).copied() {
-            out.push_str(orig);
-        } else {
-            replace_cells_expand_into(val, map, out);
-        }
-    } else {
-        replace_cells_expand_into(trimmed, map, out);
     }
 }
 
@@ -374,6 +397,9 @@ fn find_structure<'a>(lines: &'a [&'a str]) -> (bool, usize, Vec<&'a str>) {
 /// Case-insensitive substring protection check between a TOON header
 /// key and the set of configured protected key names.
 fn key_is_protected(header_key: &str, protected_lower: &HashSet<String>) -> bool {
+    if protected_lower.is_empty() {
+        return false;
+    }
     let header_key_lower = header_key.to_ascii_lowercase();
     protected_lower.iter().any(|p| header_key_lower.contains(p))
 }
@@ -449,5 +475,29 @@ mod tests {
         let dict = apply_dict(toon, &protected).expect("should compress");
         let expanded = expand_legend(&dict, usize::MAX).unwrap();
         assert_eq!(expanded, toon, "object-mode value fallback must not corrupt key");
+    }
+
+    #[test]
+    fn expand_legend_rejects_output_exceeding_max_bytes() {
+        let toon =
+            "a: 1\nb: this_is_a_very_long_repeated_value\nc: this_is_a_very_long_repeated_value\n";
+        let protected: Vec<String> = vec![];
+        let dict = apply_dict(toon, &protected).expect("should compress");
+        assert!(
+            matches!(expand_legend(&dict, 30), Err(ToonedError::InputTooLarge)),
+            "expansion must abort before a single segment exceeds max_output_bytes"
+        );
+    }
+
+    #[test]
+    fn expand_legend_preserves_colon_in_array_rows() {
+        // `id` value `alice_administrator` is repeated so it becomes a sentinel;
+        // `desc` contains `: ` and must not be mis-parsed as a key/value pair.
+        let toon = "[3]{id,desc}:\n\n  alice_administrator,foo: bar\n  alice_administrator,foo: baz\n  bob_administrator,foo: qux\n";
+        let protected: Vec<String> = vec![];
+        let dict = apply_dict(toon, &protected).expect("should compress");
+        assert!(dict.starts_with(LEGEND_MARKER));
+        let expanded = expand_legend(&dict, usize::MAX).unwrap();
+        assert_eq!(expanded, toon, "array-mode cells containing ': ' must round-trip");
     }
 }
