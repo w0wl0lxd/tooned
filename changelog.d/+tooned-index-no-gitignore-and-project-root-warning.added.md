@@ -1,0 +1,1 @@
+`tooned index` learned a `--no-gitignore` flag (plus `index sync` and `index watch`) that disables `.gitignore`/`.ignore`/global gitignore/`.git/info/exclude` processing, and it now warns when no project marker (`.tooned/` or `flake.nix`) is found and it falls back to the current directory as the project root.
