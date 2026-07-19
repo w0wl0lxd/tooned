@@ -84,7 +84,8 @@ the original syntax to understand what the data means.
 Example ([full evidence](docs/agents/toon-evidence.md)):
 
 - A `read` of a JSON array of user objects produced a natural-language summary
-  of the users, reasoning entirely over the TOON `additionalContext`.
+  of the users; the TOON `additionalContext` was available, and the summary is
+  consistent with the model reading either the original JSON or the TOON.
 - When the hook was set up to inject the TOON encoding of a *products* file
   as `additionalContext` while the agent `read` a *users* file, asking "what is
   the SKU of the first product?" returned `SKU-1001`, a value that existed only
