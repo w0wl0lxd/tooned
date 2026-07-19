@@ -149,7 +149,13 @@ fn flag_value(yes: bool, no: bool) -> Option<bool> {
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
     let mut args = args.clone();
-    args.input = resolve_input_path(&args.input)?;
+    args.input = match resolve_input_path(&args.input) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("tooned convert: failed to resolve input path: {err}");
+            std::process::exit(2);
+        }
+    };
     let args = args;
 
     let config = crate::config::Config::load(args.config.as_deref())?;
@@ -428,15 +434,28 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     }
 
     // Fallback for a non-existent `--out` path that differs only by case from
-    // the resolved input path (e.g. `cargo.toml` vs `Cargo.toml`).
-    let normalize = |p: &Path| {
-        let stripped = match p.strip_prefix("./") {
-            Ok(s) => s,
-            Err(_) => p,
+    // the resolved input path (e.g. `cargo.toml` vs `Cargo.toml`), or when
+    // one is absolute and the other is relative but they point to the same
+    // file.
+    let normalize = |p: &Path| -> Option<PathBuf> {
+        let parent = p.parent().unwrap_or_else(|| Path::new("."));
+        let parent_abs = match std::fs::canonicalize(parent) {
+            Ok(canonical) => canonical,
+            Err(_) => match parent.canonicalize() {
+                Ok(canonical) => canonical,
+                Err(_) => return None,
+            },
         };
-        stripped.to_string_lossy().to_lowercase()
+        let file_name = match p.file_name() {
+            Some(name) => name.to_string_lossy().to_lowercase(),
+            None => return None,
+        };
+        Some(parent_abs.join(file_name))
     };
-    normalize(input) == normalize(out)
+    match (normalize(input), normalize(out)) {
+        (Some(in_norm), Some(out_norm)) => in_norm == out_norm,
+        _ => false,
+    }
 }
 
 /// Adaptive conversion when `--out` points at the same file as `input`.

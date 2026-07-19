@@ -58,7 +58,15 @@ pub fn project_root(start: &Path) -> PathBuf {
 /// Like [`project_root`], but also returns `true` when no project marker was
 /// found and `start` itself is being used as the fallback root.
 pub fn project_root_with_fallback(start: &Path) -> (PathBuf, bool) {
-    let mut dir = start;
+    let start_abs = if start.is_absolute() {
+        start.to_path_buf()
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(start),
+            Err(_) => start.to_path_buf(),
+        }
+    };
+    let mut dir = start_abs.as_path();
     loop {
         if dir.join(".tooned").is_dir() {
             return (dir.to_path_buf(), false);
@@ -68,7 +76,7 @@ pub fn project_root_with_fallback(start: &Path) -> (PathBuf, bool) {
         }
         match dir.parent() {
             Some(parent) => dir = parent,
-            None => return (start.to_path_buf(), true),
+            None => return (start_abs, true),
         }
     }
 }
