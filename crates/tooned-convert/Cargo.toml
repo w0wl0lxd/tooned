@@ -28,6 +28,7 @@ tooned-toon = { workspace = true }   #unified
 tooned-types = { workspace = true }  #unified
 tooned-xml = { workspace = true }    #unified
 tooned-yaml = { workspace = true }   #unified
+tooned-token = { workspace = true }  #unified
 
 [lints]
 workspace = true

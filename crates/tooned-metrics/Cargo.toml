@@ -11,12 +11,14 @@ readme = "../../README.md"
 keywords = ["toon", "metrics", "sqlite"]
 
 [dependencies]
-blake3 = { workspace = true } #unified
-rusqlite = { workspace = true } #unified
+blake3 = { workspace = true }       #unified
+rusqlite = { workspace = true }     #unified
 serde = { workspace = true }
 serde_json = { workspace = true }
 sonic-rs = { workspace = true }
 thiserror = { workspace = true }
+tooned-token = { workspace = true } #unified
+tooned-types = { workspace = true } #unified
 
 [dev-dependencies]
 tempfile = { workspace = true }

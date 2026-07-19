@@ -544,6 +544,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
             json_bytes,
             toon_bytes: tron_bytes,
             savings_pct: crate::compute_savings_pct(json_bytes, tron_bytes),
+            protected_fields: Vec::new(),
         },
     })
 }
@@ -658,34 +659,21 @@ where
     .is_ok_and(|decoded| decoded == Value::Array(values.clone()));
 
     if round_trip_ok {
-        writer
-            .write_all(&encoded)
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        writer
-            .flush()
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        Ok(StreamStats {
-            input_bytes,
-            output_bytes: encoded.len() as u64,
-        })
+        writer.write_all(&encoded).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        writer.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        Ok(StreamStats { input_bytes, output_bytes: encoded.len() as u64 })
     } else {
         let mut buf = Vec::new();
         let mut fallback = sonic_rs::writer::BufferedWriter::new(&mut buf);
-        sonic_rs::to_writer(&mut fallback, &Value::Array(values))
-            .map_err(|e| ToonedError::DecodeFailed(format!("failed to serialize TRON fallback: {e}")))?;
-        fallback
-            .flush()
-            .map_err(|e| ToonedError::DecodeFailed(format!("failed to flush TRON fallback: {e}")))?;
-        writer
-            .write_all(&buf)
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        writer
-            .flush()
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-        Ok(StreamStats {
-            input_bytes,
-            output_bytes: buf.len() as u64,
-        })
+        sonic_rs::to_writer(&mut fallback, &Value::Array(values)).map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to serialize TRON fallback: {e}"))
+        })?;
+        fallback.flush().map_err(|e| {
+            ToonedError::DecodeFailed(format!("failed to flush TRON fallback: {e}"))
+        })?;
+        writer.write_all(&buf).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        writer.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        Ok(StreamStats { input_bytes, output_bytes: buf.len() as u64 })
     }
 }
 
@@ -778,10 +766,7 @@ mod tests {
         let text = String::from_utf8(out).expect("utf8");
         // The streamed body must decode back to the original records.
         let decoded = decode(&text).expect("decodable");
-        assert_eq!(
-            decoded,
-            serde_json::json!([{"id":0,"name":"row-0"},{"id":1,"name":"row-1"}])
-        );
+        assert_eq!(decoded, serde_json::json!([{"id":0,"name":"row-0"},{"id":1,"name":"row-1"}]));
     }
 
     #[test]
@@ -795,9 +780,6 @@ mod tests {
         let text = String::from_utf8(out).expect("utf8");
         let decoded = decode(&text).expect("decodable");
         // The fallback must still reconstruct the original records exactly.
-        assert_eq!(
-            decoded,
-            serde_json::json!([{"id":1,"name":"a"},{"id":2,"nested":{"x":1}}])
-        );
+        assert_eq!(decoded, serde_json::json!([{"id":1,"name":"a"},{"id":2,"nested":{"x":1}}]));
     }
 }

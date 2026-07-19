@@ -15,6 +15,7 @@ members = [
   "crates/tooned-xml",
   "crates/tooned-toon",
   "crates/tooned-convert",
+  "crates/tooned-token",
 ]
 
 [workspace.package]
@@ -27,20 +28,20 @@ categories = ["development-tools"]
 
 [workspace.dependencies]
 anyhow = "1.0"
-blake3 = "^1.8.5" #unified
+blake3 = "^1.8.5"                                                       #unified
 cbor4ii = { version = "^1.2.2", features = ["serde1", "use_std"] }      #unified
 clap = { version = "4", features = ["derive"] }
 criterion = "^0.8.2"                                                    #unified
 csv = "^1.4.0"                                                          #unified
 json5 = "^1.3.1"                                                        #unified
-libc = "^0.2.186" #unified
+libc = "^0.2.186"                                                       #unified
 proptest = "^1.11.0"                                                    #unified
 rmp-serde = "^1.3.1"                                                    #unified
-rusqlite = { version = "^0.40.1", features = ["bundled"] } #unified
+rusqlite = { version = "^0.40.1", features = ["bundled"] }              #unified
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_yaml = "^0.9.34"                                                  #unified
-sonic-rs = "0.5" #unified
+sonic-rs = "0.5"                                                        #unified
 tempfile = "^3.27.0"                                                    #unified
 thiserror = "2"
 toml = "^1.1.3"                                                         #unified
@@ -55,6 +56,7 @@ tooned-metrics = { path = "crates/tooned-metrics", version = "^0.1.0" } #unified
 tooned-parse = { path = "crates/tooned-parse", version = "^0.1.0" }     #unified
 tooned-toml = { path = "crates/tooned-toml", version = "^0.1.0" }       #unified
 tooned-toon = { path = "crates/tooned-toon", version = "^0.1.0" }       #unified
+tooned-token = { path = "crates/tooned-token", version = "^0.1.0" }     #unified
 tooned-types = { path = "crates/tooned-types", version = "^0.1.0" }     #unified
 tooned-xml = { path = "crates/tooned-xml", version = "^0.1.0" }         #unified
 tooned-yaml = { path = "crates/tooned-yaml", version = "^0.1.0" }       #unified

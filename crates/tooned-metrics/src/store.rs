@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
+use tooned_types::TokenizerProfile;
 
 use crate::SCHEMA_VERSION;
 use serde::Serialize;
@@ -62,6 +63,13 @@ pub struct RecordBuilder {
     output_bytes: u64,
     converted: bool,
     precise: bool,
+    /// Optional explicit token-savings figure (when the caller measured real
+    /// model-aware tokens via `tooned-token`). When `Some`, it overrides the
+    /// default 4-bytes/token heuristic in [`RecordBuilder::build`].
+    tokens_saved_override: Option<u64>,
+    /// The tokenizer profile the optional `tokens_saved_override` was measured
+    /// against (or `None` for the heuristic default).
+    tokenizer: Option<TokenizerProfile>,
 }
 
 impl RecordBuilder {
@@ -77,6 +85,8 @@ impl RecordBuilder {
             output_bytes: 0,
             converted: false,
             precise: false,
+            tokens_saved_override: None,
+            tokenizer: None,
         }
     }
 
@@ -129,9 +139,20 @@ impl RecordBuilder {
         self
     }
 
+    /// Record an explicit, model-aware token-savings figure (measured by the
+    /// caller via `tooned-token`) instead of the heuristic default. `precise`
+    /// is forced to `true` and the profile is retained for downstream views.
+    #[must_use]
+    pub fn tokens_saved(mut self, tokens: u64, profile: &TokenizerProfile) -> Self {
+        self.tokens_saved_override = Some(tokens);
+        self.tokenizer = Some(profile.clone());
+        self.precise = true;
+        self
+    }
+
     pub fn build(self) -> Event {
         let saved = self.input_bytes.saturating_sub(self.output_bytes);
-        let tokens = estimate_tokens(saved);
+        let tokens = self.tokens_saved_override.unwrap_or_else(|| estimate_tokens(saved));
         Event {
             surface: self.surface,
             at: self.at.unwrap_or_else(now_unix),

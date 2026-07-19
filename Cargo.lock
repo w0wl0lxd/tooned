@@ -3392,6 +3392,7 @@ dependencies = [
  "tooned-detect",
  "tooned-json",
  "tooned-parse",
+ "tooned-token",
  "tooned-toml",
  "tooned-toon",
  "tooned-types",
@@ -3473,6 +3474,8 @@ dependencies = [
  "sonic-rs",
  "tempfile",
  "thiserror 2.0.18",
+ "tooned-token",
+ "tooned-types",
 ]
 
 [[package]]
@@ -3480,6 +3483,17 @@ name = "tooned-parse"
 version = "0.1.0"
 dependencies = [
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tooned-token"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "tooned-types",
 ]
 
 [[package]]
@@ -3505,6 +3519,7 @@ dependencies = [
 name = "tooned-types"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "thiserror 2.0.18",
 ]
 

@@ -329,6 +329,20 @@ pub(crate) fn merge_post_tool_use_entry(
         return false;
     }
 
+    // Also skip insertion if an existing entry is already one of tooned's own
+    // (matched by its command suffix, which is path-independent -- see the
+    // `*_COMMAND_SUFFIX` constants). A reinstall after `tooned` moves on PATH
+    // produces a command string with a different absolute prefix, so the exact
+    // command match above would miss it and append a duplicate; collapsing it
+    // here keeps a single entry while still never touching a foreign tool's
+    // entry (finding: duplicate PostToolUse entries on reinstall).
+    if let Some(suffix) = command_suffix_for(command) {
+        if arr.iter().any(|entry| entry_command_ends_with(entry, suffix)) {
+            return false;
+        }
+    }
+    }
+
     arr.push(serde_json::json!({
         "matcher": matcher,
         "hooks": [ { "type": "command", "command": command } ],
@@ -351,6 +365,17 @@ fn entry_command_ends_with(entry: &serde_json::Value, suffix: &str) -> bool {
                 .is_some_and(|c| c.ends_with(suffix))
         })
     })
+}
+
+/// Returns the tooned-owned suffix `command` ends with, if any.
+fn command_suffix_for(command: &str) -> Option<&'static str> {
+    const SUFFIXES: &[&str] = &[
+        CLAUDE_CODE_COMMAND_SUFFIX,
+        CODEX_COMMAND_SUFFIX,
+        DEVIN_COMMAND_SUFFIX,
+        DROID_COMMAND_SUFFIX,
+    ];
+    SUFFIXES.iter().copied().find(|s| command.ends_with(*s))
 }
 
 /// Command suffixes that identify tooned's own `PostToolUse` entries,

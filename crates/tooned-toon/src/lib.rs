@@ -2,6 +2,9 @@
 
 //! TOON encode/decode wrapper.
 
+pub mod dict;
+pub use dict::{apply_dict, expand_legend};
+
 use serde_json::Value;
 use tooned_parse::exceeds_max_structural_depth;
 use tooned_types::{ConversionOptions, ToonedError};
@@ -22,13 +25,15 @@ use tooned_types::{ConversionOptions, ToonedError};
 /// an error for the caller to handle (e.g. fall back to a passthrough) rather
 /// than emitted as corrupt TOON.
 pub fn encode_toon(value: &Value) -> Result<String, ToonedError> {
-    let encoded = toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-    let round_trip_ok = match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
-        Ok(decoded) => decoded == *value,
-        // A decode failure means the encoding is not faithfully reversible, so
-        // it is not lossless -- fail closed (refuse to emit).
-        Err(_) => false,
-    };
+    let encoded =
+        toon_lsp::toon::encode(value).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    let round_trip_ok =
+        match decode_toon_with_limit(&encoded, ConversionOptions::default().max_input_bytes) {
+            Ok(decoded) => decoded == *value,
+            // A decode failure means the encoding is not faithfully reversible, so
+            // it is not lossless -- fail closed (refuse to emit).
+            Err(_) => false,
+        };
     if !round_trip_ok {
         return Err(ToonedError::DecodeFailed(
             "TOON encoding is not lossless for this value (numeric type / negative-zero \
@@ -81,6 +86,10 @@ pub fn decode_toon(text: &str) -> Result<Value, ToonedError> {
 /// JSON (TOON is normally smaller, but callers can raise the cap above the
 /// default).
 pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Value, ToonedError> {
+    // Reverse any dictionary `legend:` block before the external codec ever
+    // sees the text. The legend is purely a tooned addition layered on top of
+    // standard TOON, so `toon-lsp` must receive plain TOON.
+    let text = expand_legend(text);
     if text.len() > max_input_bytes {
         return Err(ToonedError::InputTooLarge);
     }
@@ -89,7 +98,7 @@ pub fn decode_toon_with_limit(text: &str, max_input_bytes: usize) -> Result<Valu
             "input nesting exceeds the safe structural-depth limit".to_string(),
         ));
     }
-    toon_lsp::toon::decode(text).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    toon_lsp::toon::decode(&text).map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
 #[cfg(test)]

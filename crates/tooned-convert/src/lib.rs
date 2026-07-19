@@ -15,7 +15,7 @@ use tooned_detect::detect;
 use tooned_parse::ParseError;
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, DocType, InspectReport, PassthroughReason,
-    ShapeClass, ToonedError,
+    ShapeClass, TokenizerProfile, ToonedError,
 };
 
 mod shape;
@@ -252,20 +252,13 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
 }
 
 /// Opt-in precise BPE-token-based savings estimate (T076,
-/// `ConversionOptions.precise_tokens`). Uses `tiktoken-rs`'s `cl100k_base`
-/// tokenizer -- constructed (and its bundled rank table parsed) lazily via
-/// `tiktoken_rs::cl100k_base_singleton()` only the first time this function
-/// is actually called, i.e. only when a caller opts in; the default hot
-/// path (`maybe_tooned`) never calls this function at all (constitution
-/// Principle II: "MUST NOT run on the default hot path").
-fn precise_token_savings_pct(json_text: &str, toon_text: &str) -> f64 {
-    let bpe = tiktoken_rs::cl100k_base_singleton();
-    let json_tokens = bpe.encode_ordinary(json_text).len();
-    let toon_tokens = bpe.encode_ordinary(toon_text).len();
-    if json_tokens == 0 {
-        return 0.0;
-    }
-    (1.0 - (toon_tokens as f64 / json_tokens as f64)) * 100.0
+/// `ConversionOptions.precise_tokens`). Delegates to `tooned-token`, which
+/// maps the requested [`TokenizerProfile`] onto a bundled `tiktoken-rs`
+/// rank table (`cl100k_base` / `o200k_base`) with no network calls. The
+/// default hot path (`maybe_tooned`) never calls this function at all
+/// (constitution Principle II: "MUST NOT run on the default hot path").
+fn precise_token_savings_pct(json_text: &str, toon_text: &str, profile: &TokenizerProfile) -> f64 {
+    tooned_token::token_savings_pct(json_text, toon_text, profile)
 }
 
 /// `toon_bytes < json_bytes * (1 - margin_pct / 100)` (data-model.md
@@ -335,6 +328,7 @@ pub fn maybe_tooned(input: &[u8], opts: &ConversionOptions) -> Result<Conversion
             json_bytes,
             toon_bytes: toon.bytes,
             savings_pct: compute_savings_pct(json_bytes, toon.bytes),
+            protected_fields: Vec::new(),
         },
     })
 }
@@ -357,6 +351,7 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
             precise_savings_pct: None,
             would_convert: false,
             reason: Some(PassthroughReason::InputTooLarge),
+            protected_fields: Vec::new(),
         };
     }
 
@@ -368,10 +363,13 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
     };
     // T076: only ever computed when the caller opts in -- `precise_tokens`
     // defaults to `false`, and this branch (hence `tiktoken-rs`'s tokenizer
-    // construction) is never reached otherwise.
+    // construction) is never reached otherwise. The profile used is the
+    // caller's `opts.tokenizer` when set, else the constitution-default
+    // `cl100k_base` (preserves prior behavior for the opt-in precise path).
     let precise_savings_pct = match (opts.precise_tokens, &json_text, &toon) {
         (true, Some(json_text), Some(toon)) => {
-            Some(precise_token_savings_pct(json_text, &toon.text))
+            let profile = opts.tokenizer.as_ref().unwrap_or(&TokenizerProfile::Cl100k);
+            Some(precise_token_savings_pct(json_text, &toon.text, profile))
         }
         _ => None,
     };
@@ -386,6 +384,7 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
         precise_savings_pct,
         would_convert: reason.is_none(),
         reason,
+        protected_fields: Vec::new(),
     }
 }
 

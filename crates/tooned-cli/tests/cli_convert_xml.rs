@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Contract tests for `tooned convert` with XML input.
 //! See `specs/002-xml-conversion/contracts/cli.md`.
 

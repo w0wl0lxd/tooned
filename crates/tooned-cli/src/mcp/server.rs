@@ -59,6 +59,25 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
     }
 }
 
+/// System directories that must never be recursively walked / written by the
+/// index tools, even though they are not the literal filesystem root or the
+/// user's home directory. A prompt-injected MCP client could otherwise drive a
+/// content-hashing scan (and a `.tooned/` write) anywhere it points; these
+/// locations are the highest-risk targets beyond the two roots already blocked
+/// (they hold system config, device nodes, and other users' or processes' data).
+fn denied_index_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for raw in ["/etc", "/proc", "/sys", "/usr", "/var", "/tmp", "/dev", "/boot"] {
+        let p = PathBuf::from(raw);
+        if let Ok(canonical) = p.canonicalize() {
+            roots.push(canonical);
+        } else {
+            roots.push(p);
+        }
+    }
+    roots
+}
+
 /// Resolves and validates a client-supplied `path` for the three
 /// filesystem-touching MCP tools below (`tooned_index_build`,
 /// `tooned_index_refresh`, `tooned_stats`), which otherwise take `path`
@@ -75,14 +94,13 @@ fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
 /// configuration surface (the whole point of these tools is to accept an
 /// arbitrary project directory, which routinely differs from wherever the
 /// server process happens to have been started), so this instead refuses
-/// the single highest-blast-radius case explicitly named in the threat
-/// scenario this guards against: `path` resolving (after canonicalization,
-/// so a symlink or `..` can't disguise it) to the filesystem root or to the
-/// resolved user's exact home directory -- the two roots under which a
-/// full recursive content-hashing walk plus a `.gitignore`/index-db write
-/// would be most damaging. Legitimate project subdirectories (including
-/// ones nested under the home directory, which is the overwhelmingly common
-/// case) are unaffected.
+/// the highest-blast-radius cases: `path` resolving (after canonicalization,
+/// so a symlink or `..` can't disguise it) to the filesystem root, to the
+/// resolved user's exact home directory, or to any well-known system
+/// directory (`/etc`, `/proc`, `/sys`, `/usr`, `/var`, `/tmp`, `/dev`,
+/// `/boot`). Legitimate project subdirectories (including ones nested under
+/// the home directory, which is the overwhelmingly common case) are
+/// unaffected.
 fn resolve_index_path(raw_path: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(raw_path);
     if !candidate.is_dir() {
@@ -102,12 +120,13 @@ fn resolve_index_path(raw_path: &str) -> Result<PathBuf, String> {
     {
         denied_roots.push(canonical_home);
     }
+    denied_roots.extend(denied_index_roots());
 
-    if denied_roots.iter().any(|denied| denied == &canonical) {
+    if denied_roots.iter().any(|denied| canonical == *denied || canonical.starts_with(denied)) {
         return Err(format!(
-            "refusing to index {raw_path:?}: it resolves to {}, which is the filesystem root or \
-             the user's home directory -- point this tool at a specific project directory \
-             instead",
+            "refusing to index {raw_path:?}: it resolves to {}, which is a system or \
+             user-home directory that the index tools must not walk or write into -- point \
+             this tool at a specific project directory instead",
             canonical.display()
         ));
     }
