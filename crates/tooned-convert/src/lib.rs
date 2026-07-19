@@ -56,6 +56,7 @@ pub fn parse_to_value(input: &[u8], format_hint: Option<DocType>) -> Result<Valu
         DocType::Msgpack | DocType::Cbor | DocType::Json5 => Err(ParseError::Json(
             "tooned: binary/JSON5 doctypes are not supported by parse_to_value".into(),
         )),
+        _ => Err(ParseError::Json("tooned: unsupported doctype for parse_to_value".into())),
     }
 }
 
@@ -138,6 +139,7 @@ pub(crate) fn parse_by_doc_type(input: &[u8], doc_type: DocType) -> Result<Value
         DocType::Msgpack => msgpack::parse_msgpack(input),
         DocType::Cbor => cbor::parse_cbor(input),
         DocType::Json5 => json5::parse_json5(input),
+        _ => Err(ParseError::Json("tooned: unsupported doctype".into())),
     }
 }
 

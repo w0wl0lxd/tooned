@@ -243,14 +243,18 @@ pub fn maybe_onto(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
     let mut counter = ByteCountingWriter(0);
     {
         let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
-        sonic_rs::to_writer(&mut writer, &value).map_err(|e| {
-            ToonedError::DecodeFailed(format!(
-                "failed to compute JSON size for ONTO comparison: {e}"
-            ))
-        })?;
-        writer.flush().map_err(|e| {
-            ToonedError::DecodeFailed(format!("failed to flush ONTO JSON byte counter: {e}"))
-        })?;
+        let Ok(()) = sonic_rs::to_writer(&mut writer, &value) else {
+            return Ok(Conversion::Passthrough {
+                bytes: input.to_vec(),
+                reason: PassthroughReason::ParseFailed,
+            });
+        };
+        let Ok(()) = writer.flush() else {
+            return Ok(Conversion::Passthrough {
+                bytes: input.to_vec(),
+                reason: PassthroughReason::ParseFailed,
+            });
+        };
     }
     let json_bytes = counter.0;
 

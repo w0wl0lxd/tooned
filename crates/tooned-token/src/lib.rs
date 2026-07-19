@@ -57,10 +57,10 @@ fn o200k() -> &'static CoreBPE {
 /// heuristic rather than failing.
 pub fn count_tokens(text: &str, profile: &TokenizerProfile) -> usize {
     match profile {
-        TokenizerProfile::Heuristic => heuristic_count(text),
         TokenizerProfile::Cl100k => cl100k().encode_ordinary(text).len(),
         TokenizerProfile::O200k => o200k().encode_ordinary(text).len(),
         TokenizerProfile::Named(name) => count_tokens(text, &resolve_model(name)),
+        _ => heuristic_count(text),
     }
 }
 
