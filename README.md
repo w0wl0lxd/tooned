@@ -81,18 +81,25 @@ Even though the JSON bytes had been rewritten into TOON, the model still read
 and reasoned about the data as if it were the original JSON. It doesn't need
 the original syntax to understand what the data means.
 
+The model sees *only* the TOON: agents that support output replacement
+(`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi, `continue: false` plus
+`reason` feedback for Codex) replace the native tool result with the smaller
+TOON encoding. For agents that only support `additionalContext` in
+`PostToolUse` (Devin, Droid), the original JSON would remain in context, so
+`tooned` does not emit `additionalContext`; use `tooned wrap -- <cmd>` or
+`... | tooned pipe` with those agents for TOON-only output.
+
 Example ([full evidence](docs/agents/toon-evidence.md)):
 
 - A `read` of a JSON array of user objects produced a natural-language summary
-  of the users; the TOON `additionalContext` was available, and the summary is
-  consistent with the model reading either the original JSON or the TOON.
-- When the hook was set up to inject the TOON encoding of a *products* file
-  as `additionalContext` while the agent `read` a *users* file, asking "what is
-  the SKU of the first product?" returned `SKU-1001`, a value that existed only
-  in the TOON context, not in the original `read` output.
-- Exact-raw-output prompts ("print the file unchanged") still returned the
-  original JSON, because the hook preserves the original tool output alongside
-  the TOON context.
+  of the users, reasoning over a TOON-only tool result.
+- When the tool result was replaced with the TOON encoding of a *products*
+  file while the agent `read` a *users* file, asking "what is the SKU of the
+  first product?" returned `SKU-1001`, a value that existed only in the TOON
+  tool result, not in the original `read` output.
+- Exact-raw-output prompts ("print the file unchanged") return the TOON text
+  when the agent protocol replaces the tool result, because the original JSON
+  is no longer in that context item.
 
 ## Install
 
@@ -310,9 +317,18 @@ sequenceDiagram
     A->>T: PostToolUse payload<br/>(Claude/Devin/Droid) or<br/>plugin wrapper callback<br/>(Codex/OpenCode/Kilo/Pi)
     T->>T: maybe_tooned(tool output)
     Note over T: JSON/NDJSON/XML/... → TOON when smaller & round-trips
-    T-->>A: additionalContext = TOON (or nothing if not smaller)
-    Note over A: original JSON + optional TOON context
-    M->>A: reason over whichever context fits the prompt
+    alt Claude Code / OpenCode / Kilo / Pi
+        T-->>A: hookSpecificOutput.updatedToolOutput = TOON
+        Note over A,M: model sees only TOON
+    else Codex
+        T-->>A: continue=false, reason = TOON
+        Note over A,M: model sees only TOON as feedback result
+    else Devin / Droid
+        T-->>A: (nothing)
+        Note over A: original JSON passes through
+        Note over A,M: for TOON-only output, use<br/>tooned wrap -- &lt;cmd&gt; or &lt;cmd&gt; | tooned pipe
+    end
+    M->>A: reason over TOON (or original JSON for Devin/Droid hooks)
     A-->>U: answer or verbatim output
 ```
 

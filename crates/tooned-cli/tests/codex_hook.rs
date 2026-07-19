@@ -3,7 +3,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 //! Integration tests for `tooned hook run --codex` (T025, T026).
-//! See `specs/001-adaptive-toon-conversion/contracts/codex-hook.md`.
+//!
+//! Codex CLI `PostToolUse` does not support `updatedToolOutput` for native
+//! tools; the supported way to replace the model-visible tool result is to
+//! return `continue: false` and a `reason` string, which Codex treats as
+//! PostToolUse feedback and surfaces as the tool result. See
+//! `docs/agents/toon-hook-flow.md`.
 
 use std::fmt::Write as _;
 
@@ -54,19 +59,23 @@ fn convertible_tool_response_prints_hook_specific_output_and_exits_0() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be valid JSON, got {stdout:?}: {e}"));
 
-    // Codex's real output parser has no `updatedToolOutput` field (unlike
-    // Claude Code) -- only `hookSpecificOutput.additionalContext` is
-    // recognized for surfacing extra content.
-    let updated = parsed
-        .get("hookSpecificOutput")
-        .and_then(|v| v.get("additionalContext"))
+    // Codex replaces the model-visible tool result with the hook's `reason`
+    // when `continue` is false.
+    assert_eq!(parsed.get("continue").and_then(serde_json::Value::as_bool), Some(false));
+    let reason = parsed
+        .get("reason")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or_else(|| panic!("expected hookSpecificOutput.additionalContext, got {parsed}"));
-
+        .unwrap_or_else(|| panic!("expected top-level reason, got {parsed}"));
     assert!(
-        updated.contains("id,name,active,score"),
-        "expected TOON tabular header in additionalContext, got {updated:?}"
+        reason.contains("id,name,active,score"),
+        "expected TOON tabular header in reason, got {reason:?}"
     );
+
+    let hook_event_name = parsed
+        .get("hookSpecificOutput")
+        .and_then(|v| v.get("hookEventName"))
+        .and_then(serde_json::Value::as_str);
+    assert_eq!(hook_event_name, Some("PostToolUse"));
 }
 
 #[test]

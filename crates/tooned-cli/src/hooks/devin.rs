@@ -137,11 +137,14 @@ fn has_devin_entry(root: &serde_json::Value, suffix: &str, nested: bool) -> bool
     arr.is_some_and(|a| a.iter().any(|entry| super::entry_command_ends_with(entry, suffix)))
 }
 
-/// Runs the `PostToolUse` hook against stdin, printing
-/// `hookSpecificOutput.additionalContext` on a convert decision or nothing on
-/// passthrough. Never panics and never itself decides the process exit code
-/// -- the caller (`hooks::run`) always exits 0 for `hook run`, matching the
-/// fail-safe behavior expected by Devin CLI command hooks.
+/// Runs the `PostToolUse` hook against stdin. Devin only supports
+/// `additionalContext` in `PostToolUse`, which would append the TOON to the
+/// original JSON rather than replace it, so this hook passes through on a
+/// convert decision and prints nothing. Use `tooned wrap -- <cmd>` or
+/// `... | tooned pipe` when TOON-only output is required. Never panics and never
+/// itself decides the process exit code -- the caller (`hooks::run`) always
+/// exits 0 for `hook run`, matching the fail-safe behavior expected by Devin CLI
+/// command hooks.
 pub fn run_hook() {
     super::run_hook_protocol(super::HookProtocol::Devin);
 }

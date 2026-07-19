@@ -54,8 +54,9 @@ metadata:
 ## Important safety rules
 
 - `tooned` never writes back to the source file unless the output path is the same file; even then it uses an atomic temp-file-then-rename.
-- The original tool output is preserved by the agent hook; TOON is injected as `additionalContext` only when it wins.
-- For prompts that ask for the exact original file (e.g., "print the file unchanged"), rely on the original tool output, not the TOON context.
+- Agent protocols that can replace the tool result (`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi; `continue: false` + `reason` feedback for Codex) put only TOON in the model's view. `tooned` does not use `additionalContext` because that would keep the original JSON and append the TOON, inflating total token count.
+- For Devin and Droid, which only support `additionalContext` in `PostToolUse`, use `tooned wrap -- <cmd>` or `... | tooned pipe` when you need TOON-only output.
+- For prompts that ask for the exact original file (e.g., "print the file unchanged") with a hook that replaces the tool result, the model will return the TOON text, not the original JSON. Rely on the original tool output or skip `tooned` when verbatim JSON is required.
 - Do not try to generate TOON by hand; use `tooned convert` or `tooned pipe` so round-trip fidelity is verified.
 
 ## Default short flags

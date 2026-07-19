@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `tooned-cli` no longer emits `additionalContext` for Codex, Devin, or Droid
+  `PostToolUse` hooks. `additionalContext` keeps the original JSON in context and
+  appends the TOON, inflating total token count rather than reducing it. Codex
+  now uses `continue: false` + `reason` feedback to replace the model-visible
+  tool result with TOON; Devin and Droid pass through because their `PostToolUse`
+  protocols do not support output replacement. Use `tooned wrap -- <cmd>` or
+  `... | tooned pipe` with Devin/Droid (and for any command on other agents)
+  when TOON-only output is required. README and evidence docs were updated to
+  describe the per-protocol behavior and the re-performed mismatch test.
+
 ### Added
 
 - `tooned-core`: XML input support (detect + parse + adaptive TOON conversion). The XML
@@ -56,15 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into `settings.json`, leaving any pre-existing foreign hook entry byte-for-byte
   untouched. `tooned hook uninstall --claude-code` removes only tooned's own entry.
 - Codex CLI hook integration: `tooned hook run --codex` reads the `tool_response` stdin
-  field (Codex's own field name, distinct from Claude Code's `tool_output`) and, since
-  Codex's real output parser has no field to replace a tool's output in place, surfaces a
-  smaller TOON encoding via `hookSpecificOutput.additionalContext` instead. Runs the
-  actual conversion on a worker thread behind an internal 3-second watchdog and always
-  exits 0, since Codex CLI does not blanket-guarantee fail-open behavior for a hung/crashed
-  hook process the way Claude Code does. `tooned hook install --codex [--mcp]` writes the
-  `.codex-plugin/` bundle (`plugin.json`, `hooks/hooks.json` with matcher `Bash`, and
-  `.mcp.json` only when `--mcp` is passed) and prints the required `/hooks` trust-review
-  instruction to stderr. `tooned hook uninstall --codex` removes only tooned's own entry.
+  field (Codex's own field name, distinct from Claude Code's `tool_output`) and replaces
+  the model-visible tool result with a smaller TOON encoding via `continue: false` +
+  `reason` PostToolUse feedback. Runs the actual conversion on a worker thread behind an
+  internal 3-second watchdog and always exits 0, since Codex CLI does not blanket-guarantee
+  fail-open behavior for a hung/crashed hook process the way Claude Code does. `tooned
+  hook install --codex [--mcp]` writes the `.codex-plugin/` bundle (`plugin.json`,
+  `hooks/hooks.json` with matcher `Bash`, and `.mcp.json` only when `--mcp` is passed)
+  and prints the required `/hooks` trust-review instruction to stderr. `tooned hook
+  uninstall --codex` removes only tooned's own entry.
 - Both installers write via a same-directory temp-file-then-atomic-rename, so a concurrent
   installer run never observes a partially-written config file.
 - `tooned hook status (--claude-code|--codex)` (installed vs. not-installed) and
@@ -129,23 +141,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.jsonl`/`.ndjson`). For `--to tron` forced, streaming writes to a temp file and then
   promotes it atomically for file output or copies to stdout for stdout output. For the
   default adaptive case, streaming writes to a temp file, compares output size vs input
-  size using the margin check, and discards the temp and passthrough the original input
+  size using the margin check, and discards the temp and passes through the original input
   if not smaller enough. On parse/IO error, falls back to passthrough of the original
   input (for stdin, spools stdin to a temp file first so it can be retried/copied). Only
   uses streaming when the input is large (above `max_input_bytes`) or the user explicitly
   forced `--to tron` with an NDJSON hint/extension. Small NDJSON inputs continue to use
   the bounded path. ([work-log](docs/agents/work-log/2026-07-16-006-streaming-ndjson.md))
 - **tooned-cli:** added Devin CLI hook integration. `tooned hook run --devin` reads
-  Devin's `PostToolUse` stdin shape (`tool_response.output`) and emits
-  `hookSpecificOutput.additionalContext` when TOON conversion wins.
+  Devin's `PostToolUse` stdin shape (`tool_response.output`). Devin only supports
+  `additionalContext` in `PostToolUse`, which would keep the original JSON in context,
+  so the hook passes through and prints nothing; use `tooned wrap -- <cmd>` or
+  `... | tooned pipe` for TOON-only output with Devin.
   `tooned hook install --devin [--scope user|project]` writes `.devin/hooks.v1.json`
   (project scope) or `~/.config/devin/config.json` (user scope) with a matcher covering
   `exec`, `read`, `edit`, `grep`, `glob`, and `mcp__` tools. `tooned hook uninstall --devin`,
   `tooned hook status --devin`, and `tooned hook doctor` reporting for Devin entries
   alongside Claude Code and Codex are also supported. ([work-log](docs/agents/work-log/2026-07-16-007-devin-hook.md))
 - **tooned-cli:** added Droid (Factory AI) hook integration. `tooned hook run --droid`
-  uses Droid's `hooks.PostToolUse` JSON format (`toolName` / `toolInput` / `toolOutput`)
-  and mutates `toolOutput` in place when TOON conversion wins. `tooned hook install --droid`
+  uses Droid's `hooks.PostToolUse` JSON format (`toolName` / `toolInput` / `toolOutput`).
+  Droid only supports `additionalContext` in `PostToolUse`, which would keep the original
+  JSON in context, so the hook passes through and prints nothing; use `tooned wrap -- <cmd>`
+  or `... | tooned pipe` for TOON-only output with Droid. `tooned hook install --droid`
   writes `.factory/hooks.json` (project) or `~/.factory/hooks.json` (user), `uninstall --droid`
   only removes tooned's own entries, and `status`/`doctor` report Droid installations.
   ([work-log](docs/agents/work-log/2026-07-17-008-droid-and-plugin-hooks.md))
