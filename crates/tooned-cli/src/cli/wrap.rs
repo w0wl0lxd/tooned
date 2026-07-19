@@ -220,7 +220,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                     to_i64_or_max(buf.len()),
                     to_i64_or_max(text.len()),
                 );
-                text.into_bytes()
+                text.into_owned().into_bytes()
             }
             Ok(Conversion::Passthrough { bytes, .. }) => {
                 crate::metrics_recorder::record_convert_outcome(
@@ -231,7 +231,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
                     to_i64_or_max(buf.len()),
                     to_i64_or_max(bytes.len()),
                 );
-                bytes
+                bytes.into_owned()
             }
             Err(_) => buf,
         };

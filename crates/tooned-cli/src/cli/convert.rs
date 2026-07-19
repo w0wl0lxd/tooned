@@ -229,8 +229,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let onto_outcome = tooned_core::maybe_onto(&bytes, &opts);
             let converted = matches!(onto_outcome, Ok(Conversion::Toon { .. }));
             let output = match onto_outcome {
-                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+                Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
                 Err(_) => bytes.clone(),
             };
             let (tokens, precise) = precise_savings(&bytes, &output, &opts);
@@ -304,8 +304,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 let tron_outcome = maybe_tron(&bytes, &opts);
                 let converted = matches!(tron_outcome, Ok(Conversion::Toon { .. }));
                 let output = match tron_outcome {
-                    Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                    Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                    Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+                    Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
                     Err(_) => bytes.clone(),
                 };
                 let (tokens, precise) = precise_savings(&bytes, &output, &opts);
@@ -681,8 +681,8 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
         Err(_) => i64::MAX,
     };
     let output = match maybe_tooned(bytes, opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+        Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
         // Infallible in practice (see maybe_tooned's doc comment); fail
         // safe to the original bytes rather than panicking or erroring.
         Err(_) => bytes.to_vec(),

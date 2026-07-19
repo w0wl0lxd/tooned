@@ -2,6 +2,8 @@
 
 //! Shared public types for the tooned workspace.
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 /// Supported source document types.
@@ -261,9 +263,9 @@ pub struct InspectReport {
 
 /// Result of an adaptive conversion decision (data-model.md).
 #[derive(Debug, Clone, PartialEq)]
-pub enum Conversion {
-    Toon { text: String, report: ConversionReport },
-    Passthrough { bytes: Vec<u8>, reason: PassthroughReason },
+pub enum Conversion<'a> {
+    Toon { text: Cow<'a, str>, report: ConversionReport },
+    Passthrough { bytes: Cow<'a, [u8]>, reason: PassthroughReason },
 }
 
 /// Diagnostic detail attached to a successful `Conversion::Toon`
@@ -290,7 +292,13 @@ pub struct ConversionReport {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[non_exhaustive]
 pub enum ShapeClass {
-    UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
+    UniformArrayOfObjects {
+        uniformity_pct: f64,
+        sampled: usize,
+    },
     Irregular,
     Scalar,
+    /// Used on the zero-allocation path where shape classification (which
+    /// allocates) is intentionally skipped.
+    NotClassified,
 }

@@ -19,6 +19,7 @@ rmp-serde = { workspace = true }     #unified
 serde_json = { workspace = true }
 sonic-rs = { workspace = true }
 tiktoken-rs = "0.12"
+toon-lsp = { workspace = true }
 tooned-csv = { workspace = true }    #unified
 tooned-detect = { workspace = true } #unified
 tooned-json = { workspace = true }   #unified

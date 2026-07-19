@@ -470,7 +470,7 @@ impl ToonedMcpServer {
             let result = match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
                 Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
                     converted: true,
-                    text,
+                    text: text.into_owned(),
                     report: Some(report.into()),
                     reason: None,
                 }),

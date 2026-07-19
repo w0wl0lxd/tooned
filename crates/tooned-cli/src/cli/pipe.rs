@@ -172,8 +172,8 @@ fn maybe_tooned_output(bytes: &[u8], opts: &tooned_core::ConversionOptions) -> V
 
     let input_len = to_i64_or_max(bytes.len());
     let output = match tooned_core::maybe_tooned(bytes, opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+        Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
         Err(_) => bytes.to_vec(),
     };
     let output_len = to_i64_or_max(output.len());

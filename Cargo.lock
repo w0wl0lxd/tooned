@@ -3390,6 +3390,7 @@ dependencies = [
  "serde_json",
  "sonic-rs",
  "tiktoken-rs",
+ "toon-lsp",
  "tooned-csv",
  "tooned-detect",
  "tooned-json",
