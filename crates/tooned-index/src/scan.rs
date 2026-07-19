@@ -76,11 +76,10 @@ pub fn scan_full(project_root: &Path, filter: &IndexFilter) -> Result<ScanSummar
     // too).
     let tx = conn.transaction()?;
 
-    let exclude_gitignore = filter.compile_excludes(project_root).unwrap_or_else(|_| {
-        // If exclude compilation fails, fall back to an empty gitignore
-        // (no exclusion) rather than failing the entire scan.
-        ignore::gitignore::Gitignore::empty()
-    });
+    // A malformed user-supplied exclude pattern is a real configuration
+    // error; fail the scan rather than silently ignoring the exclusion list
+    // (which would index files the user explicitly asked to skip).
+    let exclude_gitignore = filter.compile_excludes(project_root)?;
 
     let walker = build_walker(project_root);
 
@@ -311,7 +310,7 @@ fn persist_shape_and_conversion(
             let sampled_i64 = saturating_i64(*sampled as u64);
             (Some(*uniformity_pct), Some(sampled_i64))
         }
-        ShapeClass::Irregular | ShapeClass::Scalar | _ => (None, None),
+        _ => (None, None),
     };
     conn.execute(
         "INSERT INTO shapes (path, json_pointer, shape_class, uniformity_pct, sampled_count)

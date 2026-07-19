@@ -473,9 +473,17 @@ impl std::io::Write for ByteCountingWriter {
 /// `Conversion::Passthrough`, never `Err`.
 pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
     if input.len() > opts.max_input_bytes {
-        // Try streaming conversion for large inputs
+        // Try streaming conversion for large inputs. Streaming is an
+        // implementation detail: any failure there is still a
+        // payload-driven problem, so it must downgrade to Passthrough
+        // rather than propagate an Err and break the caller's contract.
         if let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) {
-            return try_streaming_tron(input, doc_type, opts);
+            return try_streaming_tron(input, doc_type, opts).or_else(|_| {
+                Ok(Conversion::Passthrough {
+                    bytes: input.to_vec(),
+                    reason: PassthroughReason::ParseFailed,
+                })
+            });
         }
         return Ok(Conversion::Passthrough {
             bytes: input.to_vec(),
@@ -502,14 +510,18 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
     let mut counter = ByteCountingWriter(0);
     {
         let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
-        sonic_rs::to_writer(&mut writer, &value).map_err(|e| {
-            ToonedError::DecodeFailed(format!(
-                "failed to compute JSON size for TRON comparison: {e}"
-            ))
-        })?;
-        writer.flush().map_err(|e| {
-            ToonedError::DecodeFailed(format!("failed to flush TRON JSON byte counter: {e}"))
-        })?;
+        let Ok(()) = sonic_rs::to_writer(&mut writer, &value) else {
+            return Ok(Conversion::Passthrough {
+                bytes: input.to_vec(),
+                reason: PassthroughReason::ParseFailed,
+            });
+        };
+        let Ok(()) = writer.flush() else {
+            return Ok(Conversion::Passthrough {
+                bytes: input.to_vec(),
+                reason: PassthroughReason::ParseFailed,
+            });
+        };
     }
     let json_bytes = counter.0;
 
@@ -577,16 +589,22 @@ fn try_streaming_tron(
         }
     };
 
+    // JSON/NDJSON streaming helpers now verify that the entire input was
+    // consumed (no trailing data after the array/records), so their reported
+    // `input_bytes` is authoritative. CSV/TSV sit on top of `csv::Reader` and
+    // cannot accurately count consumed bytes, so we fall back to `input.len()`.
+    let input_bytes = match doc_type {
+        tooned_types::DocType::Json | tooned_types::DocType::NdJson => stats.input_bytes,
+        _ => input.len() as u64,
+    };
+
     // Check if the output is smaller enough
-    if !crate::is_smaller_enough(
-        stats.input_bytes as usize,
-        stats.output_bytes as usize,
-        opts.margin_pct,
-    ) {
+    if !crate::is_smaller_enough(input_bytes as usize, stats.output_bytes as usize, opts.margin_pct)
+    {
         return Ok(Conversion::Passthrough {
             bytes: input.to_vec(),
             reason: PassthroughReason::NotSmallerEnough {
-                json_bytes: stats.input_bytes as usize,
+                json_bytes: input_bytes as usize,
                 toon_bytes: stats.output_bytes as usize,
             },
         });
@@ -598,21 +616,19 @@ fn try_streaming_tron(
     // Instead, we validate that the TRON decodes successfully
     // This is a weaker check than the non-streaming path, but still catches corruption
 
-    // Estimate shape based on doc_type
-    let shape = match doc_type {
-        tooned_types::DocType::NdJson | tooned_types::DocType::Json => shape::classify(&decoded),
-        _ => tooned_types::ShapeClass::Irregular,
-    };
+    // The decoded TRON body has the same JSON shape regardless of the original
+    // source format (NDJSON, JSON array, CSV, TSV), so classify uniformly.
+    let shape = shape::classify(&decoded);
 
     Ok(Conversion::Toon {
         text: String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
         report: ConversionReport {
             doc_type,
             shape,
-            json_bytes: stats.input_bytes as usize,
+            json_bytes: input_bytes as usize,
             toon_bytes: stats.output_bytes as usize,
             savings_pct: crate::compute_savings_pct(
-                stats.input_bytes as usize,
+                input_bytes as usize,
                 stats.output_bytes as usize,
             ),
             protected_fields: Vec::new(),
@@ -819,6 +835,8 @@ where
         out.write_all(b"[]").map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
     }
     out.flush().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+
+    stream.check_trailing().map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
 
     let input_bytes = stream.bytes_read();
     let output_bytes = out.count;
@@ -1037,5 +1055,46 @@ mod tests {
         let decoded = decode(&text).expect("decodable");
         // The fallback must still reconstruct the original records exactly.
         assert_eq!(decoded, serde_json::json!([{"id":1,"name":"a"},{"id":2,"nested":{"x":1}}]));
+    }
+
+    #[test]
+    fn maybe_tron_streaming_uses_input_len_for_json_bytes() {
+        // The streaming helpers cannot accurately count consumed bytes for
+        // CSV/TSV, but `input.len()` is authoritative; this test verifies the
+        // reported `json_bytes` equals the source size, not the approximate
+        // `output_bytes`. Use enough rows that the TRON encoding is smaller
+        // than the original NDJSON despite the class header overhead.
+        let mut input = Vec::new();
+        for i in 0..10 {
+            input.extend_from_slice(format!("{{\"id\":{i}}}\n").as_bytes());
+        }
+        let opts = ConversionOptions {
+            max_input_bytes: 4,
+            margin_pct: 0.0,
+            ..ConversionOptions::default()
+        };
+        let result = maybe_tron(&input, &opts).expect("must not Err");
+        if let Conversion::Toon { report, .. } = &result {
+            assert_eq!(report.json_bytes, input.len());
+        } else {
+            panic!("expected Toon, got {result:?}");
+        }
+    }
+
+    #[test]
+    fn maybe_tron_streaming_downgrades_parse_errors_to_passthrough() {
+        // Large enough to hit the streaming path, with a late corrupt line.
+        // This must produce `Ok(Passthrough(ParseFailed))` rather than `Err`,
+        // preserving `maybe_tron`'s fail-safe contract.
+        let input = b"{\"id\":0}\n{\"id\":1}\n{\"id\":2}\nnot valid json\n";
+        let opts = ConversionOptions { max_input_bytes: 4, ..ConversionOptions::default() };
+        let result = maybe_tron(input, &opts).expect("must not Err");
+        assert!(
+            matches!(
+                result,
+                Conversion::Passthrough { reason: PassthroughReason::ParseFailed, .. }
+            ),
+            "expected Passthrough(ParseFailed), got {result:?}"
+        );
     }
 }

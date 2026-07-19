@@ -52,11 +52,10 @@ pub fn sync(project_root: &Path, filter: &IndexFilter) -> Result<SyncSummary, In
     // sync, not one implicit auto-commit transaction per touched row.
     let tx = conn.transaction()?;
 
-    let exclude_gitignore = filter.compile_excludes(project_root).unwrap_or_else(|_| {
-        // If exclude compilation fails, fall back to an empty gitignore
-        // (no exclusion) rather than failing the entire sync.
-        ignore::gitignore::Gitignore::empty()
-    });
+    // A malformed user-supplied exclude pattern is a real configuration
+    // error; fail the sync rather than silently ignoring the exclusion list
+    // (which would index files the user explicitly asked to skip).
+    let exclude_gitignore = filter.compile_excludes(project_root)?;
 
     let walker = build_walker(project_root);
 

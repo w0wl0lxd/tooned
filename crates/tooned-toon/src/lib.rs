@@ -126,6 +126,30 @@ pub fn decode_toon_with_options(
         .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
 }
 
+/// Fast-path decode used by the conversion pipeline's round-trip fidelity check.
+///
+/// Unlike [`decode_toon_with_options`], this skips the two guards that are
+/// redundant *for text the pipeline itself just produced*:
+///
+/// 1. The dictionary `legend:` expansion -- the caller knows whether
+///    `apply_dict` introduced a legend (when it did not, `expand_legend`
+///    would still allocate a full copy of the whole document for nothing).
+/// 2. The structural-depth re-scan -- the source `Value` was already validated
+///    for depth by the format parser before it was ever encoded, and the
+///    encoded TOON's nesting depth equals that value's, so re-checking here is
+///    pure redundancy.
+///
+/// It still calls the external codec, which performs its own `remove_block_comments`
+/// normalization; that pass is required and cannot be skipped. The result is
+/// compared against the original `Value` by the caller to enforce losslessness.
+pub fn decode_toon_raw_with_options(
+    text: &str,
+    opts: &ConversionOptions,
+) -> Result<Value, ToonedError> {
+    decode_with_config(text, &toon_config(opts))
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+}
+
 /// Decodes a TOON document with a caller-supplied byte-size cap.
 ///
 /// This is used by `tooned-convert`'s internal round-trip check so an
