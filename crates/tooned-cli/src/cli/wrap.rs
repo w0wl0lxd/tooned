@@ -2,16 +2,15 @@
 
 //! `tooned wrap -- <command...>`
 //!
-//! Runs `<command...>`, captures stdout, feeds it through the same adaptive
-//! path, prints the result; stderr and exit code of the wrapped command are
-//! passed through unchanged.
+//! Runs `<command...>`, captures stdout, feeds it through the adaptive
+//! in-place conversion path, prints the result; stderr and exit code of the
+//! wrapped command are passed through unchanged.
 
 use std::io::{self, Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::Args;
-use tooned_core::Conversion;
 
 use crate::cli::FormatHint;
 
@@ -205,37 +204,18 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         // Entire output fits within the cap: run it through the normal
         // adaptive conversion path, then write it atomically when a file is
         // requested so the destination is never observed partially written.
-        #[allow(clippy::manual_unwrap_or)]
-        let to_i64_or_max = |n: usize| match i64::try_from(n) {
-            Ok(v) => v,
-            Err(_) => i64::MAX,
-        };
-        let converted = match tooned_core::maybe_tooned(&buf, &opts) {
-            Ok(Conversion::Toon { text, .. }) => {
-                crate::metrics_recorder::record_convert_outcome(
-                    crate::metrics_recorder::CliSurface::Wrap,
-                    &crate::metrics_recorder::SourceLabel::None,
-                    None,
-                    true,
-                    to_i64_or_max(buf.len()),
-                    to_i64_or_max(text.len()),
-                );
-                text.into_owned().into_bytes()
-            }
-            Ok(Conversion::Passthrough { bytes, .. }) => {
-                crate::metrics_recorder::record_convert_outcome(
-                    crate::metrics_recorder::CliSurface::Wrap,
-                    &crate::metrics_recorder::SourceLabel::None,
-                    None,
-                    false,
-                    to_i64_or_max(buf.len()),
-                    to_i64_or_max(bytes.len()),
-                );
-                bytes.into_owned()
-            }
-            Err(_) => buf,
-        };
-        if let Err(err) = crate::cli::io::write_output(args.out.as_deref(), &converted)
+        let mut toon_out = String::new();
+        let (output, input_len, output_len, converted) =
+            crate::cli::io::maybe_tooned_output(&buf, &opts, &mut toon_out);
+        crate::metrics_recorder::record_convert_outcome(
+            crate::metrics_recorder::CliSurface::Wrap,
+            &crate::metrics_recorder::SourceLabel::None,
+            None,
+            converted,
+            input_len,
+            output_len,
+        );
+        if let Err(err) = crate::cli::io::write_output(args.out.as_deref(), output.as_ref())
             && !is_stdout
         {
             return Err(anyhow::anyhow!("tooned wrap: failed to write output: {err}"));
