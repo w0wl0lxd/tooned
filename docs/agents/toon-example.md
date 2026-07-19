@@ -1,6 +1,6 @@
 # Example: agents reason over TOON as if it were JSON
 
-When `tooned` is installed as a `PostToolUse` hook, a JSON tool response is rewritten into TOON. For agents that support tool result replacement (Claude Code, OpenCode, Kilo, Pi with `updatedToolOutput`, Codex with `continue: false` + `reason`), the model receives only the TOON. For Devin/Droid, which do not support replacement in `PostToolUse`, the hook passes through; use `tooned wrap -- <cmd>` or `... | tooned pipe` for TOON-only output.
+When `tooned` is installed as a `PostToolUse` hook, a JSON tool response is rewritten into TOON. For agents that support tool result replacement (Claude Code, OpenCode, Kilo, Pi with `updatedToolOutput`, Codex with `continue: false` + `reason`), the model receives only the TOON. For Devin/Droid, which do not support replacement in `PostToolUse`, the hook passes through; use `tooned wrap -- <cmd>` or `... | tooned pipe` for TOON-only output. Emitting TOON as an `additionalContext` while leaving the original JSON in place would be an alternative implementation, but `tooned` avoids it because that would keep the original JSON in context and defeat the purpose of reducing context size.
 
 ## Mismatch test
 
