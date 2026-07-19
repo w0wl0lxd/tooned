@@ -241,3 +241,5 @@ Note: Concurrent index writes are safe due to SQLite WAL mode (`crates/tooned-in
 || Non-JSON input (`plain.txt`) | `agent-test/plain.txt` (61 B) | `NotStructuredData` | Pipeline correctly rejects non-structured payloads |
 
 Note: The structural depth guard (`exceeds_max_structural_depth`) is applied before `sonic-rs` parsing (`crates/tooned-json/src/lib.rs:16-22`). This prevents stack-overflow crashes on adversarially deep inputs, which `sonic-rs` cannot catch (confirmed by regression test at `lib.rs:404-420`).
+
+See [`toon-context-proof.md`](toon-context-proof.md) for the hook-level protocol and [`toon-example.md`](toon-example.md) for a worked example.

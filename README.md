@@ -21,7 +21,7 @@ users[4]{id,name,role,active}:
   1,"Alice",admin,true
 ```
 
-The model reads the TOON header/row structure directly; no `toon → json` conversion runs inside the agent. The mismatch test (reading one file while the hook injects the TOON of another) isolates this: when `users_20.json` (no `sku` field) is read with the TOON of `products_20.json` injected, a prompt asking for "the SKU of the first product" returns `SKU-1001`, which exists only in the injected TOON.
+The model reads the TOON header/row structure directly; no `toon → json` conversion runs inside the agent. Even though the JSON bytes are rewritten into TOON, the model still read and reasoned about the data as if it were the original JSON. The mismatch test (reading one file while the hook injects the TOON of another) isolates this: when `users_20.json` (no `sku` field) is read with the TOON of `products_20.json` injected, a prompt asking for "the SKU of the first product" returns `SKU-1001`, which exists only in the injected TOON.
 
 For agents that support tool result replacement (`updatedToolOutput` for Claude Code / OpenCode / Kilo / Pi; `continue: false` + `reason` for Codex), the model sees only the TOON for that tool call. For Devin / Droid (`additionalContext`-only), the hook passes through; use `tooned wrap -- <cmd>` or `... | tooned pipe` for TOON-only output.
 
@@ -162,7 +162,7 @@ Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (DCO sign-off, Conventio
 
 ## Status
 
-v1 is not tagged yet. The conversion pipeline (`maybe_tooned`) is stable; the CLI surface, hook installers, and index schema are in active refinement. The evidence docs (`docs/agents/`) describe the mismatch test methodology; new validation should use agent CLI (`swe-1.7-max`, `glm-5.2` high) and avoid `additionalContext` (which was tainting earlier results by keeping original JSON in context).
+v1 is not tagged yet. The conversion pipeline (`maybe_tooned`) is stable; the CLI surface, hook installers, and index schema are in active refinement. The evidence docs (`docs/agents/`) describe the mismatch test methodology; see [`toon-example.md`](docs/agents/toon-example.md) and [`toon-evidence.md`](docs/agents/toon-evidence.md). New validation should use agent CLI (`swe-1.7-max`, `glm-5.2` high) and avoid `additionalContext` (which was tainting earlier results by keeping original JSON in context).
 
 ## License
 

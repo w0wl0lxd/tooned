@@ -6,7 +6,7 @@
 |---|---|---|---|
 | Claude Code, OpenCode, Kilo, Pi | `tool_output` | `updatedToolOutput` in `hookSpecificOutput` | Replaced |
 | Codex | `tool_response` | `continue: false` + `reason` feedback | Replaced |
-| Devin, Droid | `tool_output` / `toolResponse` | None (passes through) | Preserved |
+| Devin, Droid | `tool_response` / `toolOutput` | None (passes through) | Preserved |
 
 With replacement protocols (`updatedToolOutput` or `reason`), the model sees only the TOON. The original JSON is removed from that context item. Exact-output prompts return the TOON text; the original bytes are no longer visible.
 
