@@ -55,6 +55,7 @@ tooned-metrics = { path = "crates/tooned-metrics", version = "^0.1.1" } #unified
 tooned-parse = { path = "crates/tooned-parse", version = "^0.1.1" }     #unified
 tooned-toml = { path = "crates/tooned-toml", version = "^0.1.1" }       #unified
 tooned-toon = { path = "crates/tooned-toon", version = "^0.1.1" }       #unified
+tooned-token = { path = "crates/tooned-token", version = "^0.1.1" }     #unified
 tooned-types = { path = "crates/tooned-types", version = "^0.1.1" }     #unified
 tooned-xml = { path = "crates/tooned-xml", version = "^0.1.1" }         #unified
 tooned-yaml = { path = "crates/tooned-yaml", version = "^0.1.1" }       #unified

@@ -130,7 +130,7 @@ pub(crate) fn status(agent: &PluginAgent) -> bool {
 /// Builds a JSON report entry for `hook doctor` covering both scopes.
 pub(crate) fn doctor_report(agent: &PluginAgent) -> serde_json::Value {
     let mut out = serde_json::json!({});
-    let flag = marker(agent);
+    let flag = tooned_fingerprint(agent);
     for scope in [Scope::User, Scope::Project] {
         let report = match settings_path(agent, scope) {
             Ok(path) => {
