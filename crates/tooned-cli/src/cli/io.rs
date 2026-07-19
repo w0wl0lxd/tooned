@@ -4,6 +4,7 @@
 //! subcommands. `-` conventionally means stdin/stdout throughout the CLI
 //! contract (`contracts/cli.md`).
 
+use std::borrow::Cow;
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -303,4 +304,42 @@ pub fn read_bounded(
         }
     }
     Ok(BoundedRead::Streamed { total_bytes })
+}
+
+/// Low-allocation adaptive conversion helper used by the `convert`, `pipe`,
+/// and `wrap` hot paths. The caller supplies `out` as a reusable scratch
+/// buffer; the returned `Cow` borrows `out` on a successful TOON conversion
+/// and borrows `bytes` on passthrough or error.
+#[allow(clippy::manual_unwrap_or)]
+pub(crate) fn maybe_tooned_output<'a>(
+    bytes: &'a [u8],
+    opts: &tooned_core::ConversionOptions,
+    out: &'a mut String,
+) -> (Cow<'a, [u8]>, i64, i64, bool) {
+    let to_i64_or_max = |n: usize| match i64::try_from(n) {
+        Ok(v) => v,
+        Err(_) => i64::MAX,
+    };
+
+    let input_len = to_i64_or_max(bytes.len());
+    let (output, output_len, converted) = match tooned_core::maybe_tooned_in(bytes, opts, out) {
+        Ok(tooned_core::Conversion::Toon { text, .. }) => match text {
+            Cow::Borrowed(text) => {
+                (Cow::Borrowed(text.as_bytes()), to_i64_or_max(text.len()), true)
+            }
+            Cow::Owned(text) => {
+                let output_len = to_i64_or_max(text.len());
+                (Cow::Owned(text.into_bytes()), output_len, true)
+            }
+        },
+        Ok(tooned_core::Conversion::Passthrough { bytes, .. }) => match bytes {
+            Cow::Borrowed(bytes) => (Cow::Borrowed(bytes), to_i64_or_max(bytes.len()), false),
+            Cow::Owned(bytes) => {
+                let output_len = to_i64_or_max(bytes.len());
+                (Cow::Owned(bytes), output_len, false)
+            }
+        },
+        Err(_) => (Cow::Borrowed(bytes), input_len, false),
+    };
+    (output, input_len, output_len, converted)
 }
