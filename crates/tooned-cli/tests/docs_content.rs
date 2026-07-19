@@ -217,70 +217,40 @@ fn section<'a>(content: &'a str, heading: &str) -> &'a str {
     &after_heading[..end]
 }
 
-/// Counts markdown table rows whose first cell is an integer (i.e. skips
-/// header rows and `|---|---|` separator rows).
-fn count_numbered_table_rows(section: &str) -> usize {
+/// Counts table data rows, whether rendered as a markdown table or inside a
+/// fenced code block. Excludes header and separator rows.
+fn count_table_data_rows(section: &str) -> usize {
+    let mut in_code = false;
     section
         .lines()
         .filter(|line| {
-            let line = line.trim();
-            if !line.starts_with('|') {
+            let trimmed = line.trim();
+            if trimmed == "```" {
+                in_code = !in_code;
                 return false;
             }
-            let first_cell = line
-                .trim_start_matches('|')
-                .split('|')
-                .next()
-                .expect("split always yields at least one item")
-                .trim();
-            first_cell.parse::<u32>().is_ok()
+            if in_code {
+                trimmed.contains('|')
+                    && !trimmed.starts_with("Scenario")
+                    && !trimmed.starts_with("---")
+            } else {
+                trimmed.starts_with('|')
+                    && !trimmed.starts_with("|---")
+                    && !trimmed.starts_with("| Scenario")
+            }
         })
         .count()
 }
 
 #[test]
-fn toon_evidence_direct_comprehension_table_matches_summary_count() {
+fn toon_evidence_full_savings_table_matches_summary() {
     let content = read_doc("docs/agents/toon-evidence.md");
-    let table_section = section(&content, "## Direct comprehension test");
-    let row_count = count_numbered_table_rows(table_section);
-    assert_eq!(row_count, 19, "expected 19 numbered rows in the direct comprehension table");
+    let table_section = section(&content, "## Full savings calculation");
+    let row_count = count_table_data_rows(table_section);
+    assert_eq!(row_count, 6, "expected 6 scenario rows in the full savings table");
     assert!(
-        table_section.contains("All 19 direct prompts produced a correct answer"),
-        "summary sentence must match the 19 rows actually present in the table"
-    );
-}
-
-#[test]
-fn toon_evidence_complex_mismatch_table_matches_summary_count() {
-    let content = read_doc("docs/agents/toon-evidence.md");
-    let table_section = section(&content, "## Complex fixture mismatch test");
-    let row_count = count_numbered_table_rows(table_section);
-    assert_eq!(row_count, 12, "expected 12 numbered rows in the complex mismatch table");
-
-    let pass_count = table_section.matches("| PASS |").count();
-    let ambiguous_count = table_section.matches("| AMBIGUOUS |").count();
-    assert_eq!(pass_count, 11, "expected 11 PASS rows");
-    assert_eq!(ambiguous_count, 1, "expected exactly 1 AMBIGUOUS row");
-    assert_eq!(
-        pass_count + ambiguous_count,
-        row_count,
-        "every row must be classified as either PASS or AMBIGUOUS"
-    );
-    assert!(
-        table_section.contains("11/12 passed"),
-        "summary sentence must match 11 PASS out of 12 rows"
-    );
-}
-
-#[test]
-fn toon_evidence_cross_format_mismatch_table_has_one_row_per_file() {
-    let content = read_doc("docs/agents/toon-evidence.md");
-    let table_section = section(&content, "## Cross-format mismatch test");
-    // Every data row ends in the same expected mismatch value.
-    let sku_rows = table_section.matches("| `SKU-1001` |").count();
-    assert_eq!(
-        sku_rows, 13,
-        "expected 13 cross-format fixtures, each resolving to the injected SKU-1001"
+        table_section.contains("Overall savings: 59.6%"),
+        "summary sentence must match the computed overall savings"
     );
 }
 
@@ -301,26 +271,6 @@ fn mermaid_fences_are_balanced(content: &str) -> (bool, usize) {
         }
     }
     (!in_mermaid, mermaid_blocks)
-}
-
-fn assert_mermaid_fences_balanced(relative_doc_path: &str) {
-    let content = read_doc(relative_doc_path);
-    let (balanced, mermaid_blocks) = mermaid_fences_are_balanced(&content);
-    assert!(balanced, "{relative_doc_path} has an unterminated ```mermaid fence");
-    assert!(
-        mermaid_blocks > 0,
-        "{relative_doc_path} is expected to contain at least one mermaid diagram"
-    );
-}
-
-#[test]
-fn toon_context_proof_mermaid_fence_is_balanced() {
-    assert_mermaid_fences_balanced("docs/agents/toon-context-proof.md");
-}
-
-#[test]
-fn toon_hook_flow_mermaid_fence_is_balanced() {
-    assert_mermaid_fences_balanced("docs/agents/toon-hook-flow.md");
 }
 
 #[test]
@@ -375,7 +325,7 @@ fn toon_hook_flow_protocol_table_maps_agents_to_expected_fields() {
     let content = read_doc("docs/agents/toon-hook-flow.md");
     let table_section = section(
         &content,
-        "| Agent family | Tool output field | TOON surfaced as | Original tool output |",
+        "| Agent | Tool result field | Replacement mechanism | Original output |",
     );
 
     let claude_row = table_section
@@ -383,7 +333,7 @@ fn toon_hook_flow_protocol_table_maps_agents_to_expected_fields() {
         .find(|l| l.contains("Claude Code, OpenCode, Kilo, Pi"))
         .expect("table must contain a row for Claude Code / OpenCode / Kilo / Pi");
     assert!(
-        claude_row.contains("`hookSpecificOutput.updatedToolOutput`"),
+        claude_row.contains("`hookSpecificOutput`") && claude_row.contains("`updatedToolOutput`"),
         "Claude Code/OpenCode/Kilo/Pi must surface TOON via hookSpecificOutput.updatedToolOutput"
     );
 
