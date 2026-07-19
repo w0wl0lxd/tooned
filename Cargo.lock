@@ -3324,8 +3324,6 @@ dependencies = [
 [[package]]
 name = "toon-lsp"
 version = "0.7.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e1e4f0f854f26bff8ade8b1439a4cbec0d0747678cefaea65f9d0e24d0d52fe"
 dependencies = [
  "anyhow",
  "bitflags 2.13.1",
@@ -3386,6 +3384,7 @@ name = "tooned-convert"
 version = "0.1.1"
 dependencies = [
  "cbor4ii",
+ "heapster",
  "json5",
  "rmp-serde",
  "serde_json",
@@ -3408,6 +3407,7 @@ version = "0.1.1"
 dependencies = [
  "criterion",
  "csv",
+ "heapster",
  "proptest",
  "serde_json",
  "serde_yaml",
