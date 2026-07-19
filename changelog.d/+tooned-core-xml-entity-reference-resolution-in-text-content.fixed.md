@@ -1,0 +1,1 @@
+**tooned-core:** XML entity reference resolution in text content: character references (`&#65;`, `&#x41;`) and predefined entities (`&lt;`, `&amp;`, `&gt;`, `&apos;`, `&quot;`) are now resolved to their Unicode equivalents; unknown custom entities remain literal `&name;`.

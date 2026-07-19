@@ -1,0 +1,1 @@
+**tooned-index:** `tooned index sync` no longer prunes rows for files that are still present on disk but were briefly unreadable: unreadable walk entries, entries with no resolvable file type, non-UTF-8 paths, tooned's own internal files, and transient metadata failures are all recorded as `seen` rather than treated as deleted, so the prune pass keeps their rows intact.

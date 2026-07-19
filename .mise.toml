@@ -7,6 +7,7 @@
 # contributors use).
 
 [tools]
+uv = "0.11.26"
 # cargo-subcommand tools via mise's `cargo` backend (`cargo install` under the
 # hood, cached in mise's shared installs dir instead of per-project target/).
 "cargo:cargo-nextest" = "latest"
@@ -16,3 +17,28 @@
 [settings]
 # Needed for the `cargo:` backend above.
 experimental = true
+
+[tasks.changelog-check]
+description = "Check that a changelog fragment is present"
+run = "./tools/check-changelog.sh"
+
+[tasks.changelog-preview]
+description = "Preview the unreleased changelog"
+run = "if command -v towncrier >/dev/null 2>&1; then towncrier build --draft --version 0.0.0; else uvx --from towncrier towncrier build --draft --version 0.0.0; fi"
+
+[tasks.changelog-build]
+description = "Build the changelog for a release"
+usage = '''
+arg "<version>" {
+  help "Version to release (e.g. 0.5.0)"
+}
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if command -v towncrier >/dev/null 2>&1; then
+  towncrier build --yes --version "{{ usage.version }}"
+else
+  uvx --from towncrier towncrier build --yes --version "{{ usage.version }}"
+fi
+'''

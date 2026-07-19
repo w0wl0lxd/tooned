@@ -1,0 +1,1 @@
+Monorepo build tooling: `.config/rail.toml` for `cargo-rail` (workspace plan/run/unify/release orchestration) and a `justfile` with `fmt`, `check`, `clippy`, `test`, `doc`, `build`, and `validate` recipes. Workspace dependencies are now centrally declared and inherited via `workspace = true`, with `cargo-rail unify` keeping the graph consistent across targets.

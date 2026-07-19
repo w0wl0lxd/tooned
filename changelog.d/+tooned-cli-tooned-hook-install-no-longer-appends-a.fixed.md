@@ -1,0 +1,1 @@
+**tooned-cli:** `tooned hook install` no longer appends a duplicate `PostToolUse` entry when `tooned` later moves on `PATH` (e.g. after a reinstall to a new binary location). The merge now also collapses an existing entry by its tooned-owned command *suffix* (path-independent), so a prior entry with a different absolute prefix is deduplicated instead of duplicated.
