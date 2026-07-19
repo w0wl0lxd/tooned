@@ -2,6 +2,9 @@
 
 //! TOON encode/decode wrapper.
 
+pub mod dict;
+pub use dict::{apply_dict, expand_legend};
+
 use serde_json::Value;
 use tooned_parse::exceeds_max_structural_depth;
 use tooned_types::{ConversionOptions, ToonedError};
