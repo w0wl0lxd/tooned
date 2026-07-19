@@ -19,7 +19,7 @@ use tooned_toon::decode_toon_with_options;
 use crate::cli::FormatHint;
 use crate::cli::io::{
     BoundedRead, atomic_rename, open_input, open_output_temp, read_bounded, read_input,
-    write_atomic, write_output,
+    resolve_input_path, write_atomic, write_output,
 };
 
 /// Compute model-aware token savings for the convert metrics path (F1/F2).
@@ -56,7 +56,7 @@ pub enum Direction {
     Tron,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ConvertArgs {
     /// Input file, or `-` for stdin.
@@ -148,6 +148,10 @@ fn flag_value(yes: bool, no: bool) -> Option<bool> {
 // `std::process::exit` below rather than through the `Err` path.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
+    let mut args = args.clone();
+    args.input = resolve_input_path(&args.input)?;
+    let args = args;
+
     let config = crate::config::Config::load(args.config.as_deref())?;
     let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
         args.input
@@ -287,7 +291,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 
             if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON
-                let result = run_tron_streaming(args, &opts);
+                let result = run_tron_streaming(&args, &opts);
                 if let Err(err) = result {
                     eprintln!("tooned convert: failed to stream TRON: {err}");
                     std::process::exit(2);
@@ -358,7 +362,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             );
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
-            run_adaptive_bounded(args, &opts)?;
+            run_adaptive_bounded(&args, &opts)?;
         }
         None => {
             let opts = config.conversion_options(
@@ -388,13 +392,13 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 
             if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON with adaptive size check
-                let result = run_adaptive_streaming(args, &opts);
+                let result = run_adaptive_streaming(&args, &opts);
                 if let Err(err) = result {
                     eprintln!("tooned convert: failed to stream adaptive conversion: {err}");
                     std::process::exit(2);
                 }
             } else {
-                run_adaptive_bounded(args, &opts)?;
+                run_adaptive_bounded(&args, &opts)?;
             }
         }
     }
@@ -704,7 +708,8 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
     output
 }
 
-/// Returns the size of the input in bytes, or 0 for stdin (unknown size).
+/// Returns the size of the input in bytes, or 0 for stdin (unknown size) or
+/// an unreadable path.
 fn get_input_size(input: &Path) -> u64 {
     if input == Path::new("-") {
         return 0;

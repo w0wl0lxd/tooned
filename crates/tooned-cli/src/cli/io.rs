@@ -7,6 +7,58 @@
 use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
+/// Resolves `path` to an existing filesystem entry, falling back to a
+/// case-insensitive match in the same directory when the literal path does not
+/// exist. This mirrors the behavior of other case-preserving but
+/// case-insensitive tools (e.g. `cargo` accepting `cargo.toml` on some
+/// filesystems) without requiring the underlying filesystem to be
+/// case-insensitive.
+///
+/// Returns the original path when `path == "-"`, when the path already exists,
+/// or when no case-insensitive match can be found, so callers still produce
+/// the standard "not found" error for genuinely missing inputs.
+pub(crate) fn resolve_input_path(path: &Path) -> io::Result<PathBuf> {
+    if path == Path::new("-") || path.exists() {
+        return Ok(path.to_path_buf());
+    }
+
+    let Some(file_name) = path.file_name() else {
+        return Ok(path.to_path_buf());
+    };
+    let target = file_name.to_string_lossy().to_lowercase();
+
+    let parent =
+        path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+
+    let mut candidates = Vec::new();
+    for entry in std::fs::read_dir(parent)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().to_lowercase() == target {
+            candidates.push(entry.path());
+        }
+    }
+
+    match candidates.as_slice() {
+        [] => Ok(path.to_path_buf()),
+        [single] => {
+            eprintln!(
+                "tooned: resolved '{}' -> '{}' (case-insensitive)",
+                path.display(),
+                single.display()
+            );
+            Ok(single.clone())
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "case-insensitive match for '{}' is ambiguous: {}",
+                path.display(),
+                candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+            ),
+        )),
+    }
+}
+
 /// Reads all of `path`'s bytes, or all of stdin when `path == "-"`. A
 /// read-only operation in both cases -- never opens `path` for writing, so
 /// it can never mutate a source file (FR-005).
@@ -22,7 +74,8 @@ pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
         io::stdin().read_to_end(&mut buf)?;
         return Ok(buf);
     }
-    std::fs::read(path)
+    let path = resolve_input_path(path)?;
+    std::fs::read(&path)
 }
 
 /// Reads `path`'s bytes (or stdin when `path == "-"`), refusing to materialize
@@ -34,11 +87,14 @@ pub fn read_input(path: &Path) -> io::Result<Vec<u8>> {
 /// converted, so there is no reason to buffer the whole file first. Returns an
 /// error if the input exceeds `cap`.
 pub fn read_input_bounded(path: &Path, cap: usize) -> io::Result<Vec<u8>> {
+    let resolved =
+        if path == Path::new("-") { path.to_path_buf() } else { resolve_input_path(path)? };
+
     // For regular files we can short-circuit on the metadata size, but for
     // stdin, FIFOs, device files, and files that may grow between the stat
     // and the read, we still enforce the cap while reading.
-    if path != Path::new("-") {
-        let meta = std::fs::metadata(path)?;
+    if resolved != Path::new("-") {
+        let meta = std::fs::metadata(&resolved)?;
         if meta.is_file() && meta.len() > cap as u64 {
             return Err(io::Error::new(
                 io::ErrorKind::OutOfMemory,
@@ -46,7 +102,7 @@ pub fn read_input_bounded(path: &Path, cap: usize) -> io::Result<Vec<u8>> {
             ));
         }
     }
-    let reader = open_input(path)?;
+    let reader = open_input(&resolved)?;
     let mut buf = Vec::new();
     reader.take((cap as u64).saturating_add(1)).read_to_end(&mut buf)?;
     if buf.len() > cap {
@@ -181,10 +237,11 @@ pub fn atomic_rename(tmp_path: &Path, target: &Path) -> io::Result<()> {
 
 /// Opens `path` for reading, or stdin when `path == "-"`.
 pub fn open_input(path: &Path) -> io::Result<Box<dyn io::Read>> {
-    if path == Path::new("-") {
+    let resolved = resolve_input_path(path)?;
+    if resolved == Path::new("-") {
         Ok(Box::new(io::stdin()))
     } else {
-        Ok(Box::new(std::fs::File::open(path)?))
+        Ok(Box::new(std::fs::File::open(resolved)?))
     }
 }
 
