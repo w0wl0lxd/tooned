@@ -407,9 +407,10 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 }
 
 /// Returns `true` when the requested output destination is the same file as
-/// the input, including via symlinks, hardlinks, or different relative paths
-/// that resolve to the same inode. Stdin/stdout (`-`) is never considered the
-/// same file.
+/// the input, including via symlinks, hardlinks, different relative paths that
+/// resolve to the same inode, or paths that differ only in casing (so
+/// `tooned convert cargo.toml --out cargo.toml` writes back to `Cargo.toml`).
+/// Stdin/stdout (`-`) is never considered the same file.
 fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     let Some(out) = out else { return false };
     if input == Path::new("-") || out == Path::new("-") {
@@ -422,9 +423,20 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
         return true;
     }
     match (std::fs::canonicalize(input), std::fs::canonicalize(out)) {
-        (Ok(cin), Ok(cout)) => cin == cout,
-        _ => false,
+        (Ok(cin), Ok(cout)) if cin == cout => return true,
+        _ => {}
     }
+
+    // Fallback for a non-existent `--out` path that differs only by case from
+    // the resolved input path (e.g. `cargo.toml` vs `Cargo.toml`).
+    let normalize = |p: &Path| {
+        let stripped = match p.strip_prefix("./") {
+            Ok(s) => s,
+            Err(_) => p,
+        };
+        stripped.to_string_lossy().to_lowercase()
+    };
+    normalize(input) == normalize(out)
 }
 
 /// Adaptive conversion when `--out` points at the same file as `input`.

@@ -129,7 +129,14 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
         Some(p) => p.clone(),
         None => PathBuf::from("."),
     };
-    tooned_core::project_root(&start)
+    let (root, is_fallback) = tooned_core::project_root_with_fallback(&start);
+    if is_fallback {
+        eprintln!(
+            "tooned index: no project marker (.tooned/ or flake.nix) found; using {} as project root",
+            root.display()
+        );
+    }
+    root
 }
 
 #[derive(Serialize)]

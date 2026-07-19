@@ -41,12 +41,13 @@ pub(crate) fn resolve_input_path(path: &Path) -> io::Result<PathBuf> {
     match candidates.as_slice() {
         [] => Ok(path.to_path_buf()),
         [single] => {
+            let single = single.strip_prefix("./").map_or_else(|_| single.clone(), PathBuf::from);
             eprintln!(
                 "tooned: resolved '{}' -> '{}' (case-insensitive)",
                 path.display(),
                 single.display()
             );
-            Ok(single.clone())
+            Ok(single)
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,

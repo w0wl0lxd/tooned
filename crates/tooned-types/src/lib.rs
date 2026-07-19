@@ -3,6 +3,7 @@
 //! Shared public types for the tooned workspace.
 
 use std::borrow::Cow;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -218,6 +219,23 @@ pub enum PassthroughReason {
     /// did not reproduce the original value (FR-008); never surfaced as
     /// `Toon`.
     RoundTripMismatch,
+}
+
+impl fmt::Display for PassthroughReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotStructuredData => write!(f, "not structured data"),
+            Self::ParseFailed => write!(f, "parse failed"),
+            Self::InputTooLarge => write!(f, "input too large"),
+            Self::NotSmallerEnough { json_bytes, toon_bytes } => write!(
+                f,
+                "TOON not smaller enough by the configured margin (json {json_bytes} bytes, toon {toon_bytes} bytes)"
+            ),
+            Self::RoundTripMismatch => {
+                write!(f, "TOON round-trip did not reproduce the original value")
+            }
+        }
+    }
 }
 
 /// Reserved for genuine caller misuse or explicit decode failures -- never

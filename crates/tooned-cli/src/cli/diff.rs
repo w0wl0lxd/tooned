@@ -13,6 +13,8 @@ use clap::Args;
 use serde::Serialize;
 use similar::TextDiff;
 
+use crate::cli::io::resolve_input_path;
+
 #[derive(Debug, Args)]
 pub struct DiffArgs {
     /// Input file to compare against its TOON round-trip.
@@ -37,7 +39,8 @@ struct DiffResult {
 }
 
 pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
-    let bytes = std::fs::read(&args.file)?;
+    let file = resolve_input_path(&args.file)?;
+    let bytes = std::fs::read(&file)?;
 
     let opts = tooned_core::ConversionOptions::default();
     let toon_text = match tooned_core::maybe_tooned(&bytes, &opts) {
@@ -49,11 +52,11 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
                     sonic_rs::to_string(&DiffResult {
                         equal: false,
                         diff: None,
-                        error: Some(format!("input was not converted: {reason:?}")),
+                        error: Some(format!("input was not converted: {reason}")),
                     })?
                 );
             } else {
-                eprintln!("tooned diff: input was not converted: {reason:?}");
+                eprintln!("tooned diff: input was not converted: {reason}");
             }
             std::process::exit(2);
         }
@@ -89,7 +92,7 @@ pub fn run(args: &DiffArgs) -> anyhow::Result<()> {
     let diff_text = diff
         .unified_diff()
         .context_radius(args.context)
-        .header(&args.file.display().to_string(), "toon-roundtrip")
+        .header(&file.display().to_string(), "toon-roundtrip")
         .to_string();
 
     if args.json {

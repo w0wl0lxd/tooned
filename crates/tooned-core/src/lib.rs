@@ -52,17 +52,23 @@ use std::path::{Path, PathBuf};
 /// itself when no ancestor qualifies (so callers can still operate on a cwd
 /// that has not been indexed yet).
 pub fn project_root(start: &Path) -> PathBuf {
+    project_root_with_fallback(start).0
+}
+
+/// Like [`project_root`], but also returns `true` when no project marker was
+/// found and `start` itself is being used as the fallback root.
+pub fn project_root_with_fallback(start: &Path) -> (PathBuf, bool) {
     let mut dir = start;
     loop {
         if dir.join(".tooned").is_dir() {
-            return dir.to_path_buf();
+            return (dir.to_path_buf(), false);
         }
         if dir.join("flake.nix").is_file() {
-            return dir.to_path_buf();
+            return (dir.to_path_buf(), false);
         }
         match dir.parent() {
             Some(parent) => dir = parent,
-            None => return start.to_path_buf(),
+            None => return (start.to_path_buf(), true),
         }
     }
 }
