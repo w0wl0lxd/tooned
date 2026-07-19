@@ -90,6 +90,19 @@ fn marker(agent: &PluginAgent) -> &str {
     }
 }
 
+/// A strong, tooned-specific fingerprint that only the generated plugin files
+/// contain (the generated TypeScript always declares a `TOONED_BIN` constant
+/// and invokes `tooned hook run`). The bare [`marker`] substring (`--kilo`,
+/// `--opencode`, `--pi`) is far too common to trust on its own: a user's
+/// unrelated plugin at the same fixed path that merely mentions a CLI flag
+/// would otherwise be deleted by `uninstall`. Requiring this fingerprint means
+/// `uninstall`/`status` only act on files tooned actually generated
+/// (finding: plugin uninstall could delete an unrelated user file on a
+/// substring match).
+fn tooned_fingerprint(agent: &PluginAgent) -> String {
+    format!("TOONED_BIN{}hook run {}", " = ", marker(agent))
+}
+
 /// Verifies `tooned` resolves on `PATH` and writes the generated plugin file.
 pub(crate) fn install(agent: &PluginAgent, scope: Option<Scope>) -> Result<(), InstallError> {
     let Some(binary) = super::resolve_tooned_on_path() else {
