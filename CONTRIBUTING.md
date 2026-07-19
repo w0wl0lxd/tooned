@@ -47,17 +47,36 @@ Please open an issue or discussion before working on:
 - **Breaking changes**: Need to coordinate with release planning
 - **Large refactors**: Discuss approach before investing time
 
+### Changelog fragments
+
+Every PR that changes user-visible behavior must add a fragment to
+`changelog.d/` following the `towncrier` convention documented in
+`changelog.d/README.md`. The pre-commit hook enforces this via
+`tools/check-changelog.sh`. Install the changelog tool with:
+
+```bash
+uv tool install towncrier
+```
+
+Preview the rendered changelog with `just changelog-preview` or `towncrier
+build --draft`. To cut a release, run `just changelog-build X.Y.Z`.
+
+To bypass the check for a non-user-facing change (e.g., a typo fix in an
+internal comment), set `CHANGELOG_SKIP=1` when committing.
+
 ### Code Style
 
 - Run `cargo fmt` before committing
 - Run `cargo clippy --all-features -- -D warnings` to check for lints
+- Add `changelog.d/<name>.<type>.md` fragments for user-facing changes
 - Add tests for new functionality
 - Update documentation as needed
 
 ### Local Git Hooks (optional)
 
-`.githooks/` ships a `pre-commit` (runs `cargo fmt` + `cargo clippy`) and a
-`commit-msg` (enforces the DCO trailer) hook. Enable them once per clone:
+`.githooks/` ships a `pre-commit` (runs `cargo fmt` + `cargo clippy` +
+`tools/check-changelog.sh`), and a `commit-msg` (enforces the DCO trailer)
+hook. Enable them once per clone:
 
 ```bash
 git config core.hooksPath .githooks

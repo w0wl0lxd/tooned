@@ -1,0 +1,1 @@
+**tooned-detect:** added `heapster` as a dev-dependency and a zero-allocation test guardrail for the `detect` sniffing hot path across JSON, NDJSON, YAML, TOML, CSV, TSV, unstructured, and empty inputs.

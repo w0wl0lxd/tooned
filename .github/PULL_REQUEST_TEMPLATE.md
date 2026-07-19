@@ -14,3 +14,4 @@
 - [ ] `cargo test --all-features` (or `cargo nextest run --all-features`) passes
 - [ ] New behavior has test coverage; bug fixes include a regression test
 - [ ] `cargo deny check` passes if dependencies changed
+- [ ] A `changelog.d/<name>.<type>.md` fragment is added for any user-facing change (or `CHANGELOG_SKIP=1` is set for non-user-facing changes)
