@@ -1,0 +1,1 @@
+Regression-tested dependency boundaries: no network-capable crate (e.g. `reqwest`, a `hyper` client) appears in any crate's dependency tree (v1 has zero telemetry/external calls), and `tooned-core` itself pulls in none of `rusqlite`/`ignore`/`walkdir` (constitution Principle III, dependency-minimal core).

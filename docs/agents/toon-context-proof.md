@@ -44,6 +44,7 @@ sequenceDiagram
 4. If TOON is smaller and round-trips, `tooned` prints a protocol-specific JSON object:
 
    - **Claude Code, OpenCode, Kilo, Pi:**
+
      ```json
      {
        "hookSpecificOutput": {
@@ -52,7 +53,9 @@ sequenceDiagram
        }
      }
      ```
+
    - **Codex:**
+
      ```json
      {
        "continue": false,
@@ -62,6 +65,7 @@ sequenceDiagram
        }
      }
      ```
+
      Codex treats `continue: false` + `reason` as PostToolUse feedback and surfaces the `reason` text as the model-visible tool result.
    - **Devin, Droid:** `tooned` prints nothing. These agents only support `additionalContext` in `PostToolUse`, which would keep the original JSON and append the TOON, inflating total token count. Use `tooned wrap -- <cmd>` or `... | tooned pipe` with those agents to deliver TOON-only output.
 

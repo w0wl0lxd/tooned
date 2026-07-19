@@ -1,0 +1,1 @@
+**tooned-cli:** added `index compact` (SQLite WAL checkpoint), `index watch` (`notify`-based debounced filesystem watcher with `--debounce-ms` and `watch.debounce_ms` config support), and `diff` (compare original JSON with TOON round-trip using `similar`).

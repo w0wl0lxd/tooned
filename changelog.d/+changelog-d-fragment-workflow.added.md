@@ -1,0 +1,1 @@
+Adopt `towncrier`-style `changelog.d/` fragments for the changelog. Added `towncrier.toml`, `changelog.d/README.md`, `tools/check-changelog.sh`, `justfile` recipes, mise tasks, CI enforcement, and pre-commit integration. Migrated the existing `CHANGELOG.md` `## [Unreleased]` entries into fragments and removed dead `work-log` references.
