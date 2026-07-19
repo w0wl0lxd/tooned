@@ -170,6 +170,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **tooned-core:** fixed masked/dropped errors in conversion, indexing, and
+  metrics, and hardened public enums with `#[non_exhaustive]`. Streaming TRON
+  conversions now verify the entire JSON/NDJSON input was consumed before
+  accepting it and report the stream's consumed `input_bytes` as the
+  authoritative byte count; CSV/TSV still fall back to `input.len()` because
+  `csv::Reader` cannot expose consumed bytes. `maybe_onto` preserves
+  `std::io::Error` instead of remapping it into `DecodeFailed`; gitignore
+  filter compilation (including `watch` and the `scan`/`sync` exclude filter)
+  now propagates `ignore::Error`; the `watch`/`index run` pipeline threads
+  the `filter` argument through; SQLite `journal_mode` uses `pragma_update` and
+  `busy_timeout` uses the type-safe `Connection::busy_timeout` method so
+  errors are not swallowed; metrics database file and parent-directory
+  permission setting now propagates `std::io::Error` instead of silently
+  ignoring `set_permissions` failures. `DocType`, `ShapeClass`,
+  `TokenizerProfile`, `PassthroughReason`, `ParseError`, `IndexError`, and
+  `MetricsError` are now `#[non_exhaustive]`, with MCP DTOs gaining `Unknown`
+  fallback variants.
+
 - **tooned-core:** removed the redundant JSON-style structural-depth preflight
   from XML parsing; `quick-xml`'s own recursion limits and new adversarial
   tests now guard malformed input. ([work-log](docs/agents/work-log/2026-07-16-003-post-review-optimizations.md))

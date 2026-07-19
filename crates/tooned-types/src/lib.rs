@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Supported source document types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum DocType {
     Json,
     NdJson,
@@ -38,6 +39,7 @@ pub enum DocType {
 /// *profile* a payload is measured against materially changes the reported
 /// savings. (F1/F2.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum TokenizerProfile {
     /// The default 4-bytes/token rule of thumb (no BPE table).
     Heuristic,
@@ -197,6 +199,7 @@ impl CriticalFieldPolicy {
 /// the internal decision path an equivalent `PassthroughReason` would have
 /// taken).
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
 pub enum PassthroughReason {
     /// `detect` could not sniff a supported doctype from the content, and no
     /// `format_hint` was given.
@@ -285,6 +288,7 @@ pub struct ConversionReport {
 /// NOT gate the conversion decision on its own; the byte-size comparison is
 /// the sole gate.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
 pub enum ShapeClass {
     UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
     Irregular,

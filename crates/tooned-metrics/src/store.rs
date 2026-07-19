@@ -7,7 +7,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -282,6 +282,7 @@ pub struct EventRow {
 
 /// Errors from the metrics store. Never fatal: recording callers swallow them.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MetricsError {
     #[error("i/o error: {0}")]
     Io(#[from] std::io::Error),
@@ -314,10 +315,10 @@ impl Store {
         let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
         if !existed {
             #[cfg(unix)]
-            set_mode(db_path, 0o600);
+            set_mode(db_path, 0o600)?;
         }
-        let _ = conn.execute("PRAGMA journal_mode=WAL", []);
-        let _ = conn.execute("PRAGMA busy_timeout=50", []);
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.busy_timeout(Duration::from_millis(50))?;
         let store = Store { conn };
         store.create_schema_if_needed()?;
         Ok(store)
@@ -355,11 +356,11 @@ impl Store {
                  CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);",
             )
             .map_err(MetricsError::Sqlite)?;
-        // Insert schema version separately - ignore ExecuteReturnedResults error
-        let _ = self.conn.execute(
+        // Insert schema version separately.
+        self.conn.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)",
             [SCHEMA_VERSION],
-        );
+        )?;
         Ok(())
     }
 
@@ -1115,19 +1116,18 @@ fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
         // on an existing directory that may be shared (e.g. /tmp or a system dir).
         #[cfg(unix)]
         if !parent_existed {
-            set_mode(parent, 0o700);
+            set_mode(parent, 0o700)?;
         }
     }
     Ok(())
 }
 
 #[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) {
+fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    if let Ok(mut perms) = std::fs::metadata(path).map(|m| m.permissions()) {
-        perms.set_mode(mode);
-        let _ = std::fs::set_permissions(path, perms);
-    }
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(mode);
+    std::fs::set_permissions(path, perms)
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,12 +1255,28 @@ mod tests {
     fn open_creates_and_counts() {
         let dir = tempdir().expect("tempdir");
         let db = dir.path().join("metrics.db");
+        // The refactor/error-and-enum-fixes change made the PRAGMA setup
+        // propagate errors instead of swallowing them; `open` must still
+        // succeed on a fresh on-disk DB and actually apply WAL + busy_timeout
+        // + the schema-version row (pinning the review's info finding that the
+        // previously-swallowed pragma errors are now surfaced).
         let store = Store::open(&db).expect("open");
         assert_eq!(store.count().expect("count"), 0);
         store
             .record(&sample("hook:claude", EventKind::Actual, 100, 40, Some("a.json")))
             .expect("record");
         assert_eq!(store.count().expect("count"), 1);
+
+        // Reopen a raw connection to the same file and verify the PRAGMAs that
+        // `Store::open` now applies via `pragma_update` / `busy_timeout`.
+        let conn = Connection::open(&db).expect("reopen");
+        let journal_mode: String =
+            conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).expect("journal_mode");
+        assert_eq!(journal_mode.to_uppercase(), "WAL");
+        let schema_version: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+            .ok();
+        assert_eq!(schema_version.as_deref(), Some("1"));
     }
 
     #[test]

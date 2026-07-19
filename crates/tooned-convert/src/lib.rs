@@ -13,7 +13,10 @@ use serde_json::{Map, Value};
 use std::io::Write;
 use tooned_detect::detect;
 use tooned_parse::ParseError;
-use tooned_toon::{apply_dict, decode_toon_with_options, encode_toon_raw_with_options};
+use tooned_toon::{
+    apply_dict, decode_toon_raw_with_options, decode_toon_with_options,
+    encode_toon_raw_with_options,
+};
 use tooned_types::{
     Conversion, ConversionOptions, ConversionReport, CriticalFieldPolicy, DocType, InspectReport,
     PassthroughReason, ShapeClass, ToonedError,
@@ -56,7 +59,7 @@ pub fn parse_to_value(input: &[u8], format_hint: Option<DocType>) -> Result<Valu
         DocType::Msgpack | DocType::Cbor | DocType::Json5 => Err(ParseError::Json(
             "tooned: binary/JSON5 doctypes are not supported by parse_to_value".into(),
         )),
-        _ => Err(ParseError::Json("tooned: unsupported doctype".into())),
+        _ => Err(ParseError::Json("tooned: unsupported doctype for parse_to_value".into())),
     }
 }
 
@@ -235,17 +238,15 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
     // Dict tier (#1): inline repeated cell values behind a legend. Only
     // engaged when it strictly shrinks the output (net-win gate inside
     // `apply_dict`), and never for keys matched by the critical-field policy
-    // (#3) so semantically-load-bearing columns stay verbatim. Avoid computing
-    // protected keys entirely when the dictionary tier is disabled.
-    let (encoded, protected_keys) = if opts.dict_enabled {
-        let protected_keys = extract_protected_keys(&value, &opts.critical_policy);
-        let encoded = match apply_dict(&encoded, &protected_keys) {
-            Some(dict_encoded) => dict_encoded,
-            None => encoded,
-        };
-        (encoded, protected_keys)
+    // (#3) so semantically-load-bearing columns stay verbatim.
+    let protected_keys = extract_protected_keys(&value, &opts.critical_policy);
+    let (encoded, has_legend) = if opts.dict_enabled {
+        match apply_dict(&encoded, &protected_keys) {
+            Some(dict_encoded) => (dict_encoded, true),
+            None => (encoded, false),
+        }
     } else {
-        (encoded, Vec::new())
+        (encoded, false)
     };
     let toon_bytes = encoded.len();
 
@@ -278,9 +279,22 @@ fn attempt(input: &[u8], opts: &ConversionOptions) -> Attempt {
         };
     }
 
-    let round_trip_ok = match decode_toon_with_options(&encoded, opts) {
-        Ok(decoded) => decoded == value,
-        Err(_) => false,
+    let round_trip_ok = if has_legend {
+        // A legend was introduced, so the standard decoder (which reverses
+        // the legend) must be used.
+        match decode_toon_with_options(&encoded, opts) {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        }
+    } else {
+        // No legend and the source depth was already validated during parse,
+        // so use the fast-path decode that skips the redundant legend-expansion
+        // copy and structural-depth re-scan (constitution Principle I still
+        // holds: a decode failure or mismatch fails safe to Passthrough).
+        match decode_toon_raw_with_options(&encoded, opts) {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        }
     };
 
     if !round_trip_ok {
