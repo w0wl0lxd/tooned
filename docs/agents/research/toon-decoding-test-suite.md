@@ -43,7 +43,7 @@ A response is marked **PASS** if it contains one of the expected strings (case-i
 | 18 | `complex/config_nested.yaml` | whether search feature is enabled | `false / not enabled / disabled` | yes (11.0%) |
 | 19 | `complex/sample_complex.json5` | name of first item | `alpha` | no |
 
-All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the tool result was replaced with TOON, so the model saw only TOON; for fixtures where `tooned` does not convert, the answer came from the original JSON.
+All 19 direct prompts produced a correct answer in the tested run. For fixtures where `tooned` converts, the tool result was replaced with TOON, so the model saw only TOON; for fixtures where `tooned` does not convert, the answer came from the original tool output.
 
 ## Mismatch decoding results
 

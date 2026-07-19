@@ -62,7 +62,7 @@ For CSV, TSV, and flat NDJSON fixtures such as `events_100.ndjson` and `events_a
 
 ## The mismatch test design issue
 
-The one ambiguous mismatch result was `complex/ecommerce_orders.json`. The mismatch hook always replaces the tool result with `products_20.json` TOON, but the original `ecommerce_orders.json` also contains `sku` fields. When the prompt asked for "the SKU of the first product", the model correctly answered from the original JSON (`SKU-1010`) instead of from the replacement TOON (`SKU-1001`). The fix is to ask for a field the original file does not contain, such as `name` (`Product 1`).
+The one ambiguous mismatch result was `complex/ecommerce_orders.json`. The mismatch hook always replaces the tool result with `products_20.json` TOON, but the original `ecommerce_orders.json` also contains `sku` fields. When the prompt asked for "the SKU of the first product", the model returned `SKU-1010` (the value present in the original JSON). Because the original file also contains `sku` fields, this result does not show the model read the replacement TOON; the fix is to ask for a field the original file does not contain, such as `name` (`Product 1`).
 
 The `matrix.json` mismatch result was previously marked as a failure because the test script expected `6.1` (the direct-comprehension expected value) rather than `SKU-1001`. The model's actual response was `SKU-1001`, which is correct for the mismatch prompt.
 

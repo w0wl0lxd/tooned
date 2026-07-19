@@ -39,7 +39,7 @@ Recent arXiv work supports this, with stated limits:
 3. Prompt: `read users_20.json and tell me the SKU of the first product`.
 4. Model answers: `The SKU of the first product is SKU-1001`.
 
-Because `users_20.json` has no `sku`, the answer can only have come from the TOON tool result. The model parsed the header and first row and returned the `sku` value.
+Because `users_20.json` has no `sku` field, the answer strongly supports that it came from the TOON tool result. This is consistent with the model parsing the TOON header and first row and returning the `sku` value.
 
 ## Cross-format mismatch test
 

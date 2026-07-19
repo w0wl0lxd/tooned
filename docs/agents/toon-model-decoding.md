@@ -31,7 +31,7 @@ TOON was deliberately designed to be human-readable and structurally explicit. T
 3. Prompt: `read the file users_20.json and tell me the SKU of the first product`.
 4. Model answered: `The SKU of the first product is SKU-1001.`
 
-Because `users_20.json` contains no `sku` field, the answer can only have come from the TOON tool result. The model parsed the TOON header and first row and returned the `sku` value.
+Because `users_20.json` contains no `sku` field, the answer strongly supports that it came from the TOON tool result. This is consistent with the model parsing the TOON header and first row and returning the `sku` value.
 
 ## Observed transcript
 
