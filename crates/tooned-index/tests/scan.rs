@@ -106,6 +106,7 @@ fn scan_with_exclude_skips_matching_files() {
     let filter = tooned_index::IndexFilter {
         type_filter: None,
         excludes: vec!["excluded.json".to_string()],
+        respect_gitignore: true,
     };
     let summary = tooned_index::scan_full(dir.path(), &filter).expect("scan_full");
 
@@ -126,6 +127,7 @@ fn scan_with_type_filter_skips_non_matching_types() {
     let filter = tooned_index::IndexFilter {
         type_filter: Some(tooned_index::DocTypeFilter::Json),
         excludes: vec![],
+        respect_gitignore: true,
     };
     let summary = tooned_index::scan_full(dir.path(), &filter).expect("scan_full");
 

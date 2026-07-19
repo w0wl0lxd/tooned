@@ -81,7 +81,7 @@ pub fn scan_full(project_root: &Path, filter: &IndexFilter) -> Result<ScanSummar
     // (which would index files the user explicitly asked to skip).
     let exclude_gitignore = filter.compile_excludes(project_root)?;
 
-    let walker = build_walker(project_root);
+    let walker = build_walker(project_root, filter.respect_gitignore);
 
     let mut visited: usize = 0;
     for entry in walker {
@@ -174,8 +174,15 @@ pub fn scan_full(project_root: &Path, filter: &IndexFilter) -> Result<ScanSummar
 /// only apply `.gitignore` rules within a detected git repo) -- a
 /// scanned project need not have run `git init` yet for its `.gitignore`
 /// to still express the developer's intended ignore rules.
-pub(crate) fn build_walker(root: &Path) -> ignore::Walk {
-    ignore::WalkBuilder::new(root).require_git(false).build()
+pub(crate) fn build_walker(root: &Path, respect_gitignore: bool) -> ignore::Walk {
+    ignore::WalkBuilder::new(root)
+        .require_git(false)
+        .hidden(true)
+        .ignore(respect_gitignore)
+        .git_ignore(respect_gitignore)
+        .git_global(respect_gitignore)
+        .git_exclude(respect_gitignore)
+        .build()
 }
 
 /// Defense-in-depth check (on top of `ignore`'s default hidden-entry
