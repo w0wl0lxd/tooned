@@ -3370,6 +3370,7 @@ dependencies = [
  "tokio",
  "toml",
  "tooned-core",
+ "tooned-detect",
  "tooned-index",
  "tooned-metrics",
  "tooned-token",
@@ -3512,6 +3513,7 @@ dependencies = [
 name = "tooned-toon"
 version = "0.1.1"
 dependencies = [
+ "criterion",
  "serde_json",
  "toon-lsp",
  "tooned-parse",

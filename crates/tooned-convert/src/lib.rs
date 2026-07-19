@@ -365,6 +365,10 @@ pub(crate) fn compute_savings_pct(json_bytes: usize, toon_bytes: usize) -> f64 {
 /// critical-field policy (#3) protects from TOON's dict-tier inlining, so
 /// semantically-load-bearing fields always decode verbatim.
 fn extract_protected_keys(value: &Value, policy: &CriticalFieldPolicy) -> Vec<String> {
+    if policy.protected.is_empty() {
+        return Vec::new();
+    }
+
     let mut keys = Vec::new();
     match value {
         Value::Object(map) => {

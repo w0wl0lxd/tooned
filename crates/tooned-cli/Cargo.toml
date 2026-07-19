@@ -50,6 +50,7 @@ criterion = { workspace = true } #unified
 predicates = "3"
 proptest = { workspace = true }  #unified
 tempfile = { workspace = true }  #unified
+tooned-detect = { workspace = true }  #unified
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"
