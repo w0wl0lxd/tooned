@@ -92,7 +92,7 @@ fn toon_from_value_is_zero_allocation_on_cross_format_representative_inputs() {
         ),
         (
             "xml",
-            tooned_xml::parse(b"<?xml version=\"1.0\"?><catalog version=\"1.0\"><book id=\"bk101\">XML Dev</book><book id=\"bk102\">Midnight Rain</book></catalog>").unwrap(),
+            tooned_core::xml::parse(b"<?xml version=\"1.0\"?><catalog version=\"1.0\"><book id=\"bk101\">XML Dev</book><book id=\"bk102\">Midnight Rain</book></catalog>").unwrap(),
         ),
     ];
 
