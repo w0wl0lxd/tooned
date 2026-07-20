@@ -144,7 +144,7 @@ pub fn run(args: &CheckArgs) -> anyhow::Result<()> {
     }
     println!("convertible: {}", if report.would_convert { "yes" } else { "no" });
     if let Some(reason) = &report.reason {
-        println!("reason: {reason:?}");
+        println!("reason: {reason}");
     }
     if args.precise {
         match report.precise_savings_pct {

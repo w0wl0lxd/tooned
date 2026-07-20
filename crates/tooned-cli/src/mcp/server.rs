@@ -467,30 +467,20 @@ impl ToonedMcpServer {
                 Ok(v) => v,
                 Err(_) => i64::MAX,
             };
-            let result = match tooned_core::maybe_tooned(req.content.as_bytes(), &opts) {
-                Ok(Conversion::Toon { text, report }) => Json(ConvertResult {
-                    converted: true,
-                    text,
-                    report: Some(report.into()),
-                    reason: None,
-                }),
-                // `attempt()`/`maybe_tooned` already computed exactly why this
+            let mut toon_out = String::new();
+            let conversion =
+                tooned_core::maybe_tooned_in(req.content.as_bytes(), &opts, &mut toon_out);
+            let (converted, report, reason) = match conversion {
+                Ok(Conversion::Toon { report, .. }) => (true, Some(report.into()), None),
+                // `attempt()`/`maybe_tooned_in` already computed exactly why this
                 // declined to convert -- surfaced here rather than discarded.
-                Ok(Conversion::Passthrough { reason, .. }) => Json(ConvertResult {
-                    converted: false,
-                    text: req.content,
-                    report: None,
-                    reason: Some(reason.into()),
-                }),
+                Ok(Conversion::Passthrough { reason, .. }) => (false, None, Some(reason.into())),
                 // Infallible in practice; a genuine caller-misuse Err still
                 // falls back to the fail-safe passthrough shape.
-                Err(_) => Json(ConvertResult {
-                    converted: false,
-                    text: req.content,
-                    report: None,
-                    reason: None,
-                }),
+                Err(_) => (false, None, None),
             };
+            let text = if converted { std::mem::take(&mut toon_out) } else { req.content };
+            let result = Json(ConvertResult { converted, text, report, reason });
             {
                 let converted = result.0.converted;
                 #[allow(clippy::manual_unwrap_or)]
