@@ -4,7 +4,6 @@
 
 Transparent TOON re-encoding for AI agent tool output. `tooned` watches structured payloads (JSON, NDJSON, YAML, TOML, CSV, XML, MessagePack, CBOR, JSON5) moving through agent sessions. When TOON is smaller and round-trips exactly, it replaces the original bytes. Otherwise the original passes through unchanged.
 
-No source files are modified. No network calls are made. The conversion lives in one crate (`tooned-core`) and is called from the CLI, agent hooks, and MCP server.
 
 ## What it does
 
@@ -89,7 +88,7 @@ For every payload:
 3. Encode TOON and compact JSON; compare byte counts.
 4. Accept TOON only if it beats JSON by the configured margin (default 2%) and `decode(encode(x)) == x` exactly.
 
-If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through. No panic, no network.
+If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through.
 
 ## Project index
 
@@ -159,10 +158,6 @@ Stable Rust is the hard CI/release gate. `unwrap`/`expect`/`panic!`/`todo!` are 
 With [Nix](https://nixos.org) and [direnv](https://direnv.net): `direnv allow` sets up `mise`, `rustup`, `cargo-nextest`, `cargo-deny`, `cargo-audit`. `nix develop` works the same way. `rust-toolchain.toml` is the single source of truth; `flake.nix` and `.mise.toml` defer to it.
 
 Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (DCO sign-off, Conventional Commits).
-
-## Status
-
-v1 is not tagged yet. The conversion pipeline (`maybe_tooned`) is stable; the CLI surface, hook installers, and index schema are in active refinement. The evidence docs (`docs/agents/`) describe the mismatch test methodology; see [`toon-example.md`](docs/agents/toon-example.md) and [`toon-evidence.md`](docs/agents/toon-evidence.md). New validation should use agent CLI (`swe-1.7-max`, `glm-5.2` high) and avoid `additionalContext` (which was tainting earlier results by keeping original JSON in context).
 
 ## License
 
