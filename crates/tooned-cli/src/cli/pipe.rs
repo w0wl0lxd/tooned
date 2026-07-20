@@ -66,7 +66,7 @@ impl Drop for TempGuard<'_> {
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(
+    let mut opts = config.conversion_options(
         args.margin,
         args.max_bytes,
         args.format_hint,
@@ -78,6 +78,13 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         None,
         None,
     );
+    // `tooned pipe` is a streaming hot path; prefer the zero-allocation
+    // fast path by default. `TOONED_PIPE_ZERO_ALLOC=0` falls back to the
+    // full `maybe_tooned` pipeline (dictionary/entropy/critical-field tiers).
+    opts.zero_alloc = match std::env::var("TOONED_PIPE_ZERO_ALLOC") {
+        Ok(v) => v != "0",
+        Err(_) => true,
+    };
 
     let is_stdout = args.out.as_deref().is_none_or(|p| p == Path::new("-"));
     let mut stdin = std::io::stdin();

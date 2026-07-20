@@ -130,6 +130,13 @@ pub struct ConversionOptions {
     /// Decode: preserve the source int/float distinction (e.g. `1.0` stays a
     /// float). Default: true so numeric values round-trip losslessly.
     pub preserve_number_types: bool,
+    /// Zero-allocation fast path for `maybe_tooned_in`. When true, the
+    /// caller-supplied output buffer is reused and dictionary compression,
+    /// auto-margin widening, entropy-gate widening, and critical-field
+    /// protection are skipped. Default: false; set to true only when speed
+    /// and allocation-free operation matter more than the extra compression
+    /// those tiers provide.
+    pub zero_alloc: bool,
 }
 
 impl Default for ConversionOptions {
@@ -149,6 +156,7 @@ impl Default for ConversionOptions {
             flatten_keys: false,
             expand_paths: true,
             preserve_number_types: true,
+            zero_alloc: false,
         }
     }
 }

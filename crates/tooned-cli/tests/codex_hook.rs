@@ -60,8 +60,9 @@ fn convertible_tool_response_prints_hook_specific_output_and_exits_0() {
         .unwrap_or_else(|e| panic!("stdout must be valid JSON, got {stdout:?}: {e}"));
 
     // Codex replaces the model-visible tool result with the hook's `reason`
-    // when `continue` is false.
+    // when `continue` is false or `decision` is "block".
     assert_eq!(parsed.get("continue").and_then(serde_json::Value::as_bool), Some(false));
+    assert_eq!(parsed.get("decision").and_then(serde_json::Value::as_str), Some("block"));
     let reason = parsed
         .get("reason")
         .and_then(serde_json::Value::as_str)

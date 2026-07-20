@@ -439,17 +439,8 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     // file.
     let normalize = |p: &Path| -> Option<PathBuf> {
         let parent = p.parent().unwrap_or_else(|| Path::new("."));
-        let parent_abs = match std::fs::canonicalize(parent) {
-            Ok(canonical) => canonical,
-            Err(_) => match parent.canonicalize() {
-                Ok(canonical) => canonical,
-                Err(_) => return None,
-            },
-        };
-        let file_name = match p.file_name() {
-            Some(name) => name.to_string_lossy().to_lowercase(),
-            None => return None,
-        };
+        let parent_abs = parent.canonicalize().ok()?;
+        let file_name = p.file_name()?.to_string_lossy().to_lowercase();
         Some(parent_abs.join(file_name))
     };
     match (normalize(input), normalize(out)) {
