@@ -1,0 +1,1 @@
+`tooned hook run` now uses `tooned_core::maybe_tooned_in` with a reusable output buffer and borrows string tool outputs directly from the parsed JSON payload, reducing heap allocations on the per-tool-call hot path.

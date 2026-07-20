@@ -12,6 +12,7 @@
 //! values must be primitive for the encoder, but the decoder expands any
 //! class calls found in the body.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
@@ -471,36 +472,37 @@ impl std::io::Write for ByteCountingWriter {
 ///
 /// Mirrors `maybe_tooned` semantics: payload-driven failures downgrade to
 /// `Conversion::Passthrough`, never `Err`.
-pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, ToonedError> {
+pub fn maybe_tron<'a>(
+    input: &'a [u8],
+    opts: &ConversionOptions,
+) -> Result<Conversion<'a>, ToonedError> {
     if input.len() > opts.max_input_bytes {
         // Try streaming conversion for large inputs. Streaming is an
         // implementation detail: any failure there is still a
         // payload-driven problem, so it must downgrade to Passthrough
         // rather than propagate an Err and break the caller's contract.
         if let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) {
-            return try_streaming_tron(input, doc_type, opts).or_else(|_| {
-                Ok(Conversion::Passthrough {
-                    bytes: input.to_vec(),
-                    reason: PassthroughReason::ParseFailed,
-                })
-            });
+            return try_streaming_tron(input, doc_type, opts).or(Ok(Conversion::Passthrough {
+                bytes: Cow::Borrowed(input),
+                reason: PassthroughReason::ParseFailed,
+            }));
         }
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::InputTooLarge,
         });
     }
 
     let Some(doc_type) = tooned_detect::detect(input, opts.format_hint) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::NotStructuredData,
         });
     };
 
     let Ok(value) = crate::parse_by_doc_type(input, doc_type) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -512,13 +514,13 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
         let mut writer = sonic_rs::writer::BufferedWriter::new(&mut counter);
         let Ok(()) = sonic_rs::to_writer(&mut writer, &value) else {
             return Ok(Conversion::Passthrough {
-                bytes: input.to_vec(),
+                bytes: Cow::Borrowed(input),
                 reason: PassthroughReason::ParseFailed,
             });
         };
         let Ok(()) = writer.flush() else {
             return Ok(Conversion::Passthrough {
-                bytes: input.to_vec(),
+                bytes: Cow::Borrowed(input),
                 reason: PassthroughReason::ParseFailed,
             });
         };
@@ -527,7 +529,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     let Ok(encoded) = encode(&value) else {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::ParseFailed,
         });
     };
@@ -535,7 +537,7 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !crate::is_smaller_enough(json_bytes, tron_bytes, opts.margin_pct) {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::NotSmallerEnough { json_bytes, toon_bytes: tron_bytes },
         });
     }
@@ -547,13 +549,13 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 
     if !round_trip_ok {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::RoundTripMismatch,
         });
     }
 
     Ok(Conversion::Toon {
-        text: encoded,
+        text: Cow::Owned(encoded),
         report: ConversionReport {
             doc_type,
             shape,
@@ -566,11 +568,11 @@ pub fn maybe_tron(input: &[u8], opts: &ConversionOptions) -> Result<Conversion, 
 }
 
 /// Try streaming TRON conversion for large inputs.
-fn try_streaming_tron(
-    input: &[u8],
+fn try_streaming_tron<'a>(
+    input: &'a [u8],
     doc_type: tooned_types::DocType,
     opts: &ConversionOptions,
-) -> Result<Conversion, ToonedError> {
+) -> Result<Conversion<'a>, ToonedError> {
     use std::io::Cursor;
 
     let mut output = Vec::new();
@@ -583,7 +585,7 @@ fn try_streaming_tron(
         tooned_types::DocType::Tsv => maybe_tron_tsv_stream(Cursor::new(input), &mut output)?,
         _ => {
             return Ok(Conversion::Passthrough {
-                bytes: input.to_vec(),
+                bytes: Cow::Borrowed(input),
                 reason: PassthroughReason::InputTooLarge,
             });
         }
@@ -602,7 +604,7 @@ fn try_streaming_tron(
     if !crate::is_smaller_enough(input_bytes as usize, stats.output_bytes as usize, opts.margin_pct)
     {
         return Ok(Conversion::Passthrough {
-            bytes: input.to_vec(),
+            bytes: Cow::Borrowed(input),
             reason: PassthroughReason::NotSmallerEnough {
                 json_bytes: input_bytes as usize,
                 toon_bytes: stats.output_bytes as usize,
@@ -621,7 +623,9 @@ fn try_streaming_tron(
     let shape = shape::classify(&decoded);
 
     Ok(Conversion::Toon {
-        text: String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
+        text: Cow::Owned(
+            String::from_utf8(output).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?,
+        ),
         report: ConversionReport {
             doc_type,
             shape,

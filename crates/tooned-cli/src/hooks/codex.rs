@@ -4,9 +4,10 @@
 //! `hook install --codex`.
 //!
 //! Codex `PostToolUse` does not support `updatedToolOutput` for native tools;
-//! the supported mechanism for replacing the model-visible tool result is to
-//! return `continue: false` and a `reason` string, which Codex treats as
-//! PostToolUse feedback and surfaces as the tool result. See
+//! the supported mechanisms for replacing the model-visible tool result are to
+//! return `continue: false` and/or `decision: "block"` plus a `reason`
+//! string, which Codex treats as PostToolUse feedback and surfaces as the
+//! tool result. tooned emits both fields for maximum compatibility. See
 //! `docs/agents/toon-hook-flow.md`.
 
 use std::io::Read as _;
@@ -65,9 +66,10 @@ pub fn run_hook() {
         // Defense-in-depth: `process_hook_stdin` is designed to never
         // panic, but this hook sits directly in an agent's tool-call path,
         // so a slip in that guarantee must still fail safe.
-        let outcome = std::panic::catch_unwind(|| {
-            super::process_hook_stdin(&buf, super::HookProtocol::Codex)
-        });
+        let mut out = String::new();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::process_hook_stdin(&buf, super::HookProtocol::Codex, &mut out)
+        }));
         let _ = tx.send(outcome.ok().flatten());
     });
 

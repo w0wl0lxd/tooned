@@ -126,7 +126,7 @@ pub fn run(args: &TokenSavingsArgs) -> anyhow::Result<()> {
     }
     println!("would convert: {}", if report.would_convert { "yes" } else { "no" });
     if let Some(reason) = &report.reason {
-        println!("reason: {reason:?}");
+        println!("reason: {reason}");
     }
 
     #[allow(clippy::manual_unwrap_or)]

@@ -10,7 +10,7 @@ pub mod dict;
 pub use dict::{apply_dict, expand_legend};
 
 use serde_json::Value;
-use toon_lsp::toon::{Delimiter, ToonConfig, decode_with_config, encode_with_config};
+use toon_lsp::toon::{Delimiter, ToonConfig, decode_with_config, encode_into};
 use tooned_parse::exceeds_max_structural_depth;
 use tooned_types::{ConversionOptions, ToonedError};
 
@@ -81,8 +81,10 @@ pub fn encode_toon_raw_with_options(
     value: &Value,
     opts: &ConversionOptions,
 ) -> Result<String, ToonedError> {
-    encode_with_config(value, &toon_config(opts))
-        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))
+    let mut out = String::new();
+    encode_into(value, &toon_config(opts), &mut out)
+        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    Ok(out)
 }
 
 /// Decodes a TOON document back into a structured [`serde_json::Value`].

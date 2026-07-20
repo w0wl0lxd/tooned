@@ -56,6 +56,6 @@ fn check_format_hint_xml_overrides_content_on_non_xml_input() {
         .stdout(
             predicate::str::contains("doc type: Xml")
                 .and(predicate::str::contains("convertible: no"))
-                .and(predicate::str::contains("reason: ParseFailed")),
+                .and(predicate::str::contains("reason: parse failed")),
         );
 }

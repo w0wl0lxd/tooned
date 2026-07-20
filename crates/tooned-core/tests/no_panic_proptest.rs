@@ -59,6 +59,7 @@ proptest! {
             flatten_keys: false,
             expand_paths: true,
             preserve_number_types: true,
+            zero_alloc: false,
         };
         let _ = maybe_tooned(&bytes, &opts);
         let _ = inspect(&bytes, &opts);

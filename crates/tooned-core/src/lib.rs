@@ -28,7 +28,8 @@ pub use tooned_convert::tron::{
     StreamStats, decode as decode_tron, encode as encode_tron, maybe_tron, maybe_tron_stream,
 };
 pub use tooned_convert::{
-    encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned, parse_to_value,
+    encode_onto, inspect, is_smaller_enough, maybe_onto, maybe_tooned, maybe_tooned_in,
+    parse_to_value, toon_from_value,
 };
 
 // Re-export decode_toon from tooned-toon
@@ -51,17 +52,31 @@ use std::path::{Path, PathBuf};
 /// itself when no ancestor qualifies (so callers can still operate on a cwd
 /// that has not been indexed yet).
 pub fn project_root(start: &Path) -> PathBuf {
-    let mut dir = start;
+    project_root_with_fallback(start).0
+}
+
+/// Like [`project_root`], but also returns `true` when no project marker was
+/// found and `start` itself is being used as the fallback root.
+pub fn project_root_with_fallback(start: &Path) -> (PathBuf, bool) {
+    let start_abs = if start.is_absolute() {
+        start.to_path_buf()
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(start),
+            Err(_) => start.to_path_buf(),
+        }
+    };
+    let mut dir = start_abs.as_path();
     loop {
         if dir.join(".tooned").is_dir() {
-            return dir.to_path_buf();
+            return (dir.to_path_buf(), false);
         }
         if dir.join("flake.nix").is_file() {
-            return dir.to_path_buf();
+            return (dir.to_path_buf(), false);
         }
         match dir.parent() {
             Some(parent) => dir = parent,
-            None => return start.to_path_buf(),
+            None => return (start_abs, true),
         }
     }
 }

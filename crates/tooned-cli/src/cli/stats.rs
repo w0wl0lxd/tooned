@@ -78,7 +78,8 @@ pub fn run(args: &StatsArgs) -> anyhow::Result<()> {
         }
         None => None,
     };
-    let filter = IndexFilter { type_filter, excludes: args.exclude.clone() };
+    let filter =
+        IndexFilter { type_filter, excludes: args.exclude.clone(), respect_gitignore: true };
 
     let sort_by = args.sort_by.map_or(tooned_index::SortBy::Savings, Into::into);
     match tooned_index::stats_sorted(&root, args.top, sort_by, &filter) {
