@@ -22,6 +22,7 @@ fn zero_alloc_opts() -> ConversionOptions {
         entropy_gate: false,
         cache_stable: false,
         precise_tokens: false,
+        zero_alloc: true,
         ..ConversionOptions::default()
     }
 }

@@ -780,7 +780,15 @@ pub(crate) fn process_hook_stdin(
     let payload: serde_json::Value = sonic_rs::from_slice::<serde_json::Value>(stdin).ok()?;
     let bytes = protocol.extract_bytes(&payload)?;
 
-    let opts = tooned_core::ConversionOptions::default();
+    // The hook hot path is latency-sensitive, so default to the zero-allocation
+    // fast path. `TOONED_HOOK_ZERO_ALLOC=0` disables it and uses the full
+    // `maybe_tooned` pipeline so dict/entropy/critical-field tiers apply.
+    let zero_alloc = match std::env::var("TOONED_HOOK_ZERO_ALLOC") {
+        Ok(v) => v != "0",
+        Err(_) => true,
+    };
+    let opts =
+        tooned_core::ConversionOptions { zero_alloc, ..tooned_core::ConversionOptions::default() };
     let conversion = tooned_core::maybe_tooned_in(bytes.as_ref(), &opts, out).ok()?;
     let result = match conversion {
         tooned_core::Conversion::Toon { text, .. } => match protocol {
@@ -795,11 +803,13 @@ pub(crate) fn process_hook_stdin(
             }))
             .ok(),
             // Codex replaces the model-visible tool result with the hook's
-            // `reason` text when `continue` is false. Emit TOON as `reason` so
-            // the model sees only the compressed representation, not the
-            // original JSON plus an `additionalContext` appendix.
+            // `reason` text when `continue` is false or `decision` is "block".
+            // Emit both fields for maximum compatibility; the TOON text is
+            // the only model-visible content, so the original JSON plus an
+            // `additionalContext` appendix is never appended.
             HookProtocol::Codex => sonic_rs::to_string(&serde_json::json!({
                 "continue": false,
+                "decision": "block",
                 "reason": text,
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",

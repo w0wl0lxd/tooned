@@ -4,9 +4,10 @@
 //! `hook install --codex`.
 //!
 //! Codex `PostToolUse` does not support `updatedToolOutput` for native tools;
-//! the supported mechanism for replacing the model-visible tool result is to
-//! return `continue: false` and a `reason` string, which Codex treats as
-//! PostToolUse feedback and surfaces as the tool result. See
+//! the supported mechanisms for replacing the model-visible tool result are to
+//! return `continue: false` and/or `decision: "block"` plus a `reason`
+//! string, which Codex treats as PostToolUse feedback and surfaces as the
+//! tool result. tooned emits both fields for maximum compatibility. See
 //! `docs/agents/toon-hook-flow.md`.
 
 use std::io::Read as _;

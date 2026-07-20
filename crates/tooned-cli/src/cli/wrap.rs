@@ -136,7 +136,7 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
     };
 
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(
+    let mut opts = config.conversion_options(
         args.margin,
         args.max_bytes,
         args.format_hint,
@@ -148,6 +148,13 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         None,
         None,
     );
+    // `tooned wrap` is a streaming hot path; prefer the zero-allocation
+    // fast path by default. `TOONED_WRAP_ZERO_ALLOC=0` falls back to the
+    // full `maybe_tooned` pipeline (dictionary/entropy/critical-field tiers).
+    opts.zero_alloc = match std::env::var("TOONED_WRAP_ZERO_ALLOC") {
+        Ok(v) => v != "0",
+        Err(_) => true,
+    };
 
     // Bound how much of the wrapped command's stdout is ever buffered in
     // memory: read up to `max_input_bytes + 1` bytes (the `+1` is only to

@@ -598,11 +598,11 @@ pub fn inspect(input: &[u8], opts: &ConversionOptions) -> InspectReport {
     }
 }
 
-// Thread-local scratch buffer reused by `toon_from_value` for round-trip
-// verification. It grows on first use and is then allocation-free for
-// similarly-sized inputs.
+// Thread-local scratch buffers reused by `toon_from_value`. They grow on first
+// use and are then allocation-free for similarly-sized inputs.
 thread_local! {
     static TOON_VERIFY_SCRATCH: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    static JSON_BYTES_SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Zero-allocation conversion from an already-parsed [`serde_json::Value`] into
@@ -613,6 +613,12 @@ thread_local! {
 /// allocations. The round-trip fidelity check uses a thread-local scratch
 /// buffer; call this once outside any measured closure to warm it up.
 ///
+/// This is the zero-allocation fast path: it intentionally does not apply
+/// dictionary compression, density-aware auto-margin widening, entropy-gate
+/// widening, or critical-field protection. Callers that need those tiers
+/// should use [`maybe_tooned`] or call [`maybe_tooned_in`] with
+/// [`ConversionOptions::zero_alloc`] set to `false`.
+///
 /// The returned [`Conversion::Toon`] borrows `out` for its text. It is the
 /// caller's responsibility to apply any size/margin gate if desired.
 pub fn toon_from_value<'a>(
@@ -620,10 +626,18 @@ pub fn toon_from_value<'a>(
     opts: &ConversionOptions,
     out: &'a mut String,
 ) -> Result<Conversion<'a>, ToonedError> {
-    let mut counter = ByteCountingWriter(0);
-    serde_json::to_writer(&mut counter, value)
-        .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
-    let json_bytes = counter.0;
+    // Count compact-JSON bytes the same way `maybe_tooned`/`attempt` does,
+    // via `sonic_rs::to_writer`, so the two paths never disagree on the
+    // baseline size for the margin gate. The byte counter is a reusable
+    // thread-local `Vec<u8>` scratch; it grows on first use and is then
+    // allocation-free for similarly-sized inputs.
+    let json_bytes = JSON_BYTES_SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        scratch.clear();
+        sonic_rs::to_writer(&mut *scratch, value)
+            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+        Ok::<_, ToonedError>(scratch.len())
+    })?;
 
     let mut config = toon_config(opts);
     // The zero-alloc hot path borrows `value`. Key folding/flattening builds an
@@ -660,11 +674,32 @@ pub fn toon_from_value<'a>(
 /// [`toon_from_value`] to encode into the caller-supplied `out` buffer. If the
 /// conversion does not beat the configured margin, returns the original input
 /// bytes as [`Conversion::Passthrough`].
+///
+/// When [`ConversionOptions::zero_alloc`] is `false`, this function falls back
+/// to the full [`maybe_tooned`] pipeline so that dictionary compression,
+/// auto-margin widening, entropy-gate widening, and critical-field protection
+/// are honored. The `out` buffer is still reused as the final text sink.
 pub fn maybe_tooned_in<'a>(
     input: &'a [u8],
     opts: &ConversionOptions,
     out: &'a mut String,
 ) -> Result<Conversion<'a>, ToonedError> {
+    if !opts.zero_alloc {
+        return match maybe_tooned(input, opts) {
+            Ok(Conversion::Toon { text, report }) => {
+                *out = text.into_owned();
+                Ok(Conversion::Toon { text: Cow::Borrowed(&*out), report })
+            }
+            Ok(Conversion::Passthrough { bytes, reason }) => {
+                Ok(Conversion::Passthrough { bytes, reason })
+            }
+            Err(_) => Ok(Conversion::Passthrough {
+                bytes: Cow::Borrowed(input),
+                reason: PassthroughReason::RoundTripMismatch,
+            }),
+        };
+    }
+
     if input.len() > opts.max_input_bytes {
         return Ok(Conversion::Passthrough {
             bytes: Cow::Borrowed(input),
