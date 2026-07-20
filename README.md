@@ -88,7 +88,7 @@ For every payload:
 3. Encode TOON and compact JSON; compare byte counts.
 4. Accept TOON only if it beats JSON by the configured margin (default 2%) and `decode(encode(x)) == x` exactly.
 
-If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through. No panic, no network.
+If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through.
 
 ## Project index
 
