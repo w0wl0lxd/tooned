@@ -161,7 +161,7 @@ Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md) (DCO sign-off, Conventio
 
 ## Status
 
-v1 is not tagged yet. The conversion pipeline (`maybe_tooned`) is stable; the CLI surface, hook installers, and index schema are in active refinement. The evidence docs (`docs/agents/`) describe the mismatch test methodology; see [`toon-example.md`](docs/agents/toon-example.md) and [`toon-evidence.md`](docs/agents/toon-evidence.md). New validation should use agent CLI (`swe-1.7-max`, `glm-5.2` high) and avoid `additionalContext` (which was tainting earlier results by keeping original JSON in context).
+v1 is not tagged yet. The conversion pipeline (`maybe_tooned`) is stable; the CLI surface, hook installers, and index schema are in active refinement; see [`toon-example.md`](docs/agents/toon-example.md) and [`toon-evidence.md`](docs/agents/toon-evidence.md). New validation should use agent CLI (`swe-1.7-max`, `glm-5.2` high) and avoid `additionalContext` (which was tainting earlier results by keeping original JSON in context).
 
 ## License
 
