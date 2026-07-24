@@ -313,6 +313,14 @@ impl Store {
         refuse_symlink(db_path, "metrics database")?;
         let existed = db_path.exists();
         let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
+        // Re-check after opening: a TOCTOU swap could place a symlink on
+        // `db_path` between the earlier `refuse_symlink` and `Connection::open`
+        // (which would follow it). The parent directory is already guaranteed
+        // non-symlinked by `ensure_parent`, bounding the residual risk; this
+        // mirrors the index crate's double-check in `open_index` for
+        // defense-in-depth (finding: `Store::open` lacked a post-create
+        // symlink re-check).
+        refuse_symlink(db_path, "metrics database")?;
         if !existed {
             #[cfg(unix)]
             set_mode(db_path, 0o600)?;
@@ -425,7 +433,7 @@ impl Store {
         };
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT day, COALESCE(SUM({col}),0), COUNT(*), \
+            "SELECT day, COALESCE(SUM(CAST({col} AS REAL)),0), COUNT(*), \
              COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0) \
              FROM events {where} GROUP BY day ORDER BY day ASC",
             col = col,
@@ -436,7 +444,7 @@ impl Store {
             .query_map(rusqlite::params_from_iter(f.binds), |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?.max(0) as u64,
+                    row.get::<_, f64>(1)?.max(0.0) as u64,
                     row.get::<_, i64>(2)?.max(0) as u64,
                     row.get::<_, i64>(3)?.max(0) as u64,
                 ))
@@ -478,21 +486,21 @@ impl Store {
         let (since, until) = window(opts);
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT COALESCE(SUM(saved_bytes),0), COALESCE(SUM(input_bytes),0), \
+            "SELECT COALESCE(SUM(CAST(saved_bytes AS REAL)),0), COALESCE(SUM(CAST(input_bytes AS REAL)),0), \
              COUNT(*), COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0), \
-             COALESCE(SUM(tokens_saved),0) \
+             COALESCE(SUM(CAST(tokens_saved AS REAL)),0) \
              FROM events {where}",
             where = f.where_sql()
         );
         let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
-        let (saved, input, total, conv, tokens): (i64, i64, i64, i64, i64) = stmt
+        let (saved, input, total, conv, tokens): (f64, f64, i64, i64, f64) = stmt
             .query_row(rusqlite::params_from_iter(f.binds), |r| {
                 Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, i64>(1)?,
+                    r.get::<_, f64>(0)?,
+                    r.get::<_, f64>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)?,
-                    r.get::<_, i64>(4)?,
+                    r.get::<_, f64>(4)?,
                 ))
             })
             .map_err(MetricsError::Sqlite)?;
@@ -519,12 +527,12 @@ impl Store {
             cursor -= 1;
         }
 
-        let avg = if input > 0 { (saved as f64 / input as f64) * 100.0 } else { 0.0 };
+        let avg = if input > 0.0 { (saved / input) * 100.0 } else { 0.0 };
 
         Ok(Summary {
             total_events: total.max(0) as u64,
-            total_saved_bytes: saved.max(0) as u64,
-            total_tokens_saved: tokens.max(0) as u64,
+            total_saved_bytes: saved.max(0.0) as u64,
+            total_tokens_saved: tokens.max(0.0) as u64,
             conversions: conv.max(0) as u64,
             passthroughs: (total.max(0) - conv.max(0)).max(0) as u64,
             avg_reduction_pct: avg,
@@ -543,9 +551,9 @@ impl Store {
         };
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT surface, COALESCE(SUM({col}),0), COALESCE(SUM(tokens_saved),0), \
+            "SELECT surface, COALESCE(SUM(CAST({col} AS REAL)),0), COALESCE(SUM(CAST(tokens_saved AS REAL)),0), \
              COUNT(*), COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0) \
-             FROM events {where} GROUP BY surface ORDER BY SUM({col}) DESC",
+             FROM events {where} GROUP BY surface ORDER BY SUM(CAST({col} AS REAL)) DESC",
             col = col,
             where = f.where_sql()
         );
@@ -554,8 +562,8 @@ impl Store {
             .query_map(rusqlite::params_from_iter(f.binds), |row| {
                 Ok(PerSurface {
                     surface: row.get(0)?,
-                    saved_bytes: row.get::<_, i64>(1)?.max(0) as u64,
-                    tokens_saved: row.get::<_, i64>(2)?.max(0) as u64,
+                    saved_bytes: row.get::<_, f64>(1)?.max(0.0) as u64,
+                    tokens_saved: row.get::<_, f64>(2)?.max(0.0) as u64,
                     events: row.get::<_, i64>(3)?.max(0) as u64,
                     conversions: row.get::<_, i64>(4)?.max(0) as u64,
                 })
@@ -600,12 +608,15 @@ impl Store {
         turn_reuse: u64,
     ) -> Result<CostSummary, MetricsError> {
         let f = filter_clause(opts);
-        let sql = format!("SELECT COALESCE(SUM(tokens_saved),0) FROM events {}", f.where_sql());
+        let sql = format!(
+            "SELECT COALESCE(SUM(CAST(tokens_saved AS REAL)),0) FROM events {}",
+            f.where_sql()
+        );
         let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
-        let total: i64 = stmt
-            .query_row(rusqlite::params_from_iter(f.binds), |row| row.get(0))
+        let total: f64 = stmt
+            .query_row(rusqlite::params_from_iter(f.binds), |row| row.get::<_, f64>(0))
             .map_err(MetricsError::Sqlite)?;
-        let total_tokens_saved = total.max(0) as u64;
+        let total_tokens_saved = total.max(0.0) as u64;
         let per_m = total_tokens_saved as f64 / 1_000_000.0;
         let estimated_usd_saved = per_m * input_per_million;
         let cache_compounded_usd =
@@ -697,9 +708,9 @@ fn leaderboard(
         format!("WHERE {column} IS NOT NULL AND {}", f.clause())
     };
     let sql = format!(
-        "SELECT COALESCE({column},'<unknown>'), COALESCE(SUM({col}),0), \
-         COALESCE(SUM(tokens_saved),0), COUNT(*) \
-         FROM events {where} GROUP BY {column} ORDER BY SUM({col}) DESC LIMIT ?",
+        "SELECT COALESCE({column},'<unknown>'), COALESCE(SUM(CAST({col} AS REAL)),0), \
+         COALESCE(SUM(CAST(tokens_saved AS REAL)),0), COUNT(*) \
+         FROM events {where} GROUP BY {column} ORDER BY SUM(CAST({col} AS REAL)) DESC LIMIT ?",
         column = column,
         col = col,
         where = where_sql,
@@ -711,8 +722,8 @@ fn leaderboard(
         .query_map(rusqlite::params_from_iter(binds), |row| {
             Ok(TopFile {
                 label: row.get(0)?,
-                saved_bytes: row.get::<_, i64>(1)?.max(0) as u64,
-                tokens_saved: row.get::<_, i64>(2)?.max(0) as u64,
+                saved_bytes: row.get::<_, f64>(1)?.max(0.0) as u64,
+                tokens_saved: row.get::<_, f64>(2)?.max(0.0) as u64,
                 events: row.get::<_, i64>(3)?.max(0) as u64,
             })
         })
@@ -1183,12 +1194,23 @@ pub fn record_event_all(event: &Event, project_root: Option<&Path>) {
     }
 }
 
-/// Current Unix timestamp (seconds), clamped to `0` if the clock predates the
-/// epoch -- never a panic on a clock read failure.
+/// Bounds-checked `u64` -> `i64` conversion that saturates at `i64::MAX`
+/// instead of wrapping. Mirrors `tooned_index::saturating_i64` (schema.rs) so
+/// the two crates agree on timestamp/byte-count conversions (finding:
+/// `now_unix` used a bare `as i64` cast that could wraparound).
 #[allow(clippy::cast_possible_wrap)]
+fn saturating_i64(n: u64) -> i64 {
+    if n > i64::MAX as u64 { i64::MAX } else { n as i64 }
+}
+
+/// Current Unix timestamp (seconds), clamped to `0` if the clock predates the
+/// epoch and to `i64::MAX` if the unsigned second count would not fit in an
+/// `i64` -- never a panic on a clock read failure, never a silent wraparound.
+/// Mirrors the index crate's `saturating_i64` convention (schema.rs) instead of
+/// a bare `as` cast.
 pub fn now_unix() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
+        Ok(d) => saturating_i64(d.as_secs()),
         Err(_) => 0,
     }
 }
@@ -1386,5 +1408,58 @@ mod tests {
         assert!((cs.estimated_usd_saved - 2.5).abs() < 1e-9);
         // Compounded: $2.50 + 10 * $0.625 = $8.75.
         assert!((cs.cache_compounded_usd - 8.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn aggregate_sums_do_not_overflow_i64() {
+        // Regression test for the bug where `SUM(...)` aggregates were read as
+        // `i64`. SQLite throws an "integer overflow" error once the running sum
+        // of all-integer inputs exceeds `i64::MAX`, which fails the whole query
+        // instead of clamping. The aggregates now compute via
+        // `SUM(CAST(col AS REAL))` and read as `f64`, so a sum that overflows a
+        // signed 64-bit integer must not error.
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        let big = i64::MAX as u64;
+        // Two rows of `i64::MAX` each => running sum of `2 * i64::MAX`, which
+        // overflows an `i64` when summed as integers.
+        for _ in 0..2 {
+            store
+                .record(
+                    &RecordBuilder::new("hook:claude")
+                        .kind(EventKind::Actual)
+                        .at(0)
+                        .sizes(big, 0)
+                        .tokens_saved(big)
+                        .converted(true)
+                        .build(),
+                )
+                .expect("record");
+        }
+
+        let opts = QueryOpts {
+            since_day: Some(0),
+            until_day: Some(0),
+            by: Metric::Bytes,
+            include_opportunity: false,
+            surface: None,
+        };
+
+        // `summary` exercises the daily + roll-up SUM paths (saved/input/tokens).
+        let s = store.summary(&opts).expect("summary must not overflow on large sums");
+        assert!(s.total_saved_bytes > i64::MAX as u64);
+        assert!(s.total_tokens_saved > i64::MAX as u64);
+
+        // `heatmap` -> `daily_aggregates`.
+        let _ = store.heatmap(&opts).expect("heatmap must not overflow");
+
+        // `per_surface` and `top_files` (both have `ORDER BY SUM(...)`).
+        let _ = store.per_surface(&opts).expect("surface must not overflow");
+        let _ = store.top_files(&opts, 10).expect("top_files must not overflow");
+
+        // `cost_summary` -> single `SUM(tokens_saved)`.
+        let cs = store.cost_summary(&opts, 0.0, 0.0, 0).expect("cost must not overflow");
+        assert!(cs.total_tokens_saved > i64::MAX as u64);
     }
 }
