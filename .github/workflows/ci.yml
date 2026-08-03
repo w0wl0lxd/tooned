@@ -33,7 +33,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-rail
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-rail
 
@@ -65,12 +65,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-rail
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-rail
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: nextest
 
@@ -103,7 +103,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: nextest
 
@@ -123,7 +123,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-llvm-cov
 
@@ -203,7 +203,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-rail
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-rail
 
