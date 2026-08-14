@@ -2,6 +2,9 @@
 
 //! Shared public types for the tooned workspace.
 
+use std::borrow::Cow;
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// Supported source document types.
@@ -127,6 +130,13 @@ pub struct ConversionOptions {
     /// Decode: preserve the source int/float distinction (e.g. `1.0` stays a
     /// float). Default: true so numeric values round-trip losslessly.
     pub preserve_number_types: bool,
+    /// Zero-allocation fast path for `maybe_tooned_in`. When true, the
+    /// caller-supplied output buffer is reused and dictionary compression,
+    /// auto-margin widening, entropy-gate widening, and critical-field
+    /// protection are skipped. Default: false; set to true only when speed
+    /// and allocation-free operation matter more than the extra compression
+    /// those tiers provide.
+    pub zero_alloc: bool,
 }
 
 impl Default for ConversionOptions {
@@ -146,6 +156,7 @@ impl Default for ConversionOptions {
             flatten_keys: false,
             expand_paths: true,
             preserve_number_types: true,
+            zero_alloc: false,
         }
     }
 }
@@ -218,6 +229,23 @@ pub enum PassthroughReason {
     RoundTripMismatch,
 }
 
+impl fmt::Display for PassthroughReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotStructuredData => write!(f, "not structured data"),
+            Self::ParseFailed => write!(f, "parse failed"),
+            Self::InputTooLarge => write!(f, "input too large"),
+            Self::NotSmallerEnough { json_bytes, toon_bytes } => write!(
+                f,
+                "TOON not smaller enough by the configured margin (json {json_bytes} bytes, toon {toon_bytes} bytes)"
+            ),
+            Self::RoundTripMismatch => {
+                write!(f, "TOON round-trip did not reproduce the original value")
+            }
+        }
+    }
+}
+
 /// Reserved for genuine caller misuse or explicit decode failures -- never
 /// returned by conversion functions for payload-driven failure
 /// (malformed/oversized/ambiguous input), which always resolves to
@@ -261,9 +289,9 @@ pub struct InspectReport {
 
 /// Result of an adaptive conversion decision (data-model.md).
 #[derive(Debug, Clone, PartialEq)]
-pub enum Conversion {
-    Toon { text: String, report: ConversionReport },
-    Passthrough { bytes: Vec<u8>, reason: PassthroughReason },
+pub enum Conversion<'a> {
+    Toon { text: Cow<'a, str>, report: ConversionReport },
+    Passthrough { bytes: Cow<'a, [u8]>, reason: PassthroughReason },
 }
 
 /// Diagnostic detail attached to a successful `Conversion::Toon`
@@ -290,7 +318,13 @@ pub struct ConversionReport {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[non_exhaustive]
 pub enum ShapeClass {
-    UniformArrayOfObjects { uniformity_pct: f64, sampled: usize },
+    UniformArrayOfObjects {
+        uniformity_pct: f64,
+        sampled: usize,
+    },
     Irregular,
     Scalar,
+    /// Used on the zero-allocation path where shape classification (which
+    /// allocates) is intentionally skipped.
+    NotClassified,
 }

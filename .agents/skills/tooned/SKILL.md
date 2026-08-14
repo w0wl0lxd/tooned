@@ -54,10 +54,18 @@ metadata:
 ## Important safety rules
 
 - `tooned` never writes back to the source file unless the output path is the same file; even then it uses an atomic temp-file-then-rename.
-- Agent protocols that can replace the tool result (`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi; `continue: false` + `reason` feedback for Codex) put only TOON in the model's view. `tooned` does not use `additionalContext` because that would keep the original JSON and append the TOON, inflating total token count.
+- Agent protocols that can replace the tool result (`updatedToolOutput` for Claude Code/OpenCode/Kilo/Pi; `continue: false` + `decision: "block"` + `reason` feedback for Codex) put only TOON in the model's view. `tooned` does not use `additionalContext` because that would keep the original JSON and append the TOON, inflating total token count.
 - For Devin and Droid, which only support `additionalContext` in `PostToolUse`, use `tooned wrap -- <cmd>` or `... | tooned pipe` when you need TOON-only output.
 - For prompts that ask for the exact original file (e.g., "print the file unchanged") with a hook that replaces the tool result, the model will return the TOON text, not the original JSON. Rely on the original tool output or skip `tooned` when verbatim JSON is required.
 - Do not try to generate TOON by hand; use `tooned convert` or `tooned pipe` so round-trip fidelity is verified.
+
+## Hot-path toggles
+
+`tooned pipe`, `tooned wrap`, and the installed agent hooks default to the zero-allocation `maybe_tooned_in` fast path, which skips the dictionary and key-folding tiers for lower latency. Set the matching environment variable to `0` to use the full `maybe_tooned` pipeline (dictionary, entropy, and critical-field tiers) instead:
+
+- `TOONED_HOOK_ZERO_ALLOC=0`
+- `TOONED_PIPE_ZERO_ALLOC=0`
+- `TOONED_WRAP_ZERO_ALLOC=0`
 
 ## Default short flags
 
