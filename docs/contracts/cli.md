@@ -14,7 +14,7 @@ Flag precedence (later wins): `ConversionOptions` defaults → `tooned.toml` / r
 | `wrap -- <command>` | Command stdout | Converted stdout | Mirrors wrapped command exit code. Passthrough when TOON does not win. |
 | `index [path]` / `sync` / `status` / `show <file>` | Project root | `.tooned/index.db` | `status`: always `0`. `show`: `2` if file not indexed. `--json` and `--dry-run` supported. |
 | `stats [path] [--top N] [--json]` | `.tooned/index.db` | Ranked savings; `--json` for machine output. | `1` if no index. |
-| `diff <file>` | File | Human; `--json`: `{"equal": true\|false, "diff": "..."}` | `0` identical; `2` passthrough / no TOON; `3` round-trip mismatch. |
+| `diff <file>` | File (JSON, NDJSON, YAML, TOML, CSV, TSV, XML) | Human; `--json`: `{"equal": true\|false, "diff": "..."}` | `0` identical; `2` passthrough / no TOON; `3` round-trip mismatch. |
 | `lint <file\|->` | File or stdin | Human; `--json`: `{"valid": true, "warnings": [...]}` | `0` valid (warnings still `0`); non-zero on parse/round-trip failure. |
 | `hook install/uninstall/status/doctor [--all] [--scope user\|project] [--mcp]` | — | Human or `--json` | `status`: `0`. `doctor`: read-only, never writes. `--dry-run` on install/uninstall. |
 | `mcp serve` | Stdio transport | `tooned_convert`, `tooned_detect`, `tooned_decode`, index tools | `0`. |

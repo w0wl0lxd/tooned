@@ -10,6 +10,16 @@ metadata:
 
 `tooned` transparently re-encodes structured tool output into TOON when TOON is smaller and round-trips back to the original value exactly. It never mutates source files and never guesses: if conversion is not a clear win, the original bytes pass through unchanged.
 
+## Per-agent setup
+
+Agent-specific skill files with installation instructions are available in `.agents/skills/`:
+
+| Agent | Skill file |
+|-------|-----------|
+| Cursor | `.agents/skills/cursor/SKILL.md` |
+| Gemini CLI | `.agents/skills/gemini-cli/SKILL.md` |
+| Kilo Code | `.agents/skills/kilo/SKILL.md` |
+
 ## When to use this skill
 
 - A tool returns JSON, NDJSON, YAML, TOML, CSV, XML, or binary MessagePack/CBOR.

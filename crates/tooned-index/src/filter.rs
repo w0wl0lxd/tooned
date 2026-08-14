@@ -119,7 +119,9 @@ impl DocTypeFilter {
 
 impl IndexFilter {
     /// True when no type or exclude constraint is present and gitignore
-    /// respect is the default.
+    /// respect is the default. Returns `false` when `respect_gitignore`
+    /// is explicitly `false` (a deliberate opt-out of gitignore filtering
+    /// is itself an active constraint, so the filter is not "empty").
     pub fn is_empty(&self) -> bool {
         self.type_filter.is_none() && self.excludes.is_empty() && self.respect_gitignore
     }

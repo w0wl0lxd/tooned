@@ -43,6 +43,8 @@ use tooned_core::{
 /// sniffing) rather than a tool-call error -- a caller-supplied hint is
 /// advisory, not something adversarial payload data ever flows through, but
 /// still shouldn't be able to hard-fail a call over a typo.
+/// The "toon" hint is handled at a higher level: TOON content is decoded
+/// to JSON first, then the decoded JSON is passed to the conversion pipeline.
 fn parse_doc_type_hint(hint: Option<&str>) -> Option<DocType> {
     match hint?.to_ascii_lowercase().as_str() {
         "json" => Some(DocType::Json),
@@ -280,7 +282,7 @@ impl From<PassthroughReason> for PassthroughReasonDto {
 pub struct ConvertRequest {
     /// Raw document content to (maybe) convert.
     pub content: String,
-    /// Optional doc-type hint: "json"/"ndjson"/"yaml"/"toml"/"csv"/"tsv".
+    /// Optional doc-type hint: "json"/"ndjson"/"yaml"/"toml"/"csv"/"tsv"/"xml"/"msgpack"/"cbor"/"json5".
     #[serde(default)]
     pub format_hint: Option<String>,
     /// Overrides the default 2% adaptive-savings margin.
@@ -443,33 +445,71 @@ impl ToonedMcpServer {
     #[tool(description = "Adaptively convert content to TOON when it is measurably smaller than \
                         compact JSON (per the same margin/round-trip rules as the CLI and \
                         hooks); otherwise returns the content unchanged. Operates purely on the \
-                        content string -- never reads or writes the filesystem.")]
+                        content string -- never reads or writes the filesystem. \
+                        Use format_hint \"toon\" to decode TOON-encoded input before re-encoding.")]
     async fn tooned_convert(
         &self,
         Parameters(req): Parameters<ConvertRequest>,
     ) -> Result<Json<ConvertResult>, String> {
-        // The core conversion is CPU-bound and delegates to a third-party
-        // codec; running it off the async executor and on a blocking thread
-        // both prevents the Tokio runtime from being monopolised and ensures
-        // any panic in the codec path is caught as a `JoinError` instead of
-        // killing the entire MCP server process.
+        // If format_hint is "toon", decode the TOON content to JSON first,
+        // then run the adaptive conversion on the decoded JSON value.
+        let (content_bytes, opts) = if req.format_hint.as_deref() == Some("toon") {
+            let decoded = tooned_core::decode_toon(&req.content);
+            let decoded = {
+                let Ok(v) = decoded else {
+                    return Ok(Json(ConvertResult {
+                        converted: false,
+                        text: req.content,
+                        report: None,
+                        reason: Some(PassthroughReasonDto::ParseFailed),
+                    }));
+                };
+                v
+            };
+            let json_bytes = sonic_rs::to_vec(&decoded);
+            let json_bytes = {
+                let Ok(bytes) = json_bytes else {
+                    return Ok(Json(ConvertResult {
+                        converted: false,
+                        text: req.content,
+                        report: None,
+                        reason: Some(PassthroughReasonDto::ParseFailed),
+                    }));
+                };
+                bytes
+            };
+            (
+                json_bytes,
+                build_options(
+                    None, // no format hint after decoding
+                    req.margin_pct,
+                    req.dict_enabled,
+                    req.auto_margin,
+                    req.entropy_gate,
+                    req.protect.clone(),
+                ),
+            )
+        } else {
+            (
+                req.content.as_bytes().to_vec(),
+                build_options(
+                    req.format_hint.as_deref(),
+                    req.margin_pct,
+                    req.dict_enabled,
+                    req.auto_margin,
+                    req.entropy_gate,
+                    req.protect.clone(),
+                ),
+            )
+        };
         task::spawn_blocking(move || {
-            let opts = build_options(
-                req.format_hint.as_deref(),
-                req.margin_pct,
-                req.dict_enabled,
-                req.auto_margin,
-                req.entropy_gate,
-                req.protect.clone(),
-            );
             #[allow(clippy::manual_unwrap_or)]
-            let content_len = match req.content.len().try_into() {
+            let content_len = match content_bytes.len().try_into() {
                 Ok(v) => v,
                 Err(_) => i64::MAX,
             };
             let mut toon_out = String::new();
-            let conversion =
-                tooned_core::maybe_tooned_in(req.content.as_bytes(), &opts, &mut toon_out);
+            let conversion = tooned_core::maybe_tooned_in(&content_bytes, &opts, &mut toon_out);
             let (converted, report, reason) = match conversion {
                 Ok(Conversion::Toon { report, .. }) => (true, Some(report.into()), None),
                 // `attempt()`/`maybe_tooned_in` already computed exactly why this
@@ -479,7 +519,11 @@ impl ToonedMcpServer {
                 // falls back to the fail-safe passthrough shape.
                 Err(_) => (false, None, None),
             };
-            let text = if converted { std::mem::take(&mut toon_out) } else { req.content };
+            let text = if converted {
+                std::mem::take(&mut toon_out)
+            } else {
+                String::from_utf8_lossy(&content_bytes).to_string()
+            };
             let result = Json(ConvertResult { converted, text, report, reason });
             {
                 let converted = result.0.converted;
@@ -505,28 +549,82 @@ impl ToonedMcpServer {
 
     #[tool(description = "Dry-run doc-type/shape/estimated-savings detection with no conversion \
                         performed. Operates purely on the content string -- never reads or \
-                        writes the filesystem.")]
+                        writes the filesystem. Use format_hint \"toon\" to detect the \
+                        shape of TOON-encoded input after decoding it to JSON.")]
     async fn tooned_detect(
         &self,
         Parameters(req): Parameters<DetectRequest>,
     ) -> Result<Json<DetectResult>, String> {
+        // If format_hint is "toon", decode the TOON content to JSON first,
+        // then inspect the decoded JSON value.
+        let (content_bytes, opts) = if req.format_hint.as_deref() == Some("toon") {
+            let decoded = tooned_core::decode_toon(&req.content);
+            let decoded = {
+                let Ok(v) = decoded else {
+                    return Ok(Json(DetectResult {
+                        doc_type: None,
+                        shape: ShapeClassDto::Scalar,
+                        input_bytes: req.content.len(),
+                        json_bytes: None,
+                        toon_bytes: None,
+                        savings_pct: None,
+                        would_convert: false,
+                        reason: Some(PassthroughReasonDto::ParseFailed),
+                    }));
+                };
+                v
+            };
+            let json_bytes = sonic_rs::to_vec(&decoded);
+            let json_bytes = {
+                let Ok(bytes) = json_bytes else {
+                    return Ok(Json(DetectResult {
+                        doc_type: None,
+                        shape: ShapeClassDto::Scalar,
+                        input_bytes: req.content.len(),
+                        json_bytes: None,
+                        toon_bytes: None,
+                        savings_pct: None,
+                        would_convert: false,
+                        reason: Some(PassthroughReasonDto::ParseFailed),
+                    }));
+                };
+                bytes
+            };
+            (
+                json_bytes,
+                build_options(
+                    None,
+                    None,
+                    req.dict_enabled,
+                    req.auto_margin,
+                    req.entropy_gate,
+                    req.protect.clone(),
+                ),
+            )
+        } else {
+            (
+                req.content.as_bytes().to_vec(),
+                build_options(
+                    req.format_hint.as_deref(),
+                    None,
+                    req.dict_enabled,
+                    req.auto_margin,
+                    req.entropy_gate,
+                    req.protect.clone(),
+                ),
+            )
+        };
         task::spawn_blocking(move || {
-            let opts = build_options(
-                req.format_hint.as_deref(),
-                None,
-                req.dict_enabled,
-                req.auto_margin,
-                req.entropy_gate,
-                req.protect.clone(),
-            );
-            let report = tooned_core::inspect(req.content.as_bytes(), &opts);
+            let report = tooned_core::inspect(&content_bytes, &opts);
             Json(report.into())
         })
         .await
         .map_err(|err| err.to_string())
     }
 
-    #[tool(description = "Decode a TOON document back into a structured JSON value.")]
+    #[tool(description = "Decode a TOON document back into a structured JSON value. \
+                        Accepts TOON-encoded text and returns the decoded JSON. \
+                        This is a first-class MCP tool with dedicated integration tests.")]
     async fn tooned_decode(
         &self,
         Parameters(req): Parameters<DecodeRequest>,
