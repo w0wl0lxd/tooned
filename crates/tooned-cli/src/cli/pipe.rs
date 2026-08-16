@@ -2,7 +2,7 @@
 
 //! `tooned pipe [--margin <pct>] [--max-bytes <n>]`
 //!
-//! stdin -> `maybe_tooned` -> stdout. Composable primitive; passthrough on
+//! stdin -> `maybe_tooned_in` -> stdout. Composable primitive; passthrough on
 //! any doubt (FR-006/FR-007). Always exits 0 (`contracts/cli.md`) -- even a
 //! stdin/stdout I/O hiccup falls back to a best-effort no-op rather than a
 //! non-zero exit, since this subcommand's whole contract is "never surprise
@@ -12,7 +12,6 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use tooned_core::Conversion;
 
 use crate::cli::FormatHint;
 use crate::cli::io::{BoundedRead, atomic_rename, open_output_temp, output_writer, read_bounded};
@@ -67,7 +66,7 @@ impl Drop for TempGuard<'_> {
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     let config = crate::config::Config::load(args.config.as_deref())?;
-    let opts = config.conversion_options(
+    let mut opts = config.conversion_options(
         args.margin,
         args.max_bytes,
         args.format_hint,
@@ -79,6 +78,13 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
         None,
         None,
     );
+    // `tooned pipe` is a streaming hot path; prefer the zero-allocation
+    // fast path by default. `TOONED_PIPE_ZERO_ALLOC=0` falls back to the
+    // full `maybe_tooned` pipeline (dictionary/entropy/critical-field tiers).
+    opts.zero_alloc = match std::env::var("TOONED_PIPE_ZERO_ALLOC") {
+        Ok(v) => v != "0",
+        Err(_) => true,
+    };
 
     let is_stdout = args.out.as_deref().is_none_or(|p| p == Path::new("-"));
     let mut stdin = std::io::stdin();
@@ -108,10 +114,20 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
             }
         };
 
-        let output = maybe_tooned_output(&bytes, &opts);
+        let mut toon_out = String::new();
+        let (output, input_len, output_len, converted) =
+            crate::cli::io::maybe_tooned_output(&bytes, &opts, &mut toon_out);
+        crate::metrics_recorder::record_convert_outcome(
+            crate::metrics_recorder::CliSurface::Pipe,
+            &crate::metrics_recorder::SourceLabel::None,
+            None,
+            converted,
+            input_len,
+            output_len,
+        );
         // A broken pipe on the reader side is not this subcommand's problem to
         // escalate as a CLI error.
-        let _ = out_writer.write_all(&output);
+        let _ = out_writer.write_all(output.as_ref());
         let _ = out_writer.flush();
         return Ok(());
     }
@@ -147,9 +163,19 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
             return Ok(());
         }
         BoundedRead::Fits(bytes) => {
-            let output = maybe_tooned_output(&bytes, &opts);
+            let mut toon_out = String::new();
+            let (output, input_len, output_len, converted) =
+                crate::cli::io::maybe_tooned_output(&bytes, &opts, &mut toon_out);
+            crate::metrics_recorder::record_convert_outcome(
+                crate::metrics_recorder::CliSurface::Pipe,
+                &crate::metrics_recorder::SourceLabel::None,
+                None,
+                converted,
+                input_len,
+                output_len,
+            );
             writer
-                .write_all(&output)
+                .write_all(output.as_ref())
                 .map_err(|err| anyhow::anyhow!("tooned pipe: failed to write output: {err}"))?;
             writer
                 .flush()
@@ -161,30 +187,4 @@ pub fn run(args: &PipeArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn maybe_tooned_output(bytes: &[u8], opts: &tooned_core::ConversionOptions) -> Vec<u8> {
-    #[allow(clippy::manual_unwrap_or)]
-    let to_i64_or_max = |n: usize| match i64::try_from(n) {
-        Ok(v) => v,
-        Err(_) => i64::MAX,
-    };
-
-    let input_len = to_i64_or_max(bytes.len());
-    let output = match tooned_core::maybe_tooned(bytes, opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
-        Err(_) => bytes.to_vec(),
-    };
-    let output_len = to_i64_or_max(output.len());
-    let converted = output_len < input_len;
-    crate::metrics_recorder::record_convert_outcome(
-        crate::metrics_recorder::CliSurface::Pipe,
-        &crate::metrics_recorder::SourceLabel::None,
-        None,
-        converted,
-        input_len,
-        output_len,
-    );
-    output
 }

@@ -133,6 +133,7 @@ fn sync_with_exclude_does_not_prune_excluded_files_that_still_exist() {
     let filter = tooned_index::IndexFilter {
         type_filter: None,
         excludes: vec!["excluded.json".to_string()],
+        respect_gitignore: true,
     };
     let summary = tooned_index::sync(dir.path(), &filter).expect("sync");
 
@@ -162,6 +163,7 @@ fn sync_with_type_filter_respects_filter() {
     let filter = tooned_index::IndexFilter {
         type_filter: Some(tooned_index::DocTypeFilter::Json),
         excludes: vec![],
+        respect_gitignore: true,
     };
     let summary = tooned_index::sync(dir.path(), &filter).expect("sync");
 

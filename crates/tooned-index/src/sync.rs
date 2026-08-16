@@ -57,7 +57,7 @@ pub fn sync(project_root: &Path, filter: &IndexFilter) -> Result<SyncSummary, In
     // (which would index files the user explicitly asked to skip).
     let exclude_gitignore = filter.compile_excludes(project_root)?;
 
-    let walker = build_walker(project_root);
+    let walker = build_walker(project_root, filter.respect_gitignore);
 
     let mut visited: usize = 0;
     for entry in walker {

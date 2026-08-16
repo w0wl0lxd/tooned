@@ -1,0 +1,1 @@
+`tooned pipe` and `tooned wrap` now use `tooned_core::maybe_tooned_in` with a caller-supplied output buffer, reducing heap allocations on the streaming CLI hot path. This trades the dictionary and key-folding tiers of the default adaptive conversion for lower latency; `tooned convert` and `tooned diff` continue to use the full `maybe_tooned` path.

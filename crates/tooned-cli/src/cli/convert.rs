@@ -19,7 +19,7 @@ use tooned_toon::decode_toon_with_options;
 use crate::cli::FormatHint;
 use crate::cli::io::{
     BoundedRead, atomic_rename, open_input, open_output_temp, read_bounded, read_input,
-    write_atomic, write_output,
+    resolve_input_path, write_atomic, write_output,
 };
 
 /// Compute model-aware token savings for the convert metrics path (F1/F2).
@@ -56,7 +56,7 @@ pub enum Direction {
     Tron,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ConvertArgs {
     /// Input file, or `-` for stdin.
@@ -148,6 +148,16 @@ fn flag_value(yes: bool, no: bool) -> Option<bool> {
 // `std::process::exit` below rather than through the `Err` path.
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
+    let mut args = args.clone();
+    args.input = match resolve_input_path(&args.input) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("tooned convert: failed to resolve input path: {err}");
+            std::process::exit(2);
+        }
+    };
+    let args = args;
+
     let config = crate::config::Config::load(args.config.as_deref())?;
     let format_hint = args.format_hint.or_else(|| config.format_hint()).or_else(|| {
         args.input
@@ -229,8 +239,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             let onto_outcome = tooned_core::maybe_onto(&bytes, &opts);
             let converted = matches!(onto_outcome, Ok(Conversion::Toon { .. }));
             let output = match onto_outcome {
-                Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+                Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
                 Err(_) => bytes.clone(),
             };
             let (tokens, precise) = precise_savings(&bytes, &output, &opts);
@@ -287,7 +297,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 
             if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON
-                let result = run_tron_streaming(args, &opts);
+                let result = run_tron_streaming(&args, &opts);
                 if let Err(err) = result {
                     eprintln!("tooned convert: failed to stream TRON: {err}");
                     std::process::exit(2);
@@ -304,8 +314,8 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
                 let tron_outcome = maybe_tron(&bytes, &opts);
                 let converted = matches!(tron_outcome, Ok(Conversion::Toon { .. }));
                 let output = match tron_outcome {
-                    Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-                    Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+                    Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+                    Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
                     Err(_) => bytes.clone(),
                 };
                 let (tokens, precise) = precise_savings(&bytes, &output, &opts);
@@ -358,7 +368,7 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
             );
             // `--to toon` forces conversion with no savings margin.
             opts.margin_pct = 0.0;
-            run_adaptive_bounded(args, &opts)?;
+            run_adaptive_bounded(&args, &opts)?;
         }
         None => {
             let opts = config.conversion_options(
@@ -388,13 +398,13 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 
             if use_streaming && is_ndjson {
                 // Stream NDJSON to TRON with adaptive size check
-                let result = run_adaptive_streaming(args, &opts);
+                let result = run_adaptive_streaming(&args, &opts);
                 if let Err(err) = result {
                     eprintln!("tooned convert: failed to stream adaptive conversion: {err}");
                     std::process::exit(2);
                 }
             } else {
-                run_adaptive_bounded(args, &opts)?;
+                run_adaptive_bounded(&args, &opts)?;
             }
         }
     }
@@ -403,9 +413,10 @@ pub fn run(args: &ConvertArgs) -> anyhow::Result<()> {
 }
 
 /// Returns `true` when the requested output destination is the same file as
-/// the input, including via symlinks, hardlinks, or different relative paths
-/// that resolve to the same inode. Stdin/stdout (`-`) is never considered the
-/// same file.
+/// the input, including via symlinks, hardlinks, different relative paths that
+/// resolve to the same inode, or paths that differ only in casing (so
+/// `tooned convert cargo.toml --out cargo.toml` writes back to `Cargo.toml`).
+/// Stdin/stdout (`-`) is never considered the same file.
 fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
     let Some(out) = out else { return false };
     if input == Path::new("-") || out == Path::new("-") {
@@ -418,7 +429,22 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
         return true;
     }
     match (std::fs::canonicalize(input), std::fs::canonicalize(out)) {
-        (Ok(cin), Ok(cout)) => cin == cout,
+        (Ok(cin), Ok(cout)) if cin == cout => return true,
+        _ => {}
+    }
+
+    // Fallback for a non-existent `--out` path that differs only by case from
+    // the resolved input path (e.g. `cargo.toml` vs `Cargo.toml`), or when
+    // one is absolute and the other is relative but they point to the same
+    // file.
+    let normalize = |p: &Path| -> Option<PathBuf> {
+        let parent = p.parent().unwrap_or_else(|| Path::new("."));
+        let parent_abs = parent.canonicalize().ok()?;
+        let file_name = p.file_name()?.to_string_lossy().to_lowercase();
+        Some(parent_abs.join(file_name))
+    };
+    match (normalize(input), normalize(out)) {
+        (Some(in_norm), Some(out_norm)) => in_norm == out_norm,
         _ => false,
     }
 }
@@ -681,8 +707,8 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
         Err(_) => i64::MAX,
     };
     let output = match maybe_tooned(bytes, opts) {
-        Ok(Conversion::Toon { text, .. }) => text.into_bytes(),
-        Ok(Conversion::Passthrough { bytes, .. }) => bytes,
+        Ok(Conversion::Toon { text, .. }) => text.into_owned().into_bytes(),
+        Ok(Conversion::Passthrough { bytes, .. }) => bytes.into_owned(),
         // Infallible in practice (see maybe_tooned's doc comment); fail
         // safe to the original bytes rather than panicking or erroring.
         Err(_) => bytes.to_vec(),
@@ -704,7 +730,8 @@ fn adaptive_bytes(bytes: &[u8], opts: &ConversionOptions) -> Vec<u8> {
     output
 }
 
-/// Returns the size of the input in bytes, or 0 for stdin (unknown size).
+/// Returns the size of the input in bytes, or 0 for stdin (unknown size) or
+/// an unreadable path.
 fn get_input_size(input: &Path) -> u64 {
     if input == Path::new("-") {
         return 0;
