@@ -47,6 +47,7 @@ __pycache__/
 .arbor/
 .codegraph/
 .cursor/
+.cline/
 .kilo/
 .gstack/
 .rtk/
