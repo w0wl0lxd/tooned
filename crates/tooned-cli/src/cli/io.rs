@@ -388,3 +388,87 @@ pub(crate) fn maybe_tooned_output<'a>(
     };
     (output, input_len, output_len, converted)
 }
+
+#[cfg(test)]
+mod resolve_input_path_tests {
+    use super::resolve_input_path;
+    use std::path::{Path, PathBuf};
+
+    /// The case-folding tests are only meaningful where the filesystem itself
+    /// distinguishes `A` from `a`. On a case-insensitive volume the literal
+    /// path already exists and the fallback never runs.
+    fn case_sensitive(dir: &Path) -> bool {
+        let upper = dir.join("CaseProbe");
+        std::fs::write(&upper, b"x").expect("probe write");
+        let insensitive = dir.join("caseprobe").exists();
+        std::fs::remove_file(&upper).expect("probe cleanup");
+        !insensitive
+    }
+
+    /// The finding this covers: with `Config/input.json` on disk, a user who
+    /// types `config/Input.json` used to fail at `read_dir("config")` before
+    /// the file name was ever considered.
+    #[test]
+    fn resolves_a_case_only_mismatch_in_a_parent_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        if !case_sensitive(tmp.path()) {
+            return;
+        }
+        std::fs::create_dir(tmp.path().join("Config")).expect("mkdir");
+        std::fs::write(tmp.path().join("Config/input.json"), b"{}").expect("write");
+
+        let resolved =
+            resolve_input_path(&tmp.path().join("config/Input.json")).expect("resolvable");
+        assert_eq!(resolved, tmp.path().join("Config/input.json"));
+    }
+
+    #[test]
+    fn an_ambiguous_case_match_is_an_error_not_a_guess() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        if !case_sensitive(tmp.path()) {
+            return;
+        }
+        std::fs::write(tmp.path().join("data.json"), b"{}").expect("write");
+        std::fs::write(tmp.path().join("DATA.json"), b"{}").expect("write");
+
+        let error = resolve_input_path(&tmp.path().join("Data.json")).expect_err("ambiguous");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("ambiguous"), "got {error}");
+    }
+
+    #[test]
+    fn a_genuinely_missing_path_is_returned_unchanged() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let missing = tmp.path().join("nothing-like-this.json");
+        assert_eq!(resolve_input_path(&missing).expect("no error"), missing);
+    }
+
+    /// A directory we cannot list must not replace the caller's precise "no
+    /// such file" with a directory-level permission error.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_parent_falls_back_to_the_literal_path() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let locked = tmp.path().join("locked");
+        std::fs::create_dir(&locked).expect("mkdir");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000))
+            .expect("chmod 000");
+
+        let requested = locked.join("input.json");
+        let resolved = resolve_input_path(&requested);
+        // Restore before asserting so the tempdir can always be cleaned up.
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod 755");
+
+        // Running as root defeats the permission bits entirely; then the
+        // directory is listable and the literal path is returned anyway.
+        assert_eq!(resolved.expect("no error surfaced"), PathBuf::from(&requested));
+    }
+
+    #[test]
+    fn stdin_is_passed_through_untouched() {
+        assert_eq!(resolve_input_path(Path::new("-")).expect("no error"), PathBuf::from("-"));
+    }
+}
