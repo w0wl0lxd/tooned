@@ -312,14 +312,18 @@ impl Store {
         ensure_parent(db_path)?;
         refuse_symlink(db_path, "metrics database")?;
         let existed = db_path.exists();
-        let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
-        // Re-check after opening: a TOCTOU swap could place a symlink on
-        // `db_path` between the earlier `refuse_symlink` and `Connection::open`
-        // (which would follow it). The parent directory is already guaranteed
-        // non-symlinked by `ensure_parent`, bounding the residual risk; this
-        // mirrors the index crate's double-check in `open_index` for
-        // defense-in-depth (finding: `Store::open` lacked a post-create
-        // symlink re-check).
+        // `SQLITE_OPEN_NOFOLLOW` makes SQLite itself refuse a symlinked final
+        // path component, which closes the window a pathname check cannot: a
+        // swap between `refuse_symlink` and the open would otherwise be
+        // followed. The flag is a POSIX feature and a no-op on some Windows
+        // VFS builds, so the pathname re-check below stays as the fallback
+        // there. `ensure_parent` already guarantees a non-symlinked parent,
+        // which is the part the flag does not cover.
+        let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+            | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW;
+        let conn = Connection::open_with_flags(db_path, flags).map_err(MetricsError::Sqlite)?;
         refuse_symlink(db_path, "metrics database")?;
         if !existed {
             #[cfg(unix)]
@@ -400,10 +404,14 @@ impl Store {
                     event.project_id,
                     event.source_label,
                     event.doc_type,
-                    event.input_bytes as i64,
-                    event.output_bytes as i64,
-                    event.saved_bytes as i64,
-                    event.tokens_saved as i64,
+                    // Saturate rather than cast: a `u64` above `i64::MAX`
+                    // would be stored as a negative integer, which the readers
+                    // then clamp to 0 -- the write path has to saturate too or
+                    // the aggregate hardening has nothing to work with.
+                    saturating_i64(event.input_bytes),
+                    saturating_i64(event.output_bytes),
+                    saturating_i64(event.saved_bytes),
+                    saturating_i64(event.tokens_saved),
                     i64::from(event.converted),
                     i64::from(event.precise),
                 ],
@@ -1461,5 +1469,40 @@ mod tests {
         // `cost_summary` -> single `SUM(tokens_saved)`.
         let cs = store.cost_summary(&opts, 0.0, 0.0, 0).expect("cost must not overflow");
         assert!(cs.total_tokens_saved > i64::MAX as u64);
+    }
+    // A pathname check cannot prove which file the connection opened, so the
+    // open itself has to refuse a symlink.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_database_path_is_refused() {
+        let dir = tempdir().expect("tempdir");
+        let real = dir.path().join("real.db");
+        std::fs::write(&real, b"").expect("write target");
+        let link = dir.path().join("metrics.db");
+        std::os::unix::fs::symlink(&real, &link).expect("symlink");
+
+        // Either SQLite's SQLITE_OPEN_NOFOLLOW or the pathname check answers;
+        // both are correct, and one of them must.
+        let message = match Store::open(&link) {
+            Ok(_) => panic!("a symlinked database must be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(!message.is_empty(), "the refusal must say something");
+    }
+
+    // A `u64` above `i64::MAX` used to be stored as a negative integer, which
+    // the aggregate readers then clamped to 0.
+    #[test]
+    fn an_oversized_byte_count_saturates_instead_of_going_negative() {
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        store.record(&sample("hook:claude", EventKind::Actual, u64::MAX, 1, None)).expect("record");
+
+        let stored: i64 = store
+            .conn
+            .query_row("SELECT input_bytes FROM events", [], |row| row.get(0))
+            .expect("read back");
+        assert_eq!(stored, i64::MAX, "an oversized byte count must saturate, not wrap negative");
     }
 }

@@ -803,13 +803,21 @@ pub(crate) fn process_hook_stdin(
             }))
             .ok(),
             // Codex replaces the model-visible tool result with the hook's
-            // `reason` text when `continue` is false or `decision` is "block".
-            // Emit both fields for maximum compatibility; the TOON text is
-            // the only model-visible content, so the original JSON plus an
-            // `additionalContext` appendix is never appended.
+            // `reason` text when `continue` is false. Verified against
+            // `codex-rs/hooks/src/engine/output_parser.rs`
+            // (`parse_post_tool_use`) and the published hooks contract.
+            //
+            // `decision: "block"` is deliberately NOT emitted. The two fields
+            // are not interchangeable: `continue: false` replaces the tool
+            // result and lets the model continue from it, while
+            // `decision: "block"` rejects the tool promise in code mode.
+            // Codex's `parse_completed` tests `continue` first, so sending
+            // both leaves the `block` arm dead today -- and makes the stronger
+            // reject-the-call behavior one branch-order change away. The TOON
+            // text is the only model-visible content, so the original JSON
+            // plus an `additionalContext` appendix is never appended.
             HookProtocol::Codex => sonic_rs::to_string(&serde_json::json!({
                 "continue": false,
-                "decision": "block",
                 "reason": text,
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",

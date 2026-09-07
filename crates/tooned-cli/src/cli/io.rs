@@ -23,42 +23,87 @@ pub(crate) fn resolve_input_path(path: &Path) -> io::Result<PathBuf> {
         return Ok(path.to_path_buf());
     }
 
-    let Some(file_name) = path.file_name() else {
-        return Ok(path.to_path_buf());
-    };
-    let target = file_name.to_string_lossy().to_lowercase();
+    // Resolving only the file name is not enough: given `Config/input.json` on
+    // disk, a user who types `config/Input.json` fails at `read_dir("config")`
+    // before the file name is ever considered. Walk the whole path instead,
+    // folding each component in turn.
+    let mut resolved = PathBuf::new();
+    let mut changed = false;
+    for component in path.components() {
+        match component {
+            // A prefix, root or `..` is structural -- it names no directory
+            // entry, so there is nothing to fold.
+            std::path::Component::Normal(name) => {
+                let candidate = resolved.join(name);
+                if candidate.exists() {
+                    resolved = candidate;
+                    continue;
+                }
+                let search_dir: &Path =
+                    if resolved.as_os_str().is_empty() { Path::new(".") } else { &resolved };
+                let target = name.to_string_lossy().to_lowercase();
 
-    let parent =
-        path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+                // A directory we cannot list is not a resolution failure: the
+                // caller is about to open the literal path and produce its own,
+                // more specific error. Propagating the `read_dir` failure here
+                // replaced a precise "no such file" with a directory-level
+                // permission error.
+                let Ok(entries) = std::fs::read_dir(search_dir) else {
+                    return Ok(path.to_path_buf());
+                };
+                let mut candidates = Vec::new();
+                for entry in entries {
+                    let Ok(entry) = entry else {
+                        return Ok(path.to_path_buf());
+                    };
+                    if entry.file_name().to_string_lossy().to_lowercase() == target {
+                        candidates.push(entry.file_name());
+                    }
+                }
 
-    let mut candidates = Vec::new();
-    for entry in std::fs::read_dir(parent)? {
-        let entry = entry?;
-        if entry.file_name().to_string_lossy().to_lowercase() == target {
-            candidates.push(entry.path());
+                match candidates.as_slice() {
+                    // No match: keep what the user typed, so a genuinely
+                    // missing input still gives the standard "not found".
+                    [] => {
+                        resolved = candidate;
+                    }
+                    [single] => {
+                        // A broken symlink fails `candidate.exists()` yet still
+                        // matches its own name here. Only an actual difference
+                        // in case counts as a resolution.
+                        changed |= single != name;
+                        resolved = resolved.join(single);
+                    }
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!(
+                                "case-insensitive match for '{}' in '{}' is ambiguous: {}",
+                                name.to_string_lossy(),
+                                search_dir.display(),
+                                candidates
+                                    .iter()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        ));
+                    }
+                }
+            }
+            other => resolved.push(other.as_os_str()),
         }
     }
 
-    match candidates.as_slice() {
-        [] => Ok(path.to_path_buf()),
-        [single] => {
-            let single = single.strip_prefix("./").map_or_else(|_| single.clone(), PathBuf::from);
-            eprintln!(
-                "tooned: resolved '{}' -> '{}' (case-insensitive)",
-                path.display(),
-                single.display()
-            );
-            Ok(single)
-        }
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "case-insensitive match for '{}' is ambiguous: {}",
-                path.display(),
-                candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
-            ),
-        )),
+    if changed && resolved.exists() {
+        eprintln!(
+            "tooned: resolved '{}' -> '{}' (case-insensitive)",
+            path.display(),
+            resolved.display()
+        );
+        return Ok(resolved);
     }
+    Ok(path.to_path_buf())
 }
 
 /// Reads all of `path`'s bytes, or all of stdin when `path == "-"`. A

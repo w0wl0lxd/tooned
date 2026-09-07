@@ -163,3 +163,46 @@ fn maybe_tooned_is_zero_allocation_on_passthrough() {
         assert_eq!(diff.alloc_sum, 0, "maybe_tooned passthrough must not allocate bytes");
     }
 }
+
+/// The passthrough tests above only prove the fast path declines. `pipe`,
+/// `wrap` and every installed hook now take this branch for real conversions,
+/// and it gates on `json_bytes` counted by `sonic_rs::to_writer` into a
+/// thread-local scratch. If any byte went unaccounted for, `json_bytes` would
+/// be understated and every conversion would silently downgrade to a
+/// passthrough. Pin the positive path and the byte count.
+///
+/// This test makes no allocation assertion: `maybe_tooned_in` parses the input
+/// before it can encode, and the parse allocates by design. Only
+/// `toon_from_value`, which takes an already-parsed value, is allocation-free
+/// -- the test above covers that.
+#[test]
+fn maybe_tooned_in_converts_and_counts_bytes() {
+    let input = br#"[{"id":1,"name":"a","ok":true},{"id":2,"name":"b","ok":false},{"id":3,"name":"c","ok":true}]"#;
+
+    let opts = zero_alloc_opts();
+    let mut out = String::with_capacity(2 * 1024 * 1024);
+
+    // Warm the thread-local scratch buffers and `out` capacity.
+    let _ = maybe_tooned_in(input, &opts, &mut out).expect("infallible");
+
+    out.clear();
+    let conversion = maybe_tooned_in(input, &opts, &mut out).expect("infallible");
+
+    let report = match conversion {
+        tooned_types::Conversion::Toon { text, report } => {
+            assert!(!text.is_empty(), "converted TOON text must not be empty");
+            report
+        }
+        tooned_types::Conversion::Passthrough { reason, .. } => {
+            panic!("tabular JSON must convert on the zero-alloc path, got passthrough: {reason:?}")
+        }
+    };
+
+    // `to_writer` must account for every compact-JSON byte. A short count here
+    // is exactly the failure that would turn conversions into passthroughs.
+    let value: serde_json::Value = serde_json::from_slice(input).expect("valid JSON");
+    let compact = serde_json::to_string(&value).expect("serializable");
+    assert_eq!(report.json_bytes, compact.len(), "json_bytes must equal the compact-JSON length");
+    assert!(report.toon_bytes > 0, "toon_bytes must be recorded");
+    assert!(report.savings_pct > 0.0, "a converted payload must record positive savings");
+}

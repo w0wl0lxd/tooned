@@ -227,6 +227,10 @@ pub enum PassthroughReason {
     /// did not reproduce the original value (FR-008); never surfaced as
     /// `Toon`.
     RoundTripMismatch,
+    /// The encoder, or the JSON byte counter that sizes the margin gate,
+    /// failed. Distinct from `RoundTripMismatch`: nothing was compared,
+    /// because no candidate was produced.
+    EncodeFailed,
 }
 
 impl fmt::Display for PassthroughReason {
@@ -242,6 +246,7 @@ impl fmt::Display for PassthroughReason {
             Self::RoundTripMismatch => {
                 write!(f, "TOON round-trip did not reproduce the original value")
             }
+            Self::EncodeFailed => write!(f, "TOON encoding failed"),
         }
     }
 }
@@ -263,6 +268,11 @@ pub enum ToonedError {
     /// `decode_toon` failed because `text` is not valid TOON.
     #[error("failed to decode TOON input: {0}")]
     DecodeFailed(String),
+    /// Encoding a value to TOON failed, or the compact-JSON byte counter that
+    /// sizes the margin gate failed. Nothing was compared, so this is not a
+    /// round-trip mismatch.
+    #[error("failed to encode TOON output: {0}")]
+    EncodeFailed(String),
 }
 
 /// Dry-run diagnostic report (contract: never carries TOON text).

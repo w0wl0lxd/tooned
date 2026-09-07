@@ -433,20 +433,40 @@ fn output_is_same_as_input(input: &Path, out: Option<&Path>) -> bool {
         _ => {}
     }
 
-    // Fallback for a non-existent `--out` path that differs only by case from
-    // the resolved input path (e.g. `cargo.toml` vs `Cargo.toml`), or when
-    // one is absolute and the other is relative but they point to the same
-    // file.
-    let normalize = |p: &Path| -> Option<PathBuf> {
-        let parent = p.parent().unwrap_or_else(|| Path::new("."));
-        let parent_abs = parent.canonicalize().ok()?;
-        let file_name = p.file_name()?.to_string_lossy().to_lowercase();
-        Some(parent_abs.join(file_name))
+    // Fallback for an `--out` path that differs only by case from the input,
+    // as it does on a case-insensitive filesystem where `cargo.toml` and
+    // `Cargo.toml` are one file.
+    //
+    // Case-folding both names and comparing the results is not enough: on a
+    // case-sensitive filesystem `Data.json` and `data.json` are two files, and
+    // treating them as one made `convert Data.json --out data.json` overwrite
+    // the input instead of writing the new file. So ask the filesystem: an
+    // existing directory entry that matches `out` case-insensitively is the
+    // same target only if it is in fact the same file as the input.
+    let Some(out_name) = out.file_name() else {
+        return false;
     };
-    match (normalize(input), normalize(out)) {
-        (Some(in_norm), Some(out_norm)) => in_norm == out_norm,
-        _ => false,
+    let out_parent =
+        out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let target = out_name.to_string_lossy().to_lowercase();
+    let Ok(entries) = std::fs::read_dir(out_parent) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().to_lowercase() != target {
+            continue;
+        }
+        // Both paths exist: `entry` came from `read_dir`, and the input is
+        // about to be read. An error means the filesystem could not answer, so
+        // take the name match as the same target. The in-place path reads the
+        // source fully before it writes, which is safe either way; the normal
+        // path would truncate the input if the guess is wrong in the other
+        // direction.
+        if !matches!(same_file::is_same_file(input, entry.path()), Ok(false)) {
+            return true;
+        }
     }
+    false
 }
 
 /// Adaptive conversion when `--out` points at the same file as `input`.

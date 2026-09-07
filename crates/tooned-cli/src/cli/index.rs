@@ -45,6 +45,7 @@ pub struct IndexArgs {
     pub include_flake_inputs: bool,
 
     /// Do not respect `.gitignore` or other ignore files when scanning.
+    /// Hidden files and directories are still skipped.
     #[arg(long = "no-gitignore")]
     pub no_gitignore: bool,
 
@@ -74,6 +75,7 @@ pub enum IndexSubcommand {
         include_flake_inputs: bool,
 
         /// Do not respect `.gitignore` or other ignore files when syncing.
+        /// Hidden files and directories are still skipped.
         #[arg(long = "no-gitignore")]
         no_gitignore: bool,
     },
@@ -119,6 +121,7 @@ pub enum IndexSubcommand {
         include_flake_inputs: bool,
 
         /// Do not respect `.gitignore` or other ignore files when watching.
+        /// Hidden files and directories are still skipped.
         #[arg(long = "no-gitignore")]
         no_gitignore: bool,
     },
@@ -130,7 +133,12 @@ fn resolve_project_root(path: Option<&PathBuf>) -> PathBuf {
         None => PathBuf::from("."),
     };
     let (root, is_fallback) = tooned_core::project_root_with_fallback(&start);
-    if is_fallback {
+    // Warn only when the fallback root is not the directory the user pointed
+    // at. `tooned index` in a project that has no `.tooned/` yet is the common
+    // first run, and the fallback lands exactly where the user is standing --
+    // nothing surprising to report. A root somewhere else is worth a word.
+    let pointed_at = start.canonicalize().unwrap_or_else(|_| start.clone());
+    if is_fallback && root != pointed_at {
         eprintln!(
             "tooned index: no project marker (.tooned/ or flake.nix) found; using {} as project root",
             root.display()

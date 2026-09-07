@@ -257,6 +257,7 @@ pub enum PassthroughReasonDto {
         toon_bytes: usize,
     },
     RoundTripMismatch,
+    EncodeFailed,
     /// A passthrough reason added in a newer `tooned` version.
     Unknown,
 }
@@ -271,6 +272,7 @@ impl From<PassthroughReason> for PassthroughReasonDto {
                 Self::NotSmallerEnough { json_bytes, toon_bytes }
             }
             PassthroughReason::RoundTripMismatch => Self::RoundTripMismatch,
+            PassthroughReason::EncodeFailed => Self::EncodeFailed,
             _ => Self::Unknown,
         }
     }

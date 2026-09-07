@@ -148,13 +148,26 @@ pub fn run(args: &WrapArgs) -> anyhow::Result<()> {
         None,
         None,
     );
-    // `tooned wrap` is a streaming hot path; prefer the zero-allocation
-    // fast path by default. `TOONED_WRAP_ZERO_ALLOC=0` falls back to the
-    // full `maybe_tooned` pipeline (dictionary/entropy/critical-field tiers).
-    opts.zero_alloc = match std::env::var("TOONED_WRAP_ZERO_ALLOC") {
-        Ok(v) => v != "0",
-        Err(_) => true,
-    };
+    // The fast path skips the dictionary, auto-margin, entropy and
+    // critical-field tiers. Taking it after the user asked for one of them on
+    // the command line would drop the flag they just typed, so an explicit
+    // tier flag keeps the full pipeline.
+    let tier_requested = args.dict
+        || args.no_dict
+        || args.auto_margin
+        || args.no_auto_margin
+        || args.entropy_gate
+        || args.no_entropy_gate
+        || !args.protect.is_empty();
+
+    // `tooned wrap` is otherwise a streaming hot path, so prefer the
+    // zero-allocation fast path. `TOONED_WRAP_ZERO_ALLOC=0` forces the full
+    // `maybe_tooned` pipeline; `=1` does not override an explicit tier flag.
+    opts.zero_alloc = !tier_requested
+        && match std::env::var("TOONED_WRAP_ZERO_ALLOC") {
+            Ok(v) => v != "0",
+            Err(_) => true,
+        };
 
     // Bound how much of the wrapped command's stdout is ever buffered in
     // memory: read up to `max_input_bytes + 1` bytes (the `+1` is only to
