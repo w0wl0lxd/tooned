@@ -312,7 +312,19 @@ impl Store {
         ensure_parent(db_path)?;
         refuse_symlink(db_path, "metrics database")?;
         let existed = db_path.exists();
-        let conn = Connection::open(db_path).map_err(MetricsError::Sqlite)?;
+        // `SQLITE_OPEN_NOFOLLOW` makes SQLite itself refuse a symlinked
+        // database file, which closes the window a pathname check cannot: a
+        // swap between `refuse_symlink` and the open would otherwise be
+        // followed. The flag is a POSIX feature and a no-op on some Windows
+        // VFS builds, so the pathname re-check below stays as the fallback
+        // there.
+        let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+            | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW;
+        let open_path = resolve_parent(db_path);
+        let conn = Connection::open_with_flags(&open_path, flags).map_err(MetricsError::Sqlite)?;
+        refuse_symlink(db_path, "metrics database")?;
         if !existed {
             #[cfg(unix)]
             set_mode(db_path, 0o600)?;
@@ -392,10 +404,14 @@ impl Store {
                     event.project_id,
                     event.source_label,
                     event.doc_type,
-                    event.input_bytes as i64,
-                    event.output_bytes as i64,
-                    event.saved_bytes as i64,
-                    event.tokens_saved as i64,
+                    // Saturate rather than cast: a `u64` above `i64::MAX`
+                    // would be stored as a negative integer, which the readers
+                    // then clamp to 0 -- the write path has to saturate too or
+                    // the aggregate hardening has nothing to work with.
+                    saturating_i64(event.input_bytes),
+                    saturating_i64(event.output_bytes),
+                    saturating_i64(event.saved_bytes),
+                    saturating_i64(event.tokens_saved),
                     i64::from(event.converted),
                     i64::from(event.precise),
                 ],
@@ -425,7 +441,7 @@ impl Store {
         };
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT day, COALESCE(SUM({col}),0), COUNT(*), \
+            "SELECT day, COALESCE(SUM(CAST({col} AS REAL)),0), COUNT(*), \
              COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0) \
              FROM events {where} GROUP BY day ORDER BY day ASC",
             col = col,
@@ -436,7 +452,7 @@ impl Store {
             .query_map(rusqlite::params_from_iter(f.binds), |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?.max(0) as u64,
+                    row.get::<_, f64>(1)?.max(0.0) as u64,
                     row.get::<_, i64>(2)?.max(0) as u64,
                     row.get::<_, i64>(3)?.max(0) as u64,
                 ))
@@ -478,21 +494,21 @@ impl Store {
         let (since, until) = window(opts);
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT COALESCE(SUM(saved_bytes),0), COALESCE(SUM(input_bytes),0), \
+            "SELECT COALESCE(SUM(CAST(saved_bytes AS REAL)),0), COALESCE(SUM(CAST(input_bytes AS REAL)),0), \
              COUNT(*), COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0), \
-             COALESCE(SUM(tokens_saved),0) \
+             COALESCE(SUM(CAST(tokens_saved AS REAL)),0) \
              FROM events {where}",
             where = f.where_sql()
         );
         let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
-        let (saved, input, total, conv, tokens): (i64, i64, i64, i64, i64) = stmt
+        let (saved, input, total, conv, tokens): (f64, f64, i64, i64, f64) = stmt
             .query_row(rusqlite::params_from_iter(f.binds), |r| {
                 Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, i64>(1)?,
+                    r.get::<_, f64>(0)?,
+                    r.get::<_, f64>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)?,
-                    r.get::<_, i64>(4)?,
+                    r.get::<_, f64>(4)?,
                 ))
             })
             .map_err(MetricsError::Sqlite)?;
@@ -519,12 +535,12 @@ impl Store {
             cursor -= 1;
         }
 
-        let avg = if input > 0 { (saved as f64 / input as f64) * 100.0 } else { 0.0 };
+        let avg = if input > 0.0 { (saved / input) * 100.0 } else { 0.0 };
 
         Ok(Summary {
             total_events: total.max(0) as u64,
-            total_saved_bytes: saved.max(0) as u64,
-            total_tokens_saved: tokens.max(0) as u64,
+            total_saved_bytes: saved.max(0.0) as u64,
+            total_tokens_saved: tokens.max(0.0) as u64,
             conversions: conv.max(0) as u64,
             passthroughs: (total.max(0) - conv.max(0)).max(0) as u64,
             avg_reduction_pct: avg,
@@ -543,9 +559,9 @@ impl Store {
         };
         let f = filter_clause(opts);
         let sql = format!(
-            "SELECT surface, COALESCE(SUM({col}),0), COALESCE(SUM(tokens_saved),0), \
+            "SELECT surface, COALESCE(SUM(CAST({col} AS REAL)),0), COALESCE(SUM(CAST(tokens_saved AS REAL)),0), \
              COUNT(*), COALESCE(SUM(CASE WHEN converted THEN 1 ELSE 0 END),0) \
-             FROM events {where} GROUP BY surface ORDER BY SUM({col}) DESC",
+             FROM events {where} GROUP BY surface ORDER BY SUM(CAST({col} AS REAL)) DESC",
             col = col,
             where = f.where_sql()
         );
@@ -554,8 +570,8 @@ impl Store {
             .query_map(rusqlite::params_from_iter(f.binds), |row| {
                 Ok(PerSurface {
                     surface: row.get(0)?,
-                    saved_bytes: row.get::<_, i64>(1)?.max(0) as u64,
-                    tokens_saved: row.get::<_, i64>(2)?.max(0) as u64,
+                    saved_bytes: row.get::<_, f64>(1)?.max(0.0) as u64,
+                    tokens_saved: row.get::<_, f64>(2)?.max(0.0) as u64,
                     events: row.get::<_, i64>(3)?.max(0) as u64,
                     conversions: row.get::<_, i64>(4)?.max(0) as u64,
                 })
@@ -600,12 +616,15 @@ impl Store {
         turn_reuse: u64,
     ) -> Result<CostSummary, MetricsError> {
         let f = filter_clause(opts);
-        let sql = format!("SELECT COALESCE(SUM(tokens_saved),0) FROM events {}", f.where_sql());
+        let sql = format!(
+            "SELECT COALESCE(SUM(CAST(tokens_saved AS REAL)),0) FROM events {}",
+            f.where_sql()
+        );
         let mut stmt = self.conn.prepare(&sql).map_err(MetricsError::Sqlite)?;
-        let total: i64 = stmt
-            .query_row(rusqlite::params_from_iter(f.binds), |row| row.get(0))
+        let total: f64 = stmt
+            .query_row(rusqlite::params_from_iter(f.binds), |row| row.get::<_, f64>(0))
             .map_err(MetricsError::Sqlite)?;
-        let total_tokens_saved = total.max(0) as u64;
+        let total_tokens_saved = total.max(0.0) as u64;
         let per_m = total_tokens_saved as f64 / 1_000_000.0;
         let estimated_usd_saved = per_m * input_per_million;
         let cache_compounded_usd =
@@ -697,9 +716,9 @@ fn leaderboard(
         format!("WHERE {column} IS NOT NULL AND {}", f.clause())
     };
     let sql = format!(
-        "SELECT COALESCE({column},'<unknown>'), COALESCE(SUM({col}),0), \
-         COALESCE(SUM(tokens_saved),0), COUNT(*) \
-         FROM events {where} GROUP BY {column} ORDER BY SUM({col}) DESC LIMIT ?",
+        "SELECT COALESCE({column},'<unknown>'), COALESCE(SUM(CAST({col} AS REAL)),0), \
+         COALESCE(SUM(CAST(tokens_saved AS REAL)),0), COUNT(*) \
+         FROM events {where} GROUP BY {column} ORDER BY SUM(CAST({col} AS REAL)) DESC LIMIT ?",
         column = column,
         col = col,
         where = where_sql,
@@ -711,8 +730,8 @@ fn leaderboard(
         .query_map(rusqlite::params_from_iter(binds), |row| {
             Ok(TopFile {
                 label: row.get(0)?,
-                saved_bytes: row.get::<_, i64>(1)?.max(0) as u64,
-                tokens_saved: row.get::<_, i64>(2)?.max(0) as u64,
+                saved_bytes: row.get::<_, f64>(1)?.max(0.0) as u64,
+                tokens_saved: row.get::<_, f64>(2)?.max(0.0) as u64,
                 events: row.get::<_, i64>(3)?.max(0) as u64,
             })
         })
@@ -1103,6 +1122,30 @@ fn refuse_symlink(path: &Path, label: &str) -> Result<(), MetricsError> {
     Ok(())
 }
 
+/// Returns `db_path` with its parent directory resolved to a real path.
+///
+/// `SQLITE_OPEN_NOFOLLOW` rejects a symbolic link *anywhere* in the path, not
+/// only the final component: SQLite counts every element it resolves while
+/// building the full pathname and refuses the open if any of them was a link.
+/// Benign ancestors are normal -- macOS puts `TMPDIR` under `/var/folders` and
+/// `/var` is a symlink to `private/var` -- so leaving them in place stopped
+/// every macOS ledger from opening at all.
+///
+/// Only the directory is resolved. The file name is passed through untouched
+/// so the flag still guards the database file itself, and `ensure_parent` has
+/// already refused a parent directory that is a symlink. An unresolvable
+/// parent falls back to the literal path, which then fails in `open` with the
+/// real error rather than a misleading one from here.
+fn resolve_parent(db_path: &Path) -> std::path::PathBuf {
+    let (Some(parent), Some(name)) = (db_path.parent(), db_path.file_name()) else {
+        return db_path.to_path_buf();
+    };
+    match std::fs::canonicalize(parent) {
+        Ok(resolved) => resolved.join(name),
+        Err(_) => db_path.to_path_buf(),
+    }
+}
+
 fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
     if let Some(parent) = db_path.parent() {
         refuse_symlink(parent, "metrics database directory")?;
@@ -1183,12 +1226,23 @@ pub fn record_event_all(event: &Event, project_root: Option<&Path>) {
     }
 }
 
-/// Current Unix timestamp (seconds), clamped to `0` if the clock predates the
-/// epoch -- never a panic on a clock read failure.
+/// Bounds-checked `u64` -> `i64` conversion that saturates at `i64::MAX`
+/// instead of wrapping. Mirrors `tooned_index::saturating_i64` (schema.rs) so
+/// the two crates agree on timestamp/byte-count conversions (finding:
+/// `now_unix` used a bare `as i64` cast that could wraparound).
 #[allow(clippy::cast_possible_wrap)]
+fn saturating_i64(n: u64) -> i64 {
+    if n > i64::MAX as u64 { i64::MAX } else { n as i64 }
+}
+
+/// Current Unix timestamp (seconds), clamped to `0` if the clock predates the
+/// epoch and to `i64::MAX` if the unsigned second count would not fit in an
+/// `i64` -- never a panic on a clock read failure, never a silent wraparound.
+/// Mirrors the index crate's `saturating_i64` convention (schema.rs) instead of
+/// a bare `as` cast.
 pub fn now_unix() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
+        Ok(d) => saturating_i64(d.as_secs()),
         Err(_) => 0,
     }
 }
@@ -1277,6 +1331,35 @@ mod tests {
             .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
             .ok();
         assert_eq!(schema_version.as_deref(), Some("1"));
+    }
+
+    /// A symlink above the ledger must not stop it opening.
+    /// `SQLITE_OPEN_NOFOLLOW` refuses a link anywhere in the path, and macOS
+    /// reaches its temporary directory through `/var`, itself a link to
+    /// `private/var`. Before `resolve_parent`, that silently produced an empty
+    /// ledger on every macOS machine: `pipe` still exited 0 because it treats
+    /// metrics as best-effort, and every later read reported no events.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_ancestor_directory_does_not_block_the_ledger() {
+        let dir = tempdir().expect("tempdir");
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join("inner")).expect("create real dir");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink("real", &link).expect("symlink");
+
+        // The parent of the ledger is `link/inner`, a real directory reached
+        // through a symlinked ancestor -- the exact shape of a macOS TMPDIR.
+        let db = link.join("inner").join("metrics.db");
+        let store = Store::open(&db).expect("open through a symlinked ancestor");
+        store
+            .record(&sample("hook:claude", EventKind::Actual, 100, 40, Some("a.json")))
+            .expect("record");
+        assert_eq!(store.count().expect("count"), 1);
+        assert!(
+            real.join("inner").join("metrics.db").exists(),
+            "the ledger must be created under the real directory"
+        );
     }
 
     #[test]
@@ -1386,5 +1469,93 @@ mod tests {
         assert!((cs.estimated_usd_saved - 2.5).abs() < 1e-9);
         // Compounded: $2.50 + 10 * $0.625 = $8.75.
         assert!((cs.cache_compounded_usd - 8.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn aggregate_sums_do_not_overflow_i64() {
+        // Regression test for the bug where `SUM(...)` aggregates were read as
+        // `i64`. SQLite throws an "integer overflow" error once the running sum
+        // of all-integer inputs exceeds `i64::MAX`, which fails the whole query
+        // instead of clamping. The aggregates now compute via
+        // `SUM(CAST(col AS REAL))` and read as `f64`, so a sum that overflows a
+        // signed 64-bit integer must not error.
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        let big = i64::MAX as u64;
+        // Two rows of `i64::MAX` each => running sum of `2 * i64::MAX`, which
+        // overflows an `i64` when summed as integers.
+        for _ in 0..2 {
+            store
+                .record(
+                    &RecordBuilder::new("hook:claude")
+                        .kind(EventKind::Actual)
+                        .at(0)
+                        .sizes(big, 0)
+                        .tokens_saved(big)
+                        .converted(true)
+                        .build(),
+                )
+                .expect("record");
+        }
+
+        let opts = QueryOpts {
+            since_day: Some(0),
+            until_day: Some(0),
+            by: Metric::Bytes,
+            include_opportunity: false,
+            surface: None,
+        };
+
+        // `summary` exercises the daily + roll-up SUM paths (saved/input/tokens).
+        let s = store.summary(&opts).expect("summary must not overflow on large sums");
+        assert!(s.total_saved_bytes > i64::MAX as u64);
+        assert!(s.total_tokens_saved > i64::MAX as u64);
+
+        // `heatmap` -> `daily_aggregates`.
+        let _ = store.heatmap(&opts).expect("heatmap must not overflow");
+
+        // `per_surface` and `top_files` (both have `ORDER BY SUM(...)`).
+        let _ = store.per_surface(&opts).expect("surface must not overflow");
+        let _ = store.top_files(&opts, 10).expect("top_files must not overflow");
+
+        // `cost_summary` -> single `SUM(tokens_saved)`.
+        let cs = store.cost_summary(&opts, 0.0, 0.0, 0).expect("cost must not overflow");
+        assert!(cs.total_tokens_saved > i64::MAX as u64);
+    }
+    // A pathname check cannot prove which file the connection opened, so the
+    // open itself has to refuse a symlink.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_database_path_is_refused() {
+        let dir = tempdir().expect("tempdir");
+        let real = dir.path().join("real.db");
+        std::fs::write(&real, b"").expect("write target");
+        let link = dir.path().join("metrics.db");
+        std::os::unix::fs::symlink(&real, &link).expect("symlink");
+
+        // Either SQLite's SQLITE_OPEN_NOFOLLOW or the pathname check answers;
+        // both are correct, and one of them must.
+        let message = match Store::open(&link) {
+            Ok(_) => panic!("a symlinked database must be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(!message.is_empty(), "the refusal must say something");
+    }
+
+    // A `u64` above `i64::MAX` used to be stored as a negative integer, which
+    // the aggregate readers then clamped to 0.
+    #[test]
+    fn an_oversized_byte_count_saturates_instead_of_going_negative() {
+        let dir = tempdir().expect("tempdir");
+        let db = dir.path().join("metrics.db");
+        let store = Store::open(&db).expect("open");
+        store.record(&sample("hook:claude", EventKind::Actual, u64::MAX, 1, None)).expect("record");
+
+        let stored: i64 = store
+            .conn
+            .query_row("SELECT input_bytes FROM events", [], |row| row.get(0))
+            .expect("read back");
+        assert_eq!(stored, i64::MAX, "an oversized byte count must saturate, not wrap negative");
     }
 }

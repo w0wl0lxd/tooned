@@ -6,6 +6,16 @@
 //! y/n. Never writes converted output (no `maybe_tooned`/TOON-text call at
 //! all -- only `tooned_core::inspect`, which by contract never computes or
 //! returns TOON text).
+//!
+//! **`check` predicts the full pipeline, not the zero-alloc one.** `inspect`
+//! runs every tier -- dictionary compression, auto-margin, entropy gate, key
+//! folding -- while `pipe`, `wrap` and the installed hooks default to
+//! `maybe_tooned_in` with `zero_alloc = true`, which gates on `margin_pct`
+//! alone. The two can therefore disagree in both directions: a payload
+//! `check` calls convertible may pass through in `pipe`, and one the entropy
+//! gate rejects here may convert there. Set `TOONED_PIPE_ZERO_ALLOC=0` (or
+//! the matching `wrap`/hook toggle) to make the executing path match this
+//! prediction exactly.
 
 use std::path::PathBuf;
 

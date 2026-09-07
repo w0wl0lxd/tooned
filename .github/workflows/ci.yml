@@ -35,7 +35,9 @@ jobs:
       - name: Install cargo-rail
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-rail
+          # Pinned: cargo-rail 0.22.0 removed `rail run`, which every step below uses.
+          # 0.21.0 is the last release with `run --merge-base --surface`.
+          tool: cargo-rail@0.21.0
 
       - name: Check changed crates
         if: github.event_name == 'pull_request'
@@ -67,7 +69,9 @@ jobs:
       - name: Install cargo-rail
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-rail
+          # Pinned: cargo-rail 0.22.0 removed `rail run`, which every step below uses.
+          # 0.21.0 is the last release with `run --merge-base --surface`.
+          tool: cargo-rail@0.21.0
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
@@ -205,7 +209,9 @@ jobs:
       - name: Install cargo-rail
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-rail
+          # Pinned: cargo-rail 0.22.0 removed `rail run`, which every step below uses.
+          # 0.21.0 is the last release with `run --merge-base --surface`.
+          tool: cargo-rail@0.21.0
 
       - name: Build changed docs
         if: github.event_name == 'pull_request'

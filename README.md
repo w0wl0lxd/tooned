@@ -4,7 +4,6 @@
 
 Transparent TOON re-encoding for AI agent tool output. `tooned` watches structured payloads (JSON, NDJSON, YAML, TOML, CSV, XML, MessagePack, CBOR, JSON5) moving through agent sessions. When TOON is smaller and round-trips exactly, it replaces the original bytes. Otherwise the original passes through unchanged.
 
-No source files are modified. No network calls are made. The conversion lives in one crate (`tooned-core`) and is called from the CLI, agent hooks, and MCP server.
 
 ## What it does
 
@@ -89,7 +88,7 @@ For every payload:
 3. Encode TOON and compact JSON; compare byte counts.
 4. Accept TOON only if it beats JSON by the configured margin (default 2%) and `decode(encode(x)) == x` exactly.
 
-If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through. No panic, no network.
+If any check fails (parse error, >2 MiB cap, round-trip mismatch), the original bytes pass through.
 
 ## Project index
 

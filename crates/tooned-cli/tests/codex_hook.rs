@@ -60,9 +60,13 @@ fn convertible_tool_response_prints_hook_specific_output_and_exits_0() {
         .unwrap_or_else(|e| panic!("stdout must be valid JSON, got {stdout:?}: {e}"));
 
     // Codex replaces the model-visible tool result with the hook's `reason`
-    // when `continue` is false or `decision` is "block".
+    // when `continue` is false.
     assert_eq!(parsed.get("continue").and_then(serde_json::Value::as_bool), Some(false));
-    assert_eq!(parsed.get("decision").and_then(serde_json::Value::as_str), Some("block"));
+    // `decision: "block"` must stay absent: it rejects the tool promise in
+    // code mode instead of replacing the result, and Codex's parser reads
+    // `continue` first, so emitting both is dead weight with a latent
+    // behavior change attached.
+    assert!(parsed.get("decision").is_none(), "must not emit a decision field, got {parsed}");
     let reason = parsed
         .get("reason")
         .and_then(serde_json::Value::as_str)

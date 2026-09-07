@@ -615,12 +615,23 @@ thread_local! {
 ///
 /// This is the zero-allocation fast path: it intentionally does not apply
 /// dictionary compression, density-aware auto-margin widening, entropy-gate
-/// widening, or critical-field protection. Callers that need those tiers
-/// should use [`maybe_tooned`] or call [`maybe_tooned_in`] with
-/// [`ConversionOptions::zero_alloc`] set to `false`.
+/// widening, critical-field protection, or key folding and flattening --
+/// each of those builds an owned intermediate the borrowed hot path cannot
+/// hold. Callers that need those tiers should use [`maybe_tooned`].
+///
+/// `cache_stable` is the exception: it is a correctness property rather than
+/// a tier, so [`maybe_tooned_in`] takes the full pipeline when it is set
+/// instead of returning source-ordered output.
 ///
 /// The returned [`Conversion::Toon`] borrows `out` for its text. It is the
 /// caller's responsibility to apply any size/margin gate if desired.
+///
+/// **Report fields.** The value carries no record of the bytes it was parsed
+/// from, and shape classification walks the value to build owned counters, so
+/// the report is filled with [`DocType::Json`] and
+/// [`ShapeClass::NotClassified`] placeholders. [`maybe_tooned_in`] knows the
+/// real source format and repairs `doc_type`; `shape` stays unclassified on
+/// this path. Consumers that need the shape must use [`maybe_tooned`].
 pub fn toon_from_value<'a>(
     value: &Value,
     opts: &ConversionOptions,
@@ -635,7 +646,7 @@ pub fn toon_from_value<'a>(
         let mut scratch = scratch.borrow_mut();
         scratch.clear();
         sonic_rs::to_writer(&mut *scratch, value)
-            .map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+            .map_err(|e| ToonedError::EncodeFailed(e.to_string()))?;
         Ok::<_, ToonedError>(scratch.len())
     })?;
 
@@ -646,7 +657,7 @@ pub fn toon_from_value<'a>(
     config.fold_keys = false;
     config.flatten_keys = false;
     out.clear();
-    encode_into(value, &config, out).map_err(|e| ToonedError::DecodeFailed(e.to_string()))?;
+    encode_into(value, &config, out).map_err(|e| ToonedError::EncodeFailed(e.to_string()))?;
     let toon_bytes = out.len();
 
     TOON_VERIFY_SCRATCH.with(|scratch| {
@@ -668,6 +679,18 @@ pub fn toon_from_value<'a>(
     })
 }
 
+/// True when the zero-allocation path can honour everything `opts` asks for.
+///
+/// The tiers the fast path skips are documented omissions a caller accepts by
+/// setting `zero_alloc`. `cache_stable` is not one of them: it is a
+/// correctness property, not a compression tier. Its whole purpose is that two
+/// payloads carrying the same data in different key orders encode to identical
+/// bytes, so a prompt-cache prefix stays stable. Encoding in source order
+/// instead would break exactly the guarantee the caller opted into, silently.
+fn fast_path_can_honour(opts: &ConversionOptions) -> bool {
+    !opts.cache_stable
+}
+
 /// Low-level, zero-allocation-possible conversion entry point.
 ///
 /// Detects the source format, parses it into a [`Value`], then delegates to
@@ -679,12 +702,19 @@ pub fn toon_from_value<'a>(
 /// to the full [`maybe_tooned`] pipeline so that dictionary compression,
 /// auto-margin widening, entropy-gate widening, and critical-field protection
 /// are honored. The `out` buffer is still reused as the final text sink.
+///
+/// **What "zero allocation" covers.** The output buffer, the compact-JSON byte
+/// counter and the round-trip verifier are reusable and allocate nothing on a
+/// warm call. Parsing the input into an owned [`Value`] does allocate: an
+/// object or an array cannot be borrowed out of the input bytes. So a
+/// passthrough decision is allocation-free, and a conversion allocates for the
+/// parse alone -- not for the encode, the sizing or the verification.
 pub fn maybe_tooned_in<'a>(
     input: &'a [u8],
     opts: &ConversionOptions,
     out: &'a mut String,
 ) -> Result<Conversion<'a>, ToonedError> {
-    if !opts.zero_alloc {
+    if !opts.zero_alloc || !fast_path_can_honour(opts) {
         return match maybe_tooned(input, opts) {
             Ok(Conversion::Toon { text, report }) => {
                 *out = text.into_owned();
@@ -693,9 +723,9 @@ pub fn maybe_tooned_in<'a>(
             Ok(Conversion::Passthrough { bytes, reason }) => {
                 Ok(Conversion::Passthrough { bytes, reason })
             }
-            Err(_) => Ok(Conversion::Passthrough {
+            Err(error) => Ok(Conversion::Passthrough {
                 bytes: Cow::Borrowed(input),
-                reason: PassthroughReason::RoundTripMismatch,
+                reason: passthrough_reason_for(&error),
             }),
         };
     }
@@ -738,10 +768,26 @@ pub fn maybe_tooned_in<'a>(
             }
         }
         Ok(other) => Ok(other),
-        Err(_) => Ok(Conversion::Passthrough {
+        Err(error) => Ok(Conversion::Passthrough {
             bytes: Cow::Borrowed(input),
-            reason: PassthroughReason::RoundTripMismatch,
+            reason: passthrough_reason_for(&error),
         }),
+    }
+}
+
+/// Why a conversion attempt ended in passthrough.
+///
+/// A round-trip mismatch means a candidate was produced and then failed the
+/// comparison. An encoder or byte-counter failure produced no candidate at
+/// all, so reporting it as a mismatch told the user the wrong thing.
+fn passthrough_reason_for(error: &ToonedError) -> PassthroughReason {
+    match error {
+        ToonedError::DecodeFailed(_) => PassthroughReason::RoundTripMismatch,
+        ToonedError::InputTooLarge => PassthroughReason::InputTooLarge,
+        // `EncodeFailed`, and any variant a later version adds: no candidate
+        // was produced, so nothing was compared. Calling that a round-trip
+        // mismatch told the user the wrong thing.
+        _ => PassthroughReason::EncodeFailed,
     }
 }
 
