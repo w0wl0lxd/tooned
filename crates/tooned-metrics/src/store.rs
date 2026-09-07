@@ -312,18 +312,18 @@ impl Store {
         ensure_parent(db_path)?;
         refuse_symlink(db_path, "metrics database")?;
         let existed = db_path.exists();
-        // `SQLITE_OPEN_NOFOLLOW` makes SQLite itself refuse a symlinked final
-        // path component, which closes the window a pathname check cannot: a
+        // `SQLITE_OPEN_NOFOLLOW` makes SQLite itself refuse a symlinked
+        // database file, which closes the window a pathname check cannot: a
         // swap between `refuse_symlink` and the open would otherwise be
         // followed. The flag is a POSIX feature and a no-op on some Windows
         // VFS builds, so the pathname re-check below stays as the fallback
-        // there. `ensure_parent` already guarantees a non-symlinked parent,
-        // which is the part the flag does not cover.
+        // there.
         let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
             | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
             | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
             | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW;
-        let conn = Connection::open_with_flags(db_path, flags).map_err(MetricsError::Sqlite)?;
+        let open_path = resolve_parent(db_path);
+        let conn = Connection::open_with_flags(&open_path, flags).map_err(MetricsError::Sqlite)?;
         refuse_symlink(db_path, "metrics database")?;
         if !existed {
             #[cfg(unix)]
@@ -1122,6 +1122,30 @@ fn refuse_symlink(path: &Path, label: &str) -> Result<(), MetricsError> {
     Ok(())
 }
 
+/// Returns `db_path` with its parent directory resolved to a real path.
+///
+/// `SQLITE_OPEN_NOFOLLOW` rejects a symbolic link *anywhere* in the path, not
+/// only the final component: SQLite counts every element it resolves while
+/// building the full pathname and refuses the open if any of them was a link.
+/// Benign ancestors are normal -- macOS puts `TMPDIR` under `/var/folders` and
+/// `/var` is a symlink to `private/var` -- so leaving them in place stopped
+/// every macOS ledger from opening at all.
+///
+/// Only the directory is resolved. The file name is passed through untouched
+/// so the flag still guards the database file itself, and `ensure_parent` has
+/// already refused a parent directory that is a symlink. An unresolvable
+/// parent falls back to the literal path, which then fails in `open` with the
+/// real error rather than a misleading one from here.
+fn resolve_parent(db_path: &Path) -> std::path::PathBuf {
+    let (Some(parent), Some(name)) = (db_path.parent(), db_path.file_name()) else {
+        return db_path.to_path_buf();
+    };
+    match std::fs::canonicalize(parent) {
+        Ok(resolved) => resolved.join(name),
+        Err(_) => db_path.to_path_buf(),
+    }
+}
+
 fn ensure_parent(db_path: &Path) -> Result<(), MetricsError> {
     if let Some(parent) = db_path.parent() {
         refuse_symlink(parent, "metrics database directory")?;
@@ -1307,6 +1331,35 @@ mod tests {
             .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
             .ok();
         assert_eq!(schema_version.as_deref(), Some("1"));
+    }
+
+    /// A symlink above the ledger must not stop it opening.
+    /// `SQLITE_OPEN_NOFOLLOW` refuses a link anywhere in the path, and macOS
+    /// reaches its temporary directory through `/var`, itself a link to
+    /// `private/var`. Before `resolve_parent`, that silently produced an empty
+    /// ledger on every macOS machine: `pipe` still exited 0 because it treats
+    /// metrics as best-effort, and every later read reported no events.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_ancestor_directory_does_not_block_the_ledger() {
+        let dir = tempdir().expect("tempdir");
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join("inner")).expect("create real dir");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink("real", &link).expect("symlink");
+
+        // The parent of the ledger is `link/inner`, a real directory reached
+        // through a symlinked ancestor -- the exact shape of a macOS TMPDIR.
+        let db = link.join("inner").join("metrics.db");
+        let store = Store::open(&db).expect("open through a symlinked ancestor");
+        store
+            .record(&sample("hook:claude", EventKind::Actual, 100, 40, Some("a.json")))
+            .expect("record");
+        assert_eq!(store.count().expect("count"), 1);
+        assert!(
+            real.join("inner").join("metrics.db").exists(),
+            "the ledger must be created under the real directory"
+        );
     }
 
     #[test]
