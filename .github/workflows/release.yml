@@ -59,7 +59,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install SOPS
-        uses: mdgreenwald/mozilla-sops-action@v2.1.1
+        uses: mdgreenwald/mozilla-sops-action@v2.1.2
 
       - name: Load crates.io token from SOPS
         run: |
